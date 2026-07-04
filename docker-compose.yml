@@ -1,0 +1,32 @@
+services:
+  app:
+    build: .
+    image: lehrer-dashboard:latest
+    container_name: lehrer-dashboard
+    restart: unless-stopped
+    environment:
+      # Pflicht: base64-kodierte 32 Byte. Erzeugen:
+      #   python -c "import os,base64;print(base64.b64encode(os.urandom(32)).decode())"
+      APP_SECRET_KEY: ${APP_SECRET_KEY:?bitte in .env setzen}
+      COOKIE_SECURE: "1"            # Cookies nur über HTTPS (Cloudflare Tunnel liefert HTTPS)
+      SESSION_TTL_HOURS: "168"
+    volumes:
+      - ./data:/data                # persistente SQLite-DB (data.db)
+      - ./storage:/storage          # Materialdateien – auf der NAS auf einen Share mappen,
+                                    # z. B. /volume1/docker/lehrer-dashboard/storage:/storage
+    # Auf der Synology ggf. auf UID/GID des Share-Besitzers setzen (Schreibrechte):
+    # user: "1026:100"
+    ports:
+      - "127.0.0.1:8097:8000"       # nur lokal erreichbar; der Tunnel greift intern zu
+
+  # Cloudflare Tunnel als Sidecar (Token aus dem Cloudflare-Zero-Trust-Dashboard).
+  # Der Tunnel zeigt im Dashboard auf den Service:  http://app:8000
+  # cloudflared:
+  #   image: cloudflare/cloudflared:latest
+  #   container_name: lehrer-dashboard-tunnel
+  #   restart: unless-stopped
+  #   command: tunnel --no-autoupdate run
+  #   environment:
+  #     TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+  #   depends_on:
+  #     - app

@@ -1,0 +1,1106 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Lehrer-Dashboard v4</title>
+<style>
+:root {
+  --bg: #f7fbf3; --sidebar: #14532d;
+  --surface: #ffffff; --surface-2: #f0faf0;
+  --text: #14261a; --muted: #5b6b5f;
+  --line: #dbe8da; --primary: #16a34a; --primary-dark: #14532d;
+  --yellow: #eab308; --orange: #f97316; --ok: #22c55e; --warn: #eab308; --bad: #ef4444;
+  --shadow: 0 12px 30px rgba(20,83,45,0.10); --radius: 18px; --radius-sm: 12px;
+}
+* { box-sizing: border-box; }
+html, body { overflow-x:hidden; max-width:100%; }
+body { margin:0; font-family: 'Noteworthy Light', 'Noteworthy', 'Comic Sans MS', -apple-system, 'Segoe UI', Roboto, sans-serif; color: var(--text); background: var(--bg); min-height:100vh; }
+.app { display:grid; grid-template-columns: 270px 1fr; min-height:100vh; }
+aside { background: var(--sidebar); color:white; padding:22px 16px; }
+.brand-wrap { display:flex; align-items:center; gap:12px; margin-bottom:6px; }
+.avatar-wrap { position:relative; width:44px; height:44px; flex-shrink:0; }
+.avatar-img { width:44px; height:44px; border-radius:12px; object-fit:cover; background:#a3e635; display:block; }
+.avatar-upload-btn { position:absolute; bottom:-4px; right:-4px; width:18px; height:18px; border-radius:50%; background:var(--yellow); border:2px solid var(--sidebar); font-size:10px; display:flex; align-items:center; justify-content:center; cursor:pointer; color:#14261a; }
+.brand { font-size:19px; font-weight:800; } .sub { font-size:12px; color:#bbf7d0; margin-bottom:22px; }
+.section-label { font-size:11px; text-transform:uppercase; letter-spacing:.07em; color:#86efac; margin:16px 8px 6px; }
+.nav-btn { width:100%; text-align:left; border:0; cursor:pointer; background:transparent; color:#dcfce7; padding:11px 13px; border-radius:10px; margin-bottom:4px; font-size:14px; font-family:inherit; transition:.15s; }
+.nav-btn.active, .nav-btn:hover { background: rgba(255,255,255,0.14); color:white; }
+.nav-footer { margin-top:20px; padding:13px; border-radius:14px; background:rgba(255,255,255,0.10); font-size:12px; color:#dcfce7; }
+main { padding:26px 30px; }
+.topbar { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; margin-bottom:18px; flex-wrap:wrap; }
+.date-block .date { font-size:14px; color:var(--primary-dark); font-weight:800; }
+.date-block .kw { font-size:12px; color:var(--muted); }
+.title { font-size:26px; font-weight:800; color:var(--primary-dark); margin-top:4px; }
+.page-sub { color:var(--muted); margin-top:4px; }
+.hero-tag { display:inline-flex; align-items:center; gap:8px; padding:9px 14px; border-radius:999px; color:white; background: var(--orange); font-size:12px; font-weight:700; }
+.grid { display:grid; gap:16px; } .grid-3 { grid-template-columns: repeat(3, minmax(0,1fr)); } .grid-2 { grid-template-columns: repeat(2, minmax(0,1fr)); }
+.grid-4 { grid-template-columns: repeat(4, minmax(0,1fr)); }
+.card { background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:18px; box-shadow:var(--shadow); }
+.card.soft { background:var(--surface-2); } .card.dark { background:var(--primary-dark); color:#f0fdf4; border:none; }
+.card h3 { margin:0 0 10px; font-size:17px; color:var(--primary-dark); }
+.card.dark h3 { color:white; }
+.kpi { font-size:32px; font-weight:800; margin:8px 0 4px; color:var(--primary-dark); }
+.kpi-card { border-top:4px solid var(--primary); cursor:pointer; transition:.15s; } .kpi-card:hover { box-shadow:0 16px 34px rgba(20,83,45,0.16); transform:translateY(-2px); }
+.kpi-card.yellow { border-top-color:var(--yellow); } .kpi-card.orange { border-top-color:var(--orange); }
+.hidden { display:none; }
+label { display:block; font-size:13px; color:var(--muted); margin:10px 0 5px; font-weight:700; }
+.hint { font-size:11px; color:var(--muted); margin-top:-3px; margin-bottom:5px; }
+input, select, textarea { width:100%; padding:11px 12px; border:1px solid var(--line); border-radius:10px; font:inherit; background:#fff; color:#14261a; }
+textarea { min-height:70px; resize:vertical; }
+input:focus, select:focus, textarea:focus { outline:2px solid var(--primary); outline-offset:1px; }
+.row { display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap:12px; }
+.row-3 { display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap:12px; }
+.row-4 { display:grid; grid-template-columns: 1.2fr .7fr .9fr 1fr; gap:10px; }
+.btn { border:0; background: var(--primary); color:white; padding:10px 15px; border-radius:10px; cursor:pointer; font-weight:700; font-family:inherit; }
+.btn:hover { background:#128a3e; }
+.btn.secondary { background:#e9f8ec; color:var(--primary-dark); }
+.btn.secondary:hover { background:#d7f3dc; }
+.btn.ghost { background:transparent; color:var(--primary-dark); border:1px solid var(--primary); }
+.btn.ai { background: var(--yellow); color:#3f2d00; }
+.btn.ai:hover { background:#d4a406; }
+.btn.small { padding:6px 11px; font-size:12px; border-radius:8px; }
+.btn.danger { background:#fee2e2; color:#991b1b; }
+.tag { display:inline-block; padding:5px 10px; border-radius:999px; font-size:12px; background:#dcfce7; color:#14532d; font-weight:700; margin:2px 4px 2px 0; }
+table { width:100%; border-collapse:separate; border-spacing:0 8px; font-size:14px; }
+th { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.04em; }
+th, td { padding:10px 10px; text-align:left; vertical-align:top; }
+tbody tr { background:#fff; box-shadow:0 3px 10px rgba(20,83,45,.05); }
+tbody tr td:first-child { border-radius:10px 0 0 10px; } tbody tr td:last-child { border-radius:0 10px 10px 0; }
+.phase { background: var(--surface-2); border:1px solid var(--line); border-radius:14px; padding:14px; margin-bottom:10px; }
+.small { font-size:12px; } .muted { color:var(--muted); }
+.hero-grid { display:grid; grid-template-columns: 1.3fr .9fr; gap:16px; margin-bottom:16px; }
+.hero-panel { background: var(--primary); color:white; border-radius:20px; padding:22px; }
+.hero-panel h2 { margin:0 0 6px; font-size:22px; }
+.mini-list { display:grid; gap:8px; }
+.mini-item { padding:11px 13px; border-radius:14px; background:rgba(255,255,255,0.16); display:flex; justify-content:space-between; align-items:center; gap:10px; cursor:pointer; }
+.mini-item:hover { background: rgba(255,255,255,0.26); }
+.mini-item .time { font-weight:700; color:#fef9c3; font-size:12px; min-width:50px; }
+.card.dark .mini-item { background:rgba(255,255,255,0.10); }
+.card.dark .mini-item:hover { background:rgba(255,255,255,0.18); }
+.badge { padding:4px 9px; border-radius:999px; font-size:11px; font-weight:700; }
+.badge.ok { background:#bbf7d0; color:#14532d; }
+.badge.warn { background:#fef08a; color:#713f12; }
+.badge.bad { background:#fecaca; color:#7f1d1d; }
+.meyer-grid { display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap:8px; }
+.meyer-row { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:9px 11px; background:var(--surface-2); border:1px solid var(--line); border-radius:10px; }
+.meyer-row .name { font-size:12px; font-weight:700; color:var(--primary-dark); }
+.ampel-select { display:flex; gap:6px; }
+.ampel-btn { width:24px; height:24px; border-radius:999px; border:2px solid transparent; cursor:pointer; opacity:.35; }
+.ampel-btn.g { background:var(--ok); } .ampel-btn.y { background:var(--yellow); } .ampel-btn.r { background:var(--bad); }
+.ampel-btn.selected { opacity:1; border-color:#14261a; transform: scale(1.08); }
+.note-box { background:#fff7ed; border:1px solid #fed7aa; color:#9a3412; border-radius:12px; padding:11px 13px; font-size:13px; margin-top:10px; }
+.ai-box { background: #fefce8; border:1px solid #fde68a; border-radius:14px; padding:14px; margin-bottom:14px; display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
+.ai-box .txt { font-size:13px; color:#713f12; max-width:520px; }
+.file-drop { border:2px dashed #86efac; border-radius:12px; padding:16px; text-align:center; color:var(--primary-dark); font-size:13px; background:#f0faf0; cursor:pointer; }
+.file-list { display:flex; flex-direction:column; gap:7px; margin-top:9px; }
+.file-chip { display:flex; justify-content:space-between; align-items:center; padding:9px 11px; background:var(--surface-2); border:1px solid var(--line); border-radius:10px; font-size:13px; }
+.tag-row { display:flex; gap:7px; flex-wrap:wrap; margin-top:7px; }
+.tag.status-neu { background:#dbeafe; color:#1e40af; }
+.tag.status-inbearbeitung { background:#fef3c7; color:#92400e; }
+.tag.status-fertig { background:#dcfce7; color:#166534; }
+.todo-item { display:flex; align-items:center; gap:9px; padding:9px 11px; border-radius:10px; background:var(--surface-2); border:1px solid var(--line); margin-bottom:7px; }
+.todo-item.done { opacity:.5; text-decoration: line-through; }
+.todo-item input[type=checkbox] { width:auto; }
+.todo-src { font-size:10px; padding:3px 6px; border-radius:999px; font-weight:700; }
+.todo-src.system { background:#dbeafe; color:#1e40af; }
+.todo-src.manuell { background:#fce7f3; color:#9d174d; }
+.open-reflect-row { display:flex; justify-content:space-between; align-items:center; padding:9px 11px; background:#fff7ed; border:1px solid #fed7aa; border-radius:10px; margin-bottom:7px; gap:10px; flex-wrap:wrap; }
+.class-toggle-row { display:flex; gap:9px; flex-wrap:wrap; margin-bottom:12px; }
+.class-toggle { display:flex; align-items:center; gap:6px; padding:7px 11px; border-radius:999px; background:var(--surface-2); border:1px solid var(--line); font-size:12px; cursor:pointer; }
+.class-toggle input { width:auto; }
+.timeline-row { display:flex; align-items:center; gap:9px; margin-bottom:9px; }
+.timeline-label { width:105px; font-size:12px; font-weight:700; flex-shrink:0; color:var(--primary-dark); }
+.timeline-track { flex:1; display:flex; gap:3px; overflow-x:auto; }
+.timeline-block { padding:7px 9px; border-radius:7px; font-size:11px; color:white; white-space:nowrap; flex-shrink:0; }
+.modal-overlay { position:fixed; inset:0; background:rgba(20,38,26,0.55); display:flex; align-items:center; justify-content:center; z-index:100; padding:20px; }
+.modal-box { background:white; border-radius:20px; max-width:720px; width:100%; max-height:86vh; overflow-y:auto; padding:24px; }
+.modal-box h2 { margin-top:0; color:var(--primary-dark); }
+.modal-close { float:right; border:0; background:#e9f8ec; color:var(--primary-dark); border-radius:9px; padding:7px 11px; cursor:pointer; font-family:inherit; }
+.modal-section { margin-top:14px; padding-top:12px; border-top:1px solid var(--line); }
+.mini-meyer-chip { display:inline-block; padding:5px 8px; border-radius:7px; font-size:11px; margin:2px; color:white; }
+.cal-grid { display:grid; grid-template-columns: repeat(7, minmax(0,1fr)); gap:6px; }
+.cal-head { font-size:11px; text-transform:uppercase; color:var(--muted); text-align:center; padding-bottom:4px; }
+.cal-cell { min-height:88px; background:var(--surface-2); border:1px solid var(--line); border-radius:10px; padding:6px; font-size:11px; }
+.cal-cell.today { border:2px solid var(--primary); }
+.cal-cell.otherMonth { opacity:.4; }
+.cal-daynum { font-weight:800; color:var(--primary-dark); margin-bottom:3px; }
+.cal-entry { background:var(--primary); color:white; border-radius:6px; padding:2px 5px; margin-bottom:2px; font-size:10px; cursor:pointer; }
+.cal-entry.lu { background:var(--bad); }
+.cal-entry.exam { background:var(--orange); }
+.cal-nav { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+.cal-nav button { background:var(--surface-2); border:1px solid var(--line); border-radius:8px; padding:6px 11px; cursor:pointer; font-weight:700; color:var(--primary-dark); }
+.view-toggle { display:flex; gap:6px; margin-left:auto; }
+.view-toggle button { background:var(--surface-2); border:1px solid var(--line); border-radius:8px; padding:6px 12px; cursor:pointer; font-size:12px; font-weight:700; color:var(--muted); }
+.view-toggle button.active { background:var(--primary); color:white; border-color:var(--primary); }
+@media (max-width: 1080px) { .hero-grid, .grid-3, .grid-2, .grid-4, .row, .row-3, .row-4, .meyer-grid { grid-template-columns: 1fr; } }
+.burger-btn { display:none; }
+.nav-backdrop { display:none; }
+@media (max-width: 920px) {
+  .app { grid-template-columns: 1fr; }
+  .burger-btn { display:flex; align-items:center; justify-content:center; width:40px; height:40px; flex-shrink:0; border-radius:10px; border:1px solid var(--line); background:var(--surface); cursor:pointer; }
+  .burger-btn span, .burger-btn span::before, .burger-btn span::after { content:''; display:block; width:18px; height:2px; background:var(--primary-dark); position:relative; transition:.15s; }
+  .burger-btn span::before { position:absolute; top:-6px; }
+  .burger-btn span::after { position:absolute; top:6px; }
+  aside { position:fixed; top:0; left:0; height:100vh; width:270px; max-width:82vw; z-index:25; transform:translateX(-100%); transition:transform .2s ease; overflow-y:auto; }
+  aside.open { transform:translateX(0); }
+  .nav-backdrop { position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:20; }
+  .nav-backdrop.open { display:block; }
+  main { padding:14px; max-width:100%; overflow-x:hidden; }
+  .topbar { display:block; }
+  .topbar-head { display:flex; align-items:center; gap:10px; }
+  .topbar-titles { flex:1; min-width:0; }
+  .title { font-size:19px; }
+  .page-sub { font-size:12px; }
+  .hero-tag { margin-top:10px; display:inline-flex; }
+}
+
+@media (max-width: 600px) {
+  main { padding:12px; }
+  .card { padding:14px; border-radius:14px; }
+  .row-4 { grid-template-columns: 1fr; }
+  .cal-nav { flex-wrap:wrap; gap:8px; }
+  .view-toggle { width:100%; }
+  .view-toggle button { flex:1; }
+  .cal-grid { grid-template-columns: repeat(7, minmax(0,1fr)); overflow-x:visible; }
+  .kpi { font-size:26px; }
+  .brand-wrap { gap:10px; }
+  .class-toggle-row { gap:6px; }
+  input, select, textarea, button { font-size:16px; }
+  .nav-btn, .btn, .mini-item, .kpi-card, .class-toggle-row button, .view-toggle button { min-height:44px; }
+  .table-scroll { overflow-x:visible; }
+  table { width:100%; table-layout:fixed; }
+  th, td { word-break:break-word; padding:6px 4px; font-size:11px; white-space:normal; }
+  .row, .row-3 { grid-template-columns: 1fr; }
+  .grid-4, .grid-3, .grid-2 { grid-template-columns: 1fr; }
+  .hero-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="nav-backdrop" id="navBackdrop"></div>
+  <aside id="sidebarNav">
+    <div class="brand-wrap">
+      <div class="avatar-wrap">
+        <img class="avatar-img" id="avatarImg" src="" alt="Profil" />
+        <input type="file" id="avatarInput" accept="image/*" class="hidden" />
+        <div class="avatar-upload-btn" id="avatarUploadBtn">+</div>
+      </div>
+      <div><div class="brand"><span id="sidebarDate"></span></div></div>
+    </div>
+    <div class="sub" id="sidebarKW"></div>
+
+    <div class="section-label">Uebersicht</div>
+    <button class="nav-btn active" data-view="heute">Schulalltag heute</button>
+    <button class="nav-btn" data-view="klassen">Klassen</button>
+    <button class="nav-btn" data-view="kalender">Planungskalender</button>
+
+    <div class="section-label">Planung</div>
+    <button class="nav-btn" data-view="stoff">Stoffverteilungsplan</button>
+    <button class="nav-btn" data-view="stunde">Unterrichtsplanung</button>
+    <button class="nav-btn" data-view="reflexion">Reflexion</button>
+
+    <div class="section-label">Referendariat</div>
+    <button class="nav-btn" data-view="asuv">ASUV-Entwuerfe</button>
+
+    <div class="section-label">Material</div>
+    <button class="nav-btn" data-view="material">Materialbibliothek</button>
+
+    <div class="section-label">System</div>
+    <button class="nav-btn" data-view="settings">Einstellungen</button>
+
+    <div class="nav-footer"><div style="font-weight:700; margin-bottom:5px;">Designrichtung v4</div>Fruehlingsfarben, echter Planungskalender, ASUV-Button je Stunde, Ideenfeld mit KI-Vorschlag.</div>
+  </aside>
+
+  <main>
+    <div class="topbar">
+      <div class="topbar-head">
+        <button class="burger-btn" id="burgerBtn" aria-label="Menue oeffnen"><span></span></button>
+        <div class="topbar-titles">
+          <div class="title" id="pageTitle">Schulalltag heute</div>
+          <div class="page-sub" id="pageSub">Dein Tag auf einen Blick.</div>
+        </div>
+      </div>
+      <div class="hero-tag">Version 4 - Fruehling</div>
+    </div>
+
+    <section id="heute" class="view">
+      <div class="hero-grid">
+        <div class="hero-panel">
+          <h2>Guten Tag!</h2>
+          <p style="margin:0 0 16px; color:#dcfce7;">Klicke auf eine Stunde fuer die Detailansicht mit Klafki, Meyer-Ampel, Phasentabelle und ASUV-Option.</p>
+          <div class="mini-list" id="todayLessonList"></div>
+        </div>
+        <div class="card dark">
+          <h3>Woche im Blick</h3>
+          <div class="mini-list">
+            <div class="mini-item" data-view-target="reflexion"><span id="openReflectCount">0 Reflexionen offen</span><span class="badge warn">ansehen</span></div>
+            <div class="mini-item" data-view-target="material"><span>Material noch zu taggen</span><span class="badge warn">3 Dateien</span></div>
+            <div class="mini-item" data-view-target="kalender"><span>Naechste LUE im Blick</span><span class="badge bad">Kalender oeffnen</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid grid-4">
+        <div class="card kpi-card" data-view-target="klassen"><div class="muted">Angelegte Klassen</div><div class="kpi" id="kpiClasses">0</div><div class="small muted">aktuelles Schuljahr</div></div>
+        <div class="card kpi-card yellow" data-view-target="stunde"><div class="muted">Geplante Stunden</div><div class="kpi" id="kpiLessons">0</div><div class="small muted">mit Klafki, Meyer und Phasen</div></div>
+        <div class="card kpi-card orange" data-view-target="reflexion"><div class="muted">Reflexionen</div><div class="kpi" id="kpiReflect">0</div><div class="small muted">als Journal mit Ampel-Logik</div></div>
+        <div class="card kpi-card" data-view-target="material"><div class="muted">Materialien</div><div class="kpi" id="kpiMaterial">0</div><div class="small muted">getaggt &amp; referenziert</div></div>
+      </div>
+
+      <div class="card soft" style="margin-top:16px;">
+        <h3>Aufgaben &amp; To-dos</h3>
+        <div id="todoList"></div>
+        <div class="row" style="margin-top:9px;">
+          <div style="grid-column: span 2;"><input id="newTodoInput" placeholder="Neue Aufgabe eintragen und Enter druecken ..." /></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="klassen" class="view hidden">
+      <div class="card">
+        <h3>Klasse anlegen</h3>
+        <div class="row">
+          <div><label>Klassenname</label><input id="className" placeholder="z. B. 8a" /></div>
+          <div><label>Fach</label><select id="classSubject"><option>Deutsch</option><option>WTH</option></select></div>
+          <div><label>Klassenstufe</label><select id="classGrade"><option>7</option><option>8</option><option>9</option><option>10</option></select></div>
+          <div><label>Bildungsgang</label><select id="classTrack"><option>RS</option><option>HS</option><option>gemischt</option></select></div>
+        </div>
+        <div class="row">
+          <div><label>Wochenstunden</label><input id="classHours" type="number" min="1" max="10" value="2" /></div>
+          <div><label>Parallelgruppe</label><input id="classGroup" placeholder="z. B. Deutsch 8" /></div>
+        </div>
+        <div style="margin-top:12px;"><button class="btn" id="saveClass">Klasse speichern</button></div>
+      </div>
+      <div class="card" style="margin-top:14px;">
+        <h3>Klassenuebersicht</h3>
+        <div class="table-scroll"><table id="classTable"><thead><tr><th>Klasse</th><th>Fach</th><th>Stufe</th><th>Bildungsgang</th><th>Std.</th><th>Parallelgruppe</th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </section>
+
+    <section id="kalender" class="view hidden">
+      <div class="card">
+        <h3>Klassenfilter</h3>
+        <p class="muted small">Klassen an- und abwaehlen, um ihre Lernbereiche und Termine im Kalender ein- oder auszublenden.</p>
+        <div class="class-toggle-row" id="classToggleRow"></div>
+      </div>
+      <div class="card" style="margin-top:14px;">
+        <h3 style="margin-bottom:8px;">Lernbereiche im Ueberblick</h3>
+        <div id="classTimeline"></div>
+      </div>
+      <div class="card" style="margin-top:14px;">
+        <div class="cal-nav">
+          <button id="calPrevBtn">&larr;</button>
+          <strong id="calLabel" style="color:var(--primary-dark);">Monat</strong>
+          <button id="calNextBtn">&rarr;</button>
+          <div class="view-toggle">
+            <button id="calMonthBtn" class="active">Monat</button>
+            <button id="calWeekBtn">Woche</button>
+          </div>
+        </div>
+        <div class="cal-grid" id="calGrid"></div>
+        <div class="row" style="margin-top:14px;">
+          <div><label>Neuer Kalender-Eintrag: Titel</label><input id="calEntryTitle" placeholder="z. B. LUE Rechtschreibung" /></div>
+          <div><label>Datum</label><input id="calEntryDate" type="date" /></div>
+        </div>
+        <div class="row">
+          <div><label>Klasse</label><select id="calEntryClass"></select></div>
+          <div><label>Typ</label><select id="calEntryType"><option value="lu">Lernerfolgskontrolle</option><option value="exam">Klassenarbeit/Praesentation</option><option value="normal">Lernbereich/Sonstiges</option></select></div>
+        </div>
+        <div style="margin-top:10px;"><button class="btn" id="calSaveEntryBtn">Eintrag speichern</button></div>
+      </div>
+    </section>
+
+    <section id="stoff" class="view hidden">
+      <div class="card">
+        <h3>Lehrplanbasierter Stoffverteilungsplan</h3>
+        <div class="row">
+          <div><label>Fach</label><select id="planSubject"><option>Deutsch</option><option>WTH</option></select></div>
+          <div><label>Klassenstufe</label><select id="planGrade"><option>7</option><option>8</option><option>9</option><option>10</option></select></div>
+          <div><label>Bildungsgang (Deutsch)</label><select id="planTrack"><option>RS</option><option>HS</option></select></div>
+          <div><label>Wochenstunden</label><input id="planHours" type="number" min="1" max="10" value="2" /></div>
+        </div>
+        <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap;">
+          <button class="btn ai" id="generatePlan">✨ Vorschlag erzeugen</button>
+          <button class="btn secondary" id="savePlan">Plan speichern</button>
+        </div>
+        <div class="note-box">Hinweis: Vor jeder Lernerfolgskontrolle (LUE) automatisch eine Uebungsstunde einplanen - wird im Planvorschlag markiert.</div>
+        <div class="row-2" style="margin-top:12px;">
+          <div>
+            <label>Begleitmaterial hochladen (z. B. LaSuB-Material zu einer Lektuere)</label>
+            <div class="file-drop" id="planFileDrop">Datei hier ablegen oder klicken</div>
+            <div class="small muted" style="margin-top:6px;">Wird in der Materialbibliothek abgelegt, indiziert und als Grundlage fuer die KI-Planung dieses Lernbereichs genutzt.</div>
+          </div>
+          <div>
+            <label>Optionaler Link</label>
+            <input id="planMaterialLink" placeholder="z. B. Turory- oder Schulportal-Link" />
+            <div class="small muted" style="margin-top:6px;">Kann zusaetzlich zur Datei gepflegt werden.</div>
+          </div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:14px;">
+        <h3>Planvorschlag</h3>
+        <div class="table-scroll"><table id="planTable"><thead><tr><th>LB</th><th>Thema</th><th>Ustd.</th><th>ca. Wochen</th><th>Hinweis</th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </section>
+    <section id="stunde" class="view hidden">
+      <div class="ai-box">
+        <div class="txt"><strong>Ideenfeld:</strong> Trage lose Gedanken, Materialideen oder Impulse zur Stunde ein. Die KI erzeugt daraus einen vollstaendigen Vorschlag (Titel, Klafki, Meyer-Schwerpunkte, Phasen) - in der finalen Version via Claude-API, hier simuliert.</div>
+      </div>
+      <div class="card">
+        <h3>Ideenfeld</h3>
+        <textarea id="lessonIdeas" rows="3" placeholder="z. B. Balladen szenisch erschliessen, Hoerbeispiel als Einstieg, Gruppenarbeit mit Standbild ..."></textarea>
+        <div style="margin-top:8px;"><button class="btn ai" id="aiPlanBtn">✨ Stundenvorschlag aus Ideen generieren</button></div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Unterrichtsplanung</h3>
+        <div class="row">
+          <div><label>Titel/Thema</label><input id="lessonTitle" placeholder="z. B. Balladen szenisch erschliessen" /></div>
+          <div><label>Fach</label><select id="lessonSubject"><option>Deutsch</option><option>WTH</option></select></div>
+        </div>
+        <div class="row">
+          <div><label>Klassenstufe</label><select id="lessonGrade"><option>7</option><option>8</option><option>9</option><option>10</option></select></div>
+          <div><label>Stundentyp</label><select id="lessonType"> <option>Einfuehrung</option><option>Uebung</option><option>Uebungsstunde vor LUE</option><option>Sicherung</option><option>Lehrprobe</option></select></div>
+        </div>
+        <div class="row-2" style="margin-top:12px;">
+          <div>
+            <label>Direkt Material hochladen</label>
+            <div class="file-drop" id="lessonFileDrop">Datei hier ablegen oder klicken</div>
+            <div class="small muted" style="margin-top:6px;">Die Datei wird automatisch in der Materialbibliothek abgelegt, indiziert und mit dieser Stunde verknuepft.</div>
+          </div>
+          <div>
+            <label>Optionaler Link</label>
+            <input id="lessonMaterialLink" placeholder="z. B. Turory- oder Schulportal-Link" />
+            <div class="small muted" style="margin-top:6px;">Kann zusaetzlich zur Datei gepflegt werden.</div>
+          </div>
+        </div>
+        <div id="lueHint" class="note-box hidden">Diese Stunde dient als Uebungsstunde vor der Lernerfolgskontrolle - Fokus auf intelligentes Ueben (Meyer-Merkmal 8) und Fehleranalyse legen.</div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Phasentabelle</h3>
+        <div id="phases"></div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Lehrbuch-Referenz (BiBox)</h3>
+        <p class="muted small">Reine Referenz, kein Upload von Verlagsmaterial (aus Lizenzgruenden).</p>
+        <div class="row-3">
+          <div><label>Lehrwerk</label><input id="biboxWerk" placeholder="z. B. Deutschbuch 8" /></div>
+          <div><label>Kapitel/Seite</label><input id="biboxSeite" placeholder="z. B. Kapitel 4, S. 88-91" /></div>
+          <div><label>Notiz</label><input id="biboxNotiz" placeholder="z. B. Aufgabe 3 als Einstieg nutzen" /></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Abschliessende didaktisch-methodische Reflexion (Klafki &amp; Meyer)</h3>
+        <p class="muted small">Bewusst am Ende: Erst die Stunde konkret planen, dann pruefen, ob sie didaktisch und methodisch trägt.</p>
+        <div class="row">
+          <div><label>Gegenwartsbedeutung</label><div class="hint">Welche Bedeutung hat das Thema jetzt im Leben der Schueler:innen?</div><textarea id="klafki1"></textarea></div>
+          <div><label>Zukunftsbedeutung</label><div class="hint">Welche Bedeutung wird das Thema kuenftig haben?</div><textarea id="klafki2"></textarea></div>
+        </div>
+        <div class="row">
+          <div><label>Exemplarische Bedeutung</label><div class="hint">Wofuer steht der Inhalt exemplarisch?</div><textarea id="klafki3"></textarea></div>
+          <div><label>Zugaenglichkeit/Einstieg</label><div class="hint">Wie wird der Inhalt fuer die Lerngruppe zugaenglich?</div><textarea id="klafki4"></textarea></div>
+        </div>
+        <label>Struktur des Inhalts</label><div class="hint">Wie laesst sich der Inhalt sachlogisch gliedern?</div><textarea id="klafki5"></textarea>
+
+        <h3 style="margin-top:16px;">Die 10 Merkmale guten Unterrichts (Meyer) - retrospektiv geplant</h3>
+        <p class="muted small">Ampel je Merkmal: gruen = gut umsetzbar/geplant, gelb = teilweise, rot = noch offen/Risiko.</p>
+        <div class="meyer-grid" id="meyerPlanGrid"></div>
+        <div class="row" style="margin-top:12px;">
+          <div><label>Differenzierung (G/M/E) bedacht?</label><select id="diff"><option>ja</option><option>teilweise</option><option>nein</option></select></div>
+          <div><label>Selbststaendiges Lernen ermoeglicht?</label><select id="lernen"><option>ja</option><option>teilweise</option><option>nein</option></select></div>
+        </div>
+        <div style="margin-top:14px;"><button class="btn" id="saveLesson">Stunde speichern</button></div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Gespeicherte Stunden</h3>
+        <div class="table-scroll"><table id="lessonTable"><thead><tr><th>Thema</th><th>Fach</th><th>Stufe</th><th>Typ</th><th>Lehrwerk</th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </section>
+
+    <section id="reflexion" class="view hidden">
+      <div class="card">
+        <h3>Offene Reflexionen</h3>
+        <p class="muted small">Stunden ohne Reflexion. Manuell ueberspringen, falls keine Reflexion noetig ist (z. B. Vertretungsstunde).</p>
+        <div id="openReflectList"></div>
+      </div>
+      <div class="card" style="margin-top:14px;">
+        <h3>Reflexion erfassen</h3>
+        <label>Stunde</label><select id="reflectLesson"></select>
+        <h3 style="margin-top:14px;">Die 10 Merkmale guten Unterrichts - tatsaechlich beobachtet</h3>
+        <div class="meyer-grid" id="meyerReflectGrid"></div>
+        <label style="margin-top:12px;">Freitext</label>
+        <textarea id="reflectText" placeholder="Was ist gut gelaufen? Was wuerde ich beim naechsten Mal aendern?"></textarea>
+        <div style="margin-top:10px;"><button class="btn" id="saveReflect">Reflexion speichern</button></div>
+      </div>
+      <div class="card" style="margin-top:14px;">
+        <h3>Reflexionsjournal</h3>
+        <div class="table-scroll"><table id="reflectTable"><thead><tr><th>Stunde</th><th>Ampel-Uebersicht</th><th>Notiz</th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </section>
+    <section id="asuv" class="view hidden">
+      <div class="card dark">
+        <h3 id="asuvHeadline">ASUV-Entwurf</h3>
+        <p class="small" id="asuvSubline" style="color:#dcfce7;">Automatisch vorbefuellt aus Klafki, Meyer-Merkmalen und Phasentabelle der gewaehlten Stunde. Struktur &amp; Formalien nach LASUB-Handreichung (Standort Dresden).</p>
+      </div>
+      <div class="note-box" style="margin-top:14px;">
+        <strong>Formale Vorgaben (bindend):</strong> Arial, Schriftgroesse 11, Zeilenabstand 1,5, Blocksatz, ca. 15 Seiten Textkoerper (Kap. 1-4). Deckblatt, Inhaltsverzeichnis mit Seitenzahlen, normgerechte Quellenangaben, Materialanhang und unterschriebene Selbstaendigkeitserklaerung sind Pflicht.
+      </div>
+      <div class="card" style="margin-top:14px;">
+        <h3>1. Bedingungsanalyse</h3>
+        <label>1.1 Organisatorische und technische Rahmenbedingungen</label>
+        <textarea id="asuv_bedingung_org" placeholder="Stundenplanlage, Raum/Ausstattung, fachspezifische Vorschriften, unvermeidbare Stoerungen ..."></textarea>
+        <label>1.2 Lernvoraussetzungen der Schueler:innen</label>
+        <textarea id="asuv_bedingung_lern" placeholder="Leistungsstand, Arbeits-/Sozialverhalten, Sprachvermoegen, LRS/ADHS/Inklusion ..."></textarea>
+        <label>1.3 Einordnung der Stunde in den Lernbereich</label>
+        <textarea id="asuv_bedingung_einordnung" placeholder="Bezug zur Unterrichtseinheit, vorherige/folgende Stunde ..."></textarea>
+        <div class="hint">Hinweis: Nur Bedingungen auffuehren, die auch in Kapitel 4 wieder aufgegriffen werden.</div>
+      </div>
+      <div class="card" style="margin-top:14px;">
+        <h3>2. Lehr- und Lernziele der Stunde</h3>
+        <p class="hint">SMART formuliert, ueberpruefbar; empfohlen: Doppelverb-Variante ("Die SuS erarbeiten sich X, indem sie Y tun").</p>
+        <textarea id="asuv_ziele" rows="5" placeholder="Hauptziel und Teilziele, abgeleitet aus Lehrplan-Klassenstufenzielen ..."></textarea>
+      </div>
+      <div class="card" style="margin-top:14px;">
+        <h3>3. Sachanalyse</h3>
+        <p class="hint">Fachwissenschaftlicher Hintergrund, begrenzt auf die inhaltlichen Schwerpunkte der Stunde, mit Fachliteratur/Quellen.</p>
+        <textarea id="asuv_sachanalyse" rows="6" placeholder="Fachwissenschaftliche Darstellung des Lerngegenstands ..."></textarea>
+        <label>Quellen/Fachliteratur</label>
+        <textarea id="asuv_quellen" placeholder="Normgerechte Quellenangaben ..."></textarea>
+      </div>
+      <div class="card" style="margin-top:14px;">
+        <h3>4. Didaktische Analyse und methodische Entscheidungen</h3>
+        <label>Didaktische Analyse (Begruendung: warum dieser Inhalt, jetzt, in dieser Lerngruppe?)</label>
+        <textarea id="asuv_didaktisch" rows="5" placeholder="Legitimation durch Lehrplan, Lernvoraussetzungen, fachliche Prinzipien ..."></textarea>
+        <label>Didaktische Reduktion</label>
+        <textarea id="asuv_reduktion" placeholder="Reduktion des fachwissenschaftlichen Niveaus auf Unterrichtsniveau, begruendet am Lernzielniveau ..."></textarea>
+        <label>Methodische Entscheidungen (getrennt von didaktischer Analyse)</label>
+        <textarea id="asuv_methodisch" rows="5" placeholder="Bezug zur Lerngruppe und Rahmenbedingungen, kein Nacherzaehlen der Verlaufsplanung ..."></textarea>
+      </div>
+      <div class="card" style="margin-top:14px;">
+        <h3>5. Verlaufsplanung</h3>
+        <div id="asuvPhasesPreview"></div>
+        <div class="hint">Automatisch aus der Phasentabelle der Stunde uebernommen (zeitlich, inhaltlich, methodisch-didaktisch, Medien).</div>
+      </div>
+      <div class="card" style="margin-top:14px;">
+        <h3>6. Anhang</h3>
+        <div id="asuvBiboxPreview"></div>
+        <label>Weitere Materialhinweise</label>
+        <textarea id="asuv_anhang" placeholder="Tafelbild, Arbeitsblaetter, weitere Anlagen ..."></textarea>
+      </div>
+      <div class="card soft" style="margin-top:14px;">
+        <h3>Formalien-Checkliste (Selbstkontrolle vor Abgabe)</h3>
+        <div id="asuvChecklist"></div>
+      </div>
+      <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap;">
+        <button class="btn secondary" id="asuvBackBtn">&larr; Zurueck zur Stunde</button>
+        <button class="btn" id="asuvSaveBtn">ASUV speichern</button>
+        <button class="btn secondary" id="asuvExportBtn">Als Text exportieren</button>
+      </div>
+    </section>
+
+    <section id="material" class="view hidden">
+      <div class="card">
+        <h3>Material hochladen</h3>
+        <input type="file" id="fileInput" class="hidden" />
+        <div class="file-drop" id="fileDrop">Datei auswaehlen oder hierher ziehen (PDF, Bild, Dokument)</div>
+        <div class="row-3" style="margin-top:12px;">
+          <div><label>Fach</label><select id="matSubject"><option>Deutsch</option><option>WTH</option></select></div>
+          <div><label>Klassenstufe</label><select id="matGrade"><option>7</option><option>8</option><option>9</option><option>10</option></select></div>
+          <div><label>Lernbereich</label><input id="matLB" placeholder="z. B. LB4 Printmedien" /></div>
+        </div>
+        <div class="row">
+          <div><label>Status</label><select id="matStatus"><option>neu</option><option>in Bearbeitung</option><option>fertig</option></select></div>
+          <div><label>Freitext-Tag</label><input id="matTag" placeholder="z. B. Lehrprobe, Einstieg, Gruppenarbeit" /></div>
+        </div>
+        <div style="margin-top:12px;"><button class="btn" id="saveMaterial">Material speichern</button></div>
+      </div>
+      <div class="card" style="margin-top:14px;">
+        <h3>Materialbibliothek</h3>
+        <div class="file-list" id="materialList"></div>
+      </div>
+    </section>
+
+    <section id="settings" class="view hidden">
+      <div class="card">
+        <h3>Einstellungen</h3>
+        <p class="muted">Version 4 speichert Daten weiterhin im Browser. Fuer die Synology-Version folgen SQLite/API, echte Claude-API-Anbindung, NAS-Ordnerstruktur fuer Material, Tutory-Verweise, PDF-Export und Cloudflare-Betrieb.</p>
+        <button class="btn secondary" id="exportData">Daten als JSON exportieren</button>
+      </div>
+    </section>
+  </main>
+</div>
+<div id="modalRoot"></div>
+<script>
+const curriculum = {
+  "Deutsch": { 7:{RS:[["LB1","Gewusst wie",10],["LB2","Schritt fuer Schritt",25],["LB3","Clique und Aussenseiter",12],["LB4","Das Fremde",20],["LB5","Denken und Handeln",18],["LB6","Balladen",15]], HS:[["LB1","Gewusst wie",13],["LB2","Schritt fuer Schritt",25],["LB3","Clique und Aussenseiter",10],["LB4","Das Fremde",20],["LB5","Denken und Handeln",12],["LB6","Balladen",20]] },
+    8:{RS:[["LB1","Gewusst wie",15],["LB2","Schritt fuer Schritt",22],["LB3","Recht und Unrecht",23],["LB4","Printmedien",15],["LB5","Kriminalistisches Nr. 1",15],["LB6","Form im Aufbruch",10]], HS:[["LB1","Gewusst wie",15],["LB2","Schritt fuer Schritt",25],["LB3","Recht und Unrecht",15],["LB4","Printmedien",15],["LB5","Kriminalistisches Nr. 1",20],["LB6","Form im Aufbruch",10]] },
+    9:{RS:[["LB1","Gewusst wie",15],["LB2","Schritt fuer Schritt",15],["LB3","Bestehen und Scheitern",15],["LB4","Botschaften verstehen",15],["LB5","Vom Text zur Inszenierung",20],["LB6","Literatur in ihrer Zeit",20]], HS:[["LB1","Gewusst wie",16],["LB2","Schritt fuer Schritt",26],["LB3","Bestehen und Scheitern",18],["LB4","Botschaften verstehen",24],["LB5","Wege und Irrwege",16]] },
+    10:{RS:[["LB1","Gewusst wie",20],["LB2","Ich und die Welt",20],["LB3","Der Mensch in seiner Zeit",20],["LB4","Selbstverwirklichung und Verantwortung",20]] } },
+  "WTH": { 7:{mixed:[["LB1","Beduerfnisse und knappe Mittel",6],["LB2","Fertigung materieller Gueter",26],["LB3","Umgang mit Guetern und Geld",18]]},
+    8:{mixed:[["LB1","Berufsorientierung I",10],["LB2","Produktion von Guetern im Unternehmen",28],["LB3","Konsumtion und Produktion im privaten Haushalt",28],["LB4","Produzenten und Konsumenten am Markt",9]]},
+    9:{mixed:[["LB1","Berufsorientierung II",10],["LB2","Vertragsrechtliche Grundlagen",9],["LB3","Wohnen und Wohnumfeld",28],["LB4","Leben im privaten Haushalt",28]]} }
+};
+const meyerMerkmale = ["Klare Strukturierung","Hoher Anteil echter Lernzeit","Lernfoerderliches Klima","Inhaltliche Klarheit","Sinnstiftendes Kommunizieren","Methodenvielfalt","Individuelles Foerdern","Intelligentes Ueben","Transparente Leistungserwartungen","Vorbereitete Umgebung"];
+const timelineColors = ['#16a34a','#eab308','#f97316','#0ea5e9','#22c55e','#a855f7'];
+const calColors = { normal:'#16a34a', lu:'#ef4444', exam:'#f97316' };
+
+function isoWeekNumber(d) {
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = (date.getUTCDay() + 6) % 7;
+  date.setUTCDate(date.getUTCDate() - dayNum + 3);
+  const firstThursday = new Date(Date.UTC(date.getUTCFullYear(),0,4));
+  const diff = (date - firstThursday) / 86400000;
+  return 1 + Math.round((diff - 3 - firstThursday.getUTCDay()+6) / 7);
+}
+const now = new Date();
+document.getElementById('sidebarDate').textContent = now.toLocaleDateString('de-DE', { weekday:'long', day:'2-digit', month:'long' });
+document.getElementById('sidebarKW').textContent = 'Kalenderwoche ' + isoWeekNumber(now);
+
+let db = JSON.parse(localStorage.getItem('teacherDashboardV4')) || null;
+if (!db) {
+  db = {
+    avatar: '',
+    classes: [
+      {id:'cls-8a', name:'8a', subject:'Deutsch', grade:8, track:'RS', hours:3, group:'Deutsch 8', visibleInCalendar:true},
+      {id:'cls-9b', name:'9b', subject:'WTH', grade:9, track:'gemischt', hours:2, group:'WTH 9', visibleInCalendar:true},
+      {id:'cls-7c', name:'7c', subject:'Deutsch', grade:7, track:'HS', hours:3, group:'Deutsch 7', visibleInCalendar:true}
+    ],
+    plans: [],
+    lessons: [
+      { title:'Balladen szenisch erschliessen', subject:'Deutsch', grade:8, type:'Einfuehrung', time:'08:50', classId:'cls-8a',
+        klafki:['SuS kennen Balladen ggf. aus dem Musikunterricht.','Szenisches Verstehen als Grundkompetenz fuer Textinterpretation.','Ballade als exemplarische Form episch-lyrischer Mischform.','Einstieg ueber Hoerbeispiel und Standbild.','Handlung: Wendepunkt, Ausgang'],
+        meyerPlan:['gruen','gruen','gruen','gruen','gelb','gruen','gelb','gruen','gruen','gruen'],
+        diff:'ja', lernen:'teilweise',
+        bibox:{werk:'Deutschbuch 8', seite:'Kapitel 6, S. 140-143', notiz:'Hoerbeispiel als Einstieg nutzen'},
+        phases:[
+          {phase:'Einstieg', time:'10', social:'Plenum', method:'Hoerimpuls', material:'Audio, Beamer', teacher:'Spielt Ballade vor', student:'Hoeren, erste Eindruecke sammeln', gme:''},
+          {phase:'Erarbeitung', time:'20', social:'GA', method:'Standbild', material:'Textauszug', teacher:'Beobachtet, unterstuetzt', student:'Entwickeln Standbild zur Schluesselszene', gme:'E: zusaetzliche Regieanweisung'},
+          {phase:'Sicherung', time:'10', social:'Plenum', method:'Praesentation', material:'', teacher:'Moderiert', student:'Praesentieren, geben Feedback', gme:''},
+          {phase:'Abschluss', time:'5', social:'EA', method:'Kurzreflexion', material:'Zettel', teacher:'Sammelt ein', student:'Notieren Erkenntnis', gme:''}
+        ]},
+      { title:'Vertragsrechtliche Grundlagen', subject:'WTH', grade:9, type:'Erarbeitung', time:'10:35', classId:'cls-9b',
+        klafki:['','','','',''], meyerPlan:['gelb','gelb','gruen','gelb','rot','gelb','gelb','rot','gelb','gelb'],
+        diff:'teilweise', lernen:'nein', bibox:{werk:'', seite:'', notiz:''}, phases:[] },
+      { title:'Uebungsstunde vor LUE Rechtschreibung', subject:'Deutsch', grade:7, type:'Uebungsstunde vor LUE', time:'12:15', classId:'cls-7c',
+        klafki:['SuS ueben Rechtschreibstrategien praxisnah.','Grundlage fuer sichere schriftliche Kommunikation.','Rechtschreibstrategie als exemplarisches Werkzeug.','Einstieg ueber Fehleranalyse eigener Texte.','Regel - Beispiel - Uebung'],
+        meyerPlan:['gruen','gruen','gruen','gruen','gruen','gruen','gruen','gruen','gruen','gruen'],
+        diff:'ja', lernen:'ja', bibox:{werk:'Deutschbuch 7', seite:'Kapitel 2, S. 40-42', notiz:''},
+        phases:[
+          {phase:'Einstieg', time:'5', social:'Plenum', method:'Fehlerbeispiele', material:'Folie', teacher:'Zeigt Beispiele', student:'Erkennen Fehler', gme:''},
+          {phase:'Erarbeitung', time:'25', social:'EA', method:'Uebungsblatt', material:'Arbeitsblatt', teacher:'Differenziert betreuen', student:'Bearbeiten Uebungen', gme:'G: reduziertes AB, E: Zusatzaufgabe'},
+          {phase:'Sicherung', time:'10', social:'PA', method:'Kontrolle', material:'Loesungsblatt', teacher:'Begleitet Kontrolle', student:'Kontrollieren gegenseitig', gme:''},
+          {phase:'Abschluss', time:'5', social:'Plenum', method:'Ausblick', material:'', teacher:'Kuendigt LUE an', student:'Notieren offene Fragen', gme:''}
+        ]}
+    ],
+    reflections: [], skippedReflections: [],
+    materials: [
+      {name:'BalladenArbeitsblatt.pdf', subject:'Deutsch', grade:8, lb:'LB6 Balladen', status:'fertig', tag:'Einstieg'},
+      {name:'VertragsrechtFallbeispiele.docx', subject:'WTH', grade:9, lb:'LB2 Vertragsrecht', status:'in Bearbeitung', tag:''},
+      {name:'RechtschreibuebungLUE.pdf', subject:'Deutsch', grade:7, lb:'LB2', status:'neu', tag:'Uebungsstunde'}
+    ],
+    todos: [
+      {text:'Phasentabelle fuer WTH 9b vervollstaendigen', source:'system', done:false},
+      {text:'Uebungsstunde vor der naechsten LUE in Deutsch 8a fest einplanen', source:'system', done:false},
+      {text:'Kopien fuer Klasse 7c vorbereiten', source:'manuell', done:false}
+    ],
+    calendarEntries: [
+      {id:'cal-1', title:'LB6 Balladen', date: new Date().toISOString().slice(0,10), cls:'cls-8a', type:'normal', linkedLessonIndex:0},
+      {id:'cal-2', title:'LUE Rechtschreibung', date: new Date(Date.now()+7*86400000).toISOString().slice(0,10), cls:'cls-7c', type:'lu', linkedLessonIndex:2},
+      {id:'cal-3', title:'Klassenarbeit Vertragsrecht', date: new Date(Date.now()+14*86400000).toISOString().slice(0,10), cls:'cls-9b', type:'exam', linkedLessonIndex:1}
+    ],
+    asuvDrafts: {}
+  };
+}
+const save = () => localStorage.setItem('teacherDashboardV4', JSON.stringify(db));
+
+if (db.avatar) document.getElementById('avatarImg').src = db.avatar;
+document.getElementById('avatarUploadBtn').onclick = () => document.getElementById('avatarInput').click();
+document.getElementById('avatarInput').addEventListener('change', () => {
+  const f = document.getElementById('avatarInput').files[0];
+  if (!f) return;
+  const reader = new FileReader();
+  reader.onload = (e) => { db.avatar = e.target.result; document.getElementById('avatarImg').src = db.avatar; save(); };
+  reader.readAsDataURL(f);
+});
+const phaseNames = ['Einstieg','Erarbeitung','Sicherung','Abschluss'];
+const phaseWrap = document.getElementById('phases');
+phaseNames.forEach((p,i) => {
+  const div = document.createElement('div'); div.className = 'phase';
+  div.innerHTML = `<strong>${p}</strong>
+    <div class="row-4" style="margin-top:10px;">
+      <input placeholder="Zeit (Min.)" id="time${i}" />
+      <select id="social${i}"><option>EA</option><option>PA</option><option>GA</option><option>Plenum</option></select>
+      <input placeholder="Methode" id="method${i}" />
+      <input placeholder="Material/Raum" id="material${i}" />
+    </div>
+    <label>Lehrertaetigkeit</label><textarea id="teacher${i}"></textarea>
+    <label>Schuelertaetigkeit</label><textarea id="student${i}"></textarea>
+    <label>Differenzierung (G/M/E)</label><textarea id="gme${i}"></textarea>`;
+  phaseWrap.appendChild(div);
+});
+
+function buildMeyerGrid(containerId) {
+  const wrap = document.getElementById(containerId);
+  wrap.innerHTML = '';
+  meyerMerkmale.forEach((name, i) => {
+    const row = document.createElement('div'); row.className = 'meyer-row';
+    row.innerHTML = `<span class="name">${i+1}. ${name}</span>
+      <div class="ampel-select" data-idx="${i}">
+        <button type="button" class="ampel-btn g" data-val="gruen"></button>
+        <button type="button" class="ampel-btn y" data-val="gelb"></button>
+        <button type="button" class="ampel-btn r" data-val="rot"></button>
+      </div>`;
+    wrap.appendChild(row);
+  });
+  wrap.querySelectorAll('.ampel-select').forEach(sel => {
+    sel.querySelectorAll('.ampel-btn').forEach(btn => {
+      btn.onclick = () => { sel.querySelectorAll('.ampel-btn').forEach(b=>b.classList.remove('selected')); btn.classList.add('selected'); };
+    });
+  });
+}
+buildMeyerGrid('meyerPlanGrid'); buildMeyerGrid('meyerReflectGrid');
+
+function readMeyerGrid(containerId) {
+  const wrap = document.getElementById(containerId);
+  const result = [];
+  wrap.querySelectorAll('.ampel-select').forEach(sel => { const s = sel.querySelector('.ampel-btn.selected'); result.push(s ? s.dataset.val : ''); });
+  return result;
+}
+function summarizeAmpel(arr) { const g=arr.filter(v=>v==='gruen').length, y=arr.filter(v=>v==='gelb').length, r=arr.filter(v=>v==='rot').length; return `${g} gruen / ${y} gelb / ${r} rot`; }
+function ampelColor(v) { return v==='gruen' ? '#22c55e' : v==='gelb' ? '#eab308' : v==='rot' ? '#ef4444' : '#cbd5e1'; }
+
+document.getElementById('lessonType').addEventListener('change', (e) => {
+  document.getElementById('lueHint').classList.toggle('hidden', e.target.value !== 'Uebungsstunde vor LUE');
+});
+
+document.getElementById('aiPlanBtn').onclick = () => {
+  const ideas = document.getElementById('lessonIdeas').value.trim();
+  if (!lessonTitle.value) lessonTitle.value = ideas ? ideas.split(/[,.]/)[0].trim() : 'Kurzgeschichten analysieren (KI-Vorschlag)';
+  klafki1.value = klafki1.value || 'SuS begegnen dem Thema in Alltagsmedien und eigenen Erfahrungen.';
+  klafki2.value = klafki2.value || 'Kompetenz als Grundlage fuer weiterfuehrende Textarbeit/Anwendung.';
+  klafki3.value = klafki3.value || 'Der Inhalt steht exemplarisch fuer eine uebertragbare Struktur/Methode.';
+  klafki4.value = klafki4.value || 'Einstieg ueber einen Impuls aus dem Ideenfeld.';
+  klafki5.value = klafki5.value || 'Ausgangssituation - Bearbeitung - Ergebnis.';
+  const grid = document.querySelectorAll('#meyerPlanGrid .ampel-select');
+  const suggestion = ['gruen','gruen','gruen','gruen','gelb','gruen','gelb','gruen','gruen','gruen'];
+  grid.forEach((sel,i) => { sel.querySelectorAll('.ampel-btn').forEach(b=>b.classList.remove('selected')); const t = sel.querySelector(`.ampel-btn[data-val="${suggestion[i]}"]`); if(t) t.classList.add('selected'); });
+  alert('KI-Vorschlag aus dem Ideenfeld eingefuegt (simuliert). In der finalen Version generiert die Claude-API Titel, Klafki, Meyer-Schwerpunkte und Phasenvorschlag direkt aus dem Ideenfeld.');
+};
+function renderTodayList() {
+  const list = document.getElementById('todayLessonList');
+  list.innerHTML = '';
+  db.lessons.forEach((l, idx) => {
+    let badge = '<span class="badge ok">geplant</span>';
+    if (!l.phases || l.phases.length === 0 || l.phases.every(p=>!p.teacher)) badge = '<span class="badge warn">Phasen offen</span>';
+    const div = document.createElement('div'); div.className = 'mini-item';
+    div.innerHTML = `<span class="time">${l.time||'-'}</span><span>${l.subject} - ${l.grade}. Kl. - ${l.title}</span>${badge}`;
+    div.onclick = () => openLessonModal(idx);
+    list.appendChild(div);
+  });
+}
+
+function openLessonModal(idx) {
+  const l = db.lessons[idx]; if (!l) return;
+  const meyerChips = (l.meyerPlan||[]).map((v,i)=>`<span class="mini-meyer-chip" style="background:${ampelColor(v)}">${i+1}. ${meyerMerkmale[i]}</span>`).join(' ');
+  const phasesHtml = (l.phases||[]).map(p=>`<div class="phase"><strong>${p.phase}</strong> (${p.time||'-'} Min., ${p.social||'-'})<br><span class="small muted">Methode: ${p.method||'-'} - Material: ${p.material||'-'}</span><br><span class="small">L: ${p.teacher||'-'}</span><br><span class="small">S: ${p.student||'-'}</span></div>`).join('') || '<p class="muted small">Noch keine Phasen erfasst.</p>';
+  const klafkiLabels = ['Gegenwartsbedeutung','Zukunftsbedeutung','Exemplarische Bedeutung','Zugaenglichkeit/Einstieg','Struktur des Inhalts'];
+  const klafkiHtml = (l.klafki||[]).map((v,i)=> v ? `<p class="small"><strong>${klafkiLabels[i]}:</strong> ${v}</p>` : '').join('');
+  const biboxHtml = l.bibox && l.bibox.werk ? `<p class="small"><strong>Lehrwerk:</strong> ${l.bibox.werk} - ${l.bibox.seite||''} ${l.bibox.notiz ? '- '+l.bibox.notiz : ''}</p>` : '<p class="muted small">Keine Lehrbuch-Referenz hinterlegt.</p>';
+  document.getElementById('modalRoot').innerHTML = `
+    <div class="modal-overlay" id="modalOverlay">
+      <div class="modal-box">
+        <button class="modal-close" id="modalCloseBtn">Schliessen</button>
+        <button class="btn small ai" id="modalAsuvBtn" style="float:right; margin-right:10px;">✨ ASUV erstellen</button>
+        <button class="btn small secondary" id="modalDetailBtn" style="float:right; margin-right:10px;">Zur Detailseite</button>
+        <h2>${l.title}</h2>
+        <p class="muted small">${l.subject} - Klasse ${l.grade} - ${l.type} ${l.time ? '- '+l.time+' Uhr' : ''}</p>
+        <div class="modal-section"><h3>Klafki</h3>${klafkiHtml || '<p class="muted small">Noch keine Angaben.</p>'}</div>
+        <div class="modal-section"><h3>Meyer-Merkmale (geplant)</h3>${meyerChips || '<p class="muted small">Noch keine Angaben.</p>'}</div>
+        <div class="modal-section"><h3>Phasentabelle</h3>${phasesHtml}</div>
+        <div class="modal-section"><h3>Lehrbuch-Referenz</h3>${biboxHtml}</div>
+      </div>
+    </div>`;
+  document.getElementById('modalOverlay').onclick = (e) => { if (e.target.id==='modalOverlay') closeModal(); };
+  document.getElementById('modalCloseBtn').onclick = closeModal;
+  document.getElementById('modalAsuvBtn').onclick = () => { closeModal(); openAsuvView(idx); };
+  document.getElementById('modalDetailBtn').onclick = () => { closeModal(); goToLessonDetail(idx); };
+}
+function loadLessonIntoForm(idx) {
+  const l = db.lessons[idx]; if (!l) return;
+  document.getElementById('lessonIdeas').value = '';
+  document.getElementById('lessonTitle').value = l.title || '';
+  document.getElementById('lessonSubject').value = l.subject || 'Deutsch';
+  document.getElementById('lessonGrade').value = String(l.grade || 7);
+  document.getElementById('lessonType').value = l.type || 'Einfuehrung';
+  document.getElementById('lueHint').classList.toggle('hidden', l.type !== 'Uebungsstunde vor LUE');
+  const k = l.klafki || [];
+  document.getElementById('klafki1').value = k[0] || '';
+  document.getElementById('klafki2').value = k[1] || '';
+  document.getElementById('klafki3').value = k[2] || '';
+  document.getElementById('klafki4').value = k[3] || '';
+  document.getElementById('klafki5').value = k[4] || '';
+  document.getElementById('biboxWerk').value = (l.bibox && l.bibox.werk) || '';
+  document.getElementById('biboxSeite').value = (l.bibox && l.bibox.seite) || '';
+  document.getElementById('biboxNotiz').value = (l.bibox && l.bibox.notiz) || '';
+  document.getElementById('diff').value = l.diff || 'ja';
+  document.getElementById('lernen').value = l.lernen || 'ja';
+  const phases = l.phases || [];
+  phaseNames.forEach((p, i) => {
+    const ph = phases[i] || {};
+    document.getElementById('time'+i).value = ph.time || '';
+    document.getElementById('social'+i).value = ph.social || 'EA';
+    document.getElementById('method'+i).value = ph.method || '';
+    document.getElementById('material'+i).value = ph.material || '';
+    document.getElementById('teacher'+i).value = ph.teacher || '';
+    document.getElementById('student'+i).value = ph.student || '';
+    document.getElementById('gme'+i).value = ph.gme || '';
+  });
+  const grid = document.querySelectorAll('#meyerPlanGrid .ampel-select');
+  const meyerPlan = l.meyerPlan || [];
+  grid.forEach((sel, i) => {
+    sel.querySelectorAll('.ampel-btn').forEach(b=>b.classList.remove('selected'));
+    if (meyerPlan[i]) { const t = sel.querySelector(`.ampel-btn[data-val="${meyerPlan[i]}"]`); if (t) t.classList.add('selected'); }
+  });
+}
+function goToLessonDetail(idx) {
+  loadLessonIntoForm(idx);
+  document.querySelector('.nav-btn[data-view="stunde"]').click();
+  document.getElementById('stunde').scrollIntoView({behavior:'smooth', block:'start'});
+}
+function closeModal() { document.getElementById('modalRoot').innerHTML=''; }
+
+const asuvChecklistItems = [
+  ['Bedingungsanalyse', 'Habe ich relevante organisatorisch-technische Bedingungen dargestellt?'],
+  ['Bedingungsanalyse', 'Habe ich die Lernvoraussetzungen der Schueler:innen beschrieben?'],
+  ['Ziele', 'Habe ich Haupt- und Teilziele formuliert?'],
+  ['Ziele', 'Sind meine Lernziele ueberpruefbar?'],
+  ['Ziele', 'Passen meine Lernziele zu den geplanten Unterrichtsphasen?'],
+  ['Sachanalyse', 'Habe ich den Lerngegenstand fachwissenschaftlich dargestellt?'],
+  ['Sachanalyse', 'Habe ich Fachliteratur einbezogen?'],
+  ['Sachanalyse', 'Stimmen fachwissenschaftliche Darstellung und Stundenthema ueberein?'],
+  ['Didaktische Analyse', 'Habe ich die Wahl des Lerngegenstandes begruendet?'],
+  ['Didaktische Analyse', 'Gibt es eine Legitimation durch den Lehrplan?'],
+  ['Didaktische Analyse', 'Habe ich Hinweise zur didaktischen Reduktion gegeben und begruendet?'],
+  ['Methodische Ueberlegungen', 'Sind meine Methoden geeignet, um meine Lernziele zu erreichen?'],
+  ['Methodische Ueberlegungen', 'Habe ich meine Entscheidungen fuer methodische Schwerpunkte begruendet?'],
+  ['Verlaufsplanung', 'Zeitlicher, inhaltlicher und methodisch-didaktischer Verlauf stimmig?'],
+  ['Formalien', 'Deckblatt, Inhaltsverzeichnis mit Seitenzahlen vorhanden?'],
+  ['Formalien', 'Quellenangaben normgerecht, Materialanhang vollstaendig?'],
+  ['Formalien', 'Schriftgroesse 11, Arial, Zeilenabstand 1,5, Blocksatz eingehalten?'],
+  ['Formalien', 'Unterschriebene Selbstaendigkeitserklaerung beigelegt?']
+];
+
+function openAsuvView(idx) {
+  const l = db.lessons[idx]; if (!l) return;
+  document.querySelector('[data-view="asuv"]').click();
+  document.getElementById('asuvHeadline').textContent = 'ASUV-Entwurf: ' + l.title;
+  document.getElementById('asuvSubline').textContent = l.subject + ' - Klasse ' + l.grade + ' - ' + l.type + (l.time ? ' - ' + l.time + ' Uhr' : '') + '. Automatisch vorbefuellt, bitte pruefen und ergaenzen.';
+  const key = 'asuv_' + idx;
+  const existing = (db.asuvDrafts && db.asuvDrafts[key]) || {};
+  const klafki = l.klafki || [];
+  document.getElementById('asuv_bedingung_org').value = existing.bedingungOrg || '';
+  document.getElementById('asuv_bedingung_lern').value = existing.bedingungLern || '';
+  document.getElementById('asuv_bedingung_einordnung').value = existing.bedingungEinordnung || (l.type ? 'Diese Stunde (' + l.type + ') ist Teil der laufenden Unterrichtseinheit in ' + l.subject + ', Klasse ' + l.grade + '.' : '');
+  document.getElementById('asuv_ziele').value = existing.ziele || (klafki[0] ? 'Ableitung aus Klafki-Analyse: ' + klafki.filter(Boolean).join(' ') : '');
+  document.getElementById('asuv_sachanalyse').value = existing.sachanalyse || '';
+  document.getElementById('asuv_quellen').value = existing.quellen || '';
+  document.getElementById('asuv_didaktisch').value = existing.didaktisch || (klafki[2] ? 'Exemplarische Bedeutung: ' + klafki[2] : '');
+  document.getElementById('asuv_reduktion').value = existing.reduktion || '';
+  document.getElementById('asuv_methodisch').value = existing.methodisch || '';
+  document.getElementById('asuv_anhang').value = existing.anhang || '';
+  const phasesHtml = (l.phases||[]).map(p=>'<div class="phase"><strong>'+p.phase+'</strong> ('+(p.time||'-')+' Min., '+(p.social||'-')+')<br><span class="small muted">Methode: '+(p.method||'-')+' - Material: '+(p.material||'-')+'</span><br><span class="small">L: '+(p.teacher||'-')+'</span><br><span class="small">S: '+(p.student||'-')+'</span></div>').join('') || '<p class="muted small">Noch keine Phasen erfasst - bitte zuerst in der Unterrichtsplanung eintragen.</p>';
+  document.getElementById('asuvPhasesPreview').innerHTML = phasesHtml;
+  const biboxHtml = l.bibox && l.bibox.werk ? '<p class="small"><strong>Lehrwerk:</strong> '+l.bibox.werk+' - '+(l.bibox.seite||'')+(l.bibox.notiz ? ' - '+l.bibox.notiz : '')+'</p>' : '<p class="muted small">Keine Lehrbuch-Referenz hinterlegt.</p>';
+  document.getElementById('asuvBiboxPreview').innerHTML = biboxHtml;
+  const checklistWrap = document.getElementById('asuvChecklist');
+  checklistWrap.innerHTML = '';
+  const savedChecks = existing.checks || {};
+  asuvChecklistItems.forEach((item, i) => {
+    const div = document.createElement('div'); div.className = 'todo-item';
+    const checked = savedChecks[i] ? 'checked' : '';
+    div.innerHTML = '<input type="checkbox" data-check-idx="'+i+'" '+checked+'><span class="todo-src system">'+item[0]+'</span><span style="flex:1">'+item[1]+'</span>';
+    checklistWrap.appendChild(div);
+  });
+  document.getElementById('asuvBackBtn').onclick = () => { document.querySelector('[data-view="heute"]').click(); };
+  document.getElementById('asuvSaveBtn').onclick = () => {
+    if (!db.asuvDrafts) db.asuvDrafts = {};
+    const checks = {};
+    checklistWrap.querySelectorAll('input[type=checkbox]').forEach(cb => { checks[cb.dataset.checkIdx] = cb.checked; });
+    db.asuvDrafts[key] = {
+      bedingungOrg: document.getElementById('asuv_bedingung_org').value,
+      bedingungLern: document.getElementById('asuv_bedingung_lern').value,
+      bedingungEinordnung: document.getElementById('asuv_bedingung_einordnung').value,
+      ziele: document.getElementById('asuv_ziele').value,
+      sachanalyse: document.getElementById('asuv_sachanalyse').value,
+      quellen: document.getElementById('asuv_quellen').value,
+      didaktisch: document.getElementById('asuv_didaktisch').value,
+      reduktion: document.getElementById('asuv_reduktion').value,
+      methodisch: document.getElementById('asuv_methodisch').value,
+      anhang: document.getElementById('asuv_anhang').value,
+      checks: checks
+    };
+    save(); alert('ASUV-Entwurf gespeichert.');
+  };
+  document.getElementById('asuvExportBtn').onclick = () => {
+    const phasesText = (l.phases||[]).map(p=>'- ' + p.phase + ' (' + (p.time||'-') + ' Min., ' + (p.social||'-') + '): Methode ' + (p.method||'-') + ', Material ' + (p.material||'-') + ' | L: ' + (p.teacher||'-') + ' | S: ' + (p.student||'-')).join('\n');
+    const text = 'ASUV-ENTWURF: ' + l.title + '\n' + l.subject + ' - Klasse ' + l.grade + ' - ' + l.type + '\n\n' +
+      '1. BEDINGUNGSANALYSE\n1.1 Organisatorisch-technisch:\n' + document.getElementById('asuv_bedingung_org').value + '\n\n1.2 Lernvoraussetzungen:\n' + document.getElementById('asuv_bedingung_lern').value + '\n\n1.3 Einordnung in den Lernbereich:\n' + document.getElementById('asuv_bedingung_einordnung').value + '\n\n' +
+      '2. LEHR- UND LERNZIELE\n' + document.getElementById('asuv_ziele').value + '\n\n' +
+      '3. SACHANALYSE\n' + document.getElementById('asuv_sachanalyse').value + '\n\nQuellen:\n' + document.getElementById('asuv_quellen').value + '\n\n' +
+      '4. DIDAKTISCHE ANALYSE UND METHODISCHE ENTSCHEIDUNGEN\nDidaktische Analyse:\n' + document.getElementById('asuv_didaktisch').value + '\n\nDidaktische Reduktion:\n' + document.getElementById('asuv_reduktion').value + '\n\nMethodische Entscheidungen:\n' + document.getElementById('asuv_methodisch').value + '\n\n' +
+      '5. VERLAUFSPLANUNG\n' + phasesText + '\n\n' +
+      '6. ANHANG\n' + biboxHtml.replace(/<[^>]+>/g,'') + '\n' + document.getElementById('asuv_anhang').value + '\n';
+    const blob = new Blob([text], {type:'text/plain'});
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'ASUV_' + l.title.replace(/[^a-z0-9]+/gi,'_') + '.txt'; a.click();
+  };
+}
+function renderOpenReflections() {
+  const wrap = document.getElementById('openReflectList');
+  wrap.innerHTML = '';
+  let openCount = 0;
+  db.lessons.forEach((l, idx) => {
+    const hasReflection = db.reflections.some(r => r.lessonIdx === idx);
+    const isSkipped = db.skippedReflections.includes(idx);
+    if (!hasReflection && !isSkipped) {
+      openCount++;
+      const row = document.createElement('div'); row.className = 'open-reflect-row';
+      row.innerHTML = `<span>${l.subject} Kl. ${l.grade} - ${l.title}</span><span><button class="btn small" data-act="reflect" data-idx="${idx}">Reflektieren</button> <button class="btn small danger" data-act="skip" data-idx="${idx}">Ueberspringen</button></span>`;
+      wrap.appendChild(row);
+    }
+  });
+  if (openCount === 0) wrap.innerHTML = '<p class="muted small">Keine offenen Reflexionen</p>';
+  document.getElementById('openReflectCount').textContent = openCount + (openCount===1?' Reflexion offen':' Reflexionen offen');
+  wrap.querySelectorAll('[data-act=reflect]').forEach(btn => { btn.onclick = () => { document.getElementById('reflectLesson').value = btn.dataset.idx; document.querySelector('[data-view="reflexion"]').click(); document.getElementById('reflectLesson').scrollIntoView({behavior:'smooth', block:'center'}); }; });
+  wrap.querySelectorAll('[data-act=skip]').forEach(btn => { btn.onclick = () => { db.skippedReflections.push(Number(btn.dataset.idx)); save(); renderAll(); }; });
+}
+
+function renderClassTimeline() {
+  const toggleRow = document.getElementById('classToggleRow');
+  toggleRow.innerHTML = '';
+  db.classes.forEach((c) => {
+    const label = document.createElement('label'); label.className = 'class-toggle';
+    const checked = c.visibleInCalendar !== false;
+    label.innerHTML = `<input type="checkbox" data-id="${c.id}" ${checked?'checked':''}/> ${c.name} (${c.subject})`;
+    toggleRow.appendChild(label);
+  });
+  toggleRow.querySelectorAll('input').forEach(inp => {
+    inp.onchange = () => {
+      const cls = db.classes.find(c => c.id === inp.dataset.id);
+      if (cls) cls.visibleInCalendar = inp.checked;
+      save(); renderClassTimeline(); renderCalendar();
+    };
+  });
+  const timeline = document.getElementById('classTimeline');
+  timeline.innerHTML = '';
+  db.classes.forEach((c) => {
+    if (c.visibleInCalendar === false) return;
+    const track = (c.subject === 'Deutsch' ? (curriculum.Deutsch[c.grade] && curriculum.Deutsch[c.grade][c.track]) : (curriculum.WTH[c.grade] && curriculum.WTH[c.grade].mixed)) || [];
+    const entries = track;
+    const row = document.createElement('div'); row.className = 'timeline-row';
+    const blocksHtml = entries.map((e,j)=>`<div class="timeline-block" style="background:${timelineColors[j % timelineColors.length]}">${e[0]} ${e[1]} (${e[2]} Std.)</div>`).join('');
+    row.innerHTML = `<div class="timeline-label">${c.name} (${c.subject})</div><div class="timeline-track">${blocksHtml || '<span class="muted small">Kein Plan vorhanden</span>'}</div>`;
+    timeline.appendChild(row);
+  });
+}
+
+function renderTodos() {
+  const list = document.getElementById('todoList');
+  list.innerHTML = '';
+  db.todos.forEach((t, i) => {
+    const div = document.createElement('div'); div.className = 'todo-item' + (t.done ? ' done' : '');
+    div.innerHTML = `<input type="checkbox" ${t.done?'checked':''} data-idx="${i}"/><span class="todo-src ${t.source}">${t.source}</span><span style="flex:1">${t.text}</span>`;
+    div.querySelector('input').onchange = (e) => { db.todos[i].done = e.target.checked; save(); renderTodos(); };
+    list.appendChild(div);
+  });
+}
+document.getElementById('newTodoInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && e.target.value.trim()) { db.todos.push({text: e.target.value.trim(), source:'manuell', done:false}); e.target.value=''; save(); renderTodos(); }
+});
+
+let calViewMode = 'month';
+let calCursor = new Date();
+function visibleClassIds() { return db.classes.filter(c => c.visibleInCalendar !== false).map(c => c.id); }
+function renderCalendarClassOptions() {
+  const sel = document.getElementById('calEntryClass');
+  sel.innerHTML = db.classes.map(c => `<option value="${c.id}">${c.name} (${c.subject})</option>`).join('');
+}
+function visibleEntriesForDate(dStr) {
+  const visIds = visibleClassIds();
+  return db.calendarEntries.filter(e => e.date === dStr && visIds.includes(e.cls));
+}
+function renderCalendar() {
+  const grid = document.getElementById('calGrid');
+  renderClassTimeline();
+  const label = document.getElementById('calLabel');
+  grid.innerHTML = '';
+  const dayHeaders = ['Mo','Di','Mi','Do','Fr','Sa','So'];
+  dayHeaders.forEach(d => { const h = document.createElement('div'); h.className='cal-head'; h.textContent=d; grid.appendChild(h); });
+  const todayStr = new Date().toISOString().slice(0,10);
+  if (calViewMode === 'month') {
+    const year = calCursor.getFullYear(), month = calCursor.getMonth();
+    label.textContent = calCursor.toLocaleDateString('de-DE', {month:'long', year:'numeric'});
+    const firstDay = new Date(year, month, 1);
+    const startOffset = (firstDay.getDay() + 6) % 7;
+    const startDate = new Date(year, month, 1 - startOffset);
+    for (let i=0; i<42; i++) {
+      const d = new Date(startDate); d.setDate(startDate.getDate()+i);
+      const dStr = d.toISOString().slice(0,10);
+      const cell = document.createElement('div'); cell.className = 'cal-cell' + (d.getMonth()!==month ? ' otherMonth' : '') + (dStr===todayStr ? ' today' : '');
+      const entries = visibleEntriesForDate(dStr);
+      cell.innerHTML = `<div class="cal-daynum">${d.getDate()}</div>` + entries.map(e=>`<div class="cal-entry ${e.type}" data-cal-idx="${db.calendarEntries.indexOf(e)}">${e.title}</div>`).join('');
+      grid.appendChild(cell);
+    }
+  } else {
+    const d0 = new Date(calCursor); const offset = (d0.getDay()+6)%7; d0.setDate(d0.getDate()-offset);
+    label.textContent = 'Woche ' + isoWeekNumber(d0) + ', ' + d0.toLocaleDateString('de-DE',{year:'numeric'});
+    for (let i=0;i<7;i++) {
+      const d = new Date(d0); d.setDate(d0.getDate()+i);
+      const dStr = d.toISOString().slice(0,10);
+      const cell = document.createElement('div'); cell.className = 'cal-cell' + (dStr===todayStr ? ' today' : '');
+      const entries = visibleEntriesForDate(dStr);
+      cell.innerHTML = `<div class="cal-daynum">${d.toLocaleDateString('de-DE',{weekday:'short'})} ${d.getDate()}</div>` + entries.map(e=>`<div class="cal-entry ${e.type}" data-cal-idx="${db.calendarEntries.indexOf(e)}">${e.title}</div>`).join('');
+      grid.appendChild(cell);
+    }
+  }
+  grid.querySelectorAll('[data-cal-idx]').forEach(el => {
+    el.onclick = () => {
+      const entry = db.calendarEntries[Number(el.dataset.calIdx)];
+      if (entry && typeof entry.linkedLessonIndex === 'number' && db.lessons[entry.linkedLessonIndex]) {
+        openLessonModal(entry.linkedLessonIndex);
+      }
+    };
+  });
+}
+document.getElementById('calPrevBtn').onclick = () => { calCursor.setDate(calCursor.getDate() - (calViewMode==='week'?7:30)); renderCalendar(); };
+document.getElementById('calNextBtn').onclick = () => { calCursor.setDate(calCursor.getDate() + (calViewMode==='week'?7:30)); renderCalendar(); };
+function setCalViewMode(mode) {
+  calViewMode = mode;
+  ['calMonthBtn','calWeekBtn'].forEach(id => document.getElementById(id).classList.remove('active'));
+  document.getElementById(mode==='month'?'calMonthBtn':'calWeekBtn').classList.add('active');
+  renderCalendar();
+}
+document.getElementById('calMonthBtn').onclick = () => setCalViewMode('month');
+document.getElementById('calWeekBtn').onclick = () => setCalViewMode('week');
+document.getElementById('calSaveEntryBtn').onclick = () => {
+  const title = document.getElementById('calEntryTitle').value.trim();
+  const date = document.getElementById('calEntryDate').value;
+  if (!title || !date) { alert('Bitte Titel und Datum angeben.'); return; }
+  db.calendarEntries.push({ id:'cal-'+Date.now(), title, date, cls: document.getElementById('calEntryClass').value, type: document.getElementById('calEntryType').value });
+  save(); document.getElementById('calEntryTitle').value=''; renderCalendar();
+};
+function renderAll() {
+  document.getElementById('kpiClasses').textContent = db.classes.length;
+  document.getElementById('kpiLessons').textContent = db.lessons.length;
+  document.getElementById('kpiReflect').textContent = db.reflections.length;
+  document.getElementById('kpiMaterial').textContent = db.materials.length;
+
+  const classBody = document.querySelector('#classTable tbody');
+  classBody.innerHTML = '';
+  db.classes.forEach(c => { classBody.innerHTML += `<tr><td>${c.name}</td><td>${c.subject}</td><td>${c.grade}</td><td>${c.track}</td><td>${c.hours}</td><td>${c.group}</td></tr>`; });
+
+  const lessonBody = document.querySelector('#lessonTable tbody');
+  lessonBody.innerHTML = '';
+  db.lessons.forEach(l => { lessonBody.innerHTML += `<tr><td>${l.title}</td><td>${l.subject}</td><td>${l.grade}</td><td>${l.type}</td><td>${l.bibox && l.bibox.werk ? l.bibox.werk+' '+l.bibox.seite : '-'}</td></tr>`; });
+
+  const reflectSelect = document.getElementById('reflectLesson');
+  reflectSelect.innerHTML = db.lessons.map((l,i)=>`<option value="${i}">${l.title} (${l.subject} ${l.grade})</option>`).join('');
+
+  const reflectBody = document.querySelector('#reflectTable tbody');
+  reflectBody.innerHTML = '';
+  db.reflections.forEach(r => { reflectBody.innerHTML += `<tr><td>${r.lesson}</td><td>${r.ampelSummary}</td><td>${r.text}</td></tr>`; });
+
+  const matList = document.getElementById('materialList');
+  matList.innerHTML = '';
+  db.materials.forEach(m => {
+    matList.innerHTML += `<div class="file-chip"><span>${m.name}</span><span class="tag-row"><span class="tag">${m.subject}</span><span class="tag">Kl. ${m.grade}</span><span class="tag">${m.lb}</span> <span class="tag status-${m.status.replace(' ','')}">${m.status}</span>${m.tag ? `<span class="tag">${m.tag}</span>` : ''}</span></div>`;
+  });
+
+  renderTodayList(); renderOpenReflections(); renderClassTimeline(); renderTodos(); renderCalendarClassOptions(); renderCalendar();
+}
+
+document.querySelectorAll('.nav-btn').forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    const view = btn.dataset.view;
+    document.querySelectorAll('.view').forEach(v=>v.classList.add('hidden'));
+    document.getElementById(view).classList.remove('hidden');
+    const titles = {heute:['Schulalltag heute','Dein Tag auf einen Blick.'],
+      klassen:['Klassen','Klassen und Parallelgruppen anlegen und verwalten.'],
+      kalender:['Planungskalender','Monat, Woche oder Lernbereichs-Zeitleiste - inkl. Klassenfilter, LUEs und Terminen.'],
+      stoff:['Stoffverteilungsplan','Lehrplanbasierte Jahresplanung erzeugen.'],
+      stunde:['Unterrichtsplanung','Ideenfeld, Phasentabelle und abschliessende Klafki-/Meyer-Reflexion.'],
+      reflexion:['Reflexion','Offene Reflexionen ansehen, ueberspringen oder erfassen.'],
+      asuv:['ASUV-Entwuerfe','Ausfuehrlicher schriftlicher Unterrichtsentwurf je Stunde - LASUB-Struktur.'],
+      material:['Materialbibliothek','Material hochladen, taggen und wiederfinden.'],
+      settings:['Einstellungen','Datenverwaltung und Export.']};
+    document.getElementById('pageTitle').textContent = titles[view][0];
+    document.getElementById('pageSub').textContent = titles[view][1];
+  };
+});
+document.querySelectorAll('[data-view-target]').forEach(el => { el.onclick = () => document.querySelector(`.nav-btn[data-view="${el.dataset.viewTarget}"]`).click(); });
+
+const sidebarNav = document.getElementById('sidebarNav');
+const navBackdrop = document.getElementById('navBackdrop');
+const burgerBtn = document.getElementById('burgerBtn');
+function closeMobileNav() { sidebarNav.classList.remove('open'); navBackdrop.classList.remove('open'); }
+function openMobileNav() { sidebarNav.classList.add('open'); navBackdrop.classList.add('open'); }
+burgerBtn.onclick = () => { sidebarNav.classList.contains('open') ? closeMobileNav() : openMobileNav(); };
+navBackdrop.onclick = closeMobileNav;
+document.querySelectorAll('.nav-btn').forEach(btn => btn.addEventListener('click', closeMobileNav));
+
+
+document.getElementById('saveClass').onclick = () => {
+  db.classes.push({name: className.value, subject: classSubject.value, grade: classGrade.value, track: classTrack.value, hours: classHours.value, group: classGroup.value});
+  save(); renderAll(); className.value=''; classGroup.value='';
+};
+
+document.getElementById('generatePlan').onclick = () => {
+  const subject = planSubject.value, grade = planGrade.value, track = planTrack.value, hours = Number(planHours.value)||2;
+  let entries = (subject === 'Deutsch' ? (curriculum.Deutsch[grade] && curriculum.Deutsch[grade][track]) : (curriculum.WTH[grade] && curriculum.WTH[grade].mixed)) || [];
+  const body = document.querySelector('#planTable tbody'); body.innerHTML = '';
+  entries.forEach(e => { const weeks = Math.max(1, Math.ceil(e[2]/hours)); body.innerHTML += `<tr><td>${e[0]}</td><td>${e[1]}</td><td>${e[2]}</td><td>${weeks}</td><td>Vor LUE Uebungsstunde einplanen</td></tr>`; });
+  window.currentPlan = { subject, grade, track, hours, entries };
+};
+document.getElementById('savePlan').onclick = () => { if(window.currentPlan) { db.plans.push(window.currentPlan); save(); alert('Plan gespeichert.'); } };
+
+document.getElementById('saveLesson').onclick = () => {
+  const meyerPlan = readMeyerGrid('meyerPlanGrid');
+  const lesson = { title: lessonTitle.value, subject: lessonSubject.value, grade: lessonGrade.value, type: lessonType.value,
+    klafki: [klafki1.value, klafki2.value, klafki3.value, klafki4.value, klafki5.value], meyerPlan,
+    diff: diff.value, lernen: lernen.value,
+    bibox: { werk: biboxWerk.value, seite: biboxSeite.value, notiz: biboxNotiz.value },
+    phases: phaseNames.map((p,i)=>({phase:p, time:document.getElementById('time'+i).value, social:document.getElementById('social'+i).value, method:document.getElementById('method'+i).value, material:document.getElementById('material'+i).value, teacher:document.getElementById('teacher'+i).value, student:document.getElementById('student'+i).value, gme:document.getElementById('gme'+i).value})) };
+  db.lessons.push(lesson); save(); renderAll(); alert('Stunde gespeichert.');
+};
+
+document.getElementById('saveReflect').onclick = () => {
+  const idx = Number(reflectLesson.value); const lesson = db.lessons[idx]; if(!lesson) return;
+  const meyerReflect = readMeyerGrid('meyerReflectGrid');
+  db.reflections.push({ lessonIdx: idx, lesson: lesson.title, meyerReflect, ampelSummary: summarizeAmpel(meyerReflect), text: reflectText.value });
+  save(); renderAll(); reflectText.value='';
+};
+
+document.getElementById('fileDrop').onclick = () => fileInput.click();
+let pendingFileName = '';
+fileInput.addEventListener('change', () => { if(fileInput.files[0]) { pendingFileName = fileInput.files[0].name; document.getElementById('fileDrop').textContent = 'Ausgewaehlt: ' + pendingFileName; } });
+document.getElementById('saveMaterial').onclick = () => {
+  db.materials.push({ name: pendingFileName || 'Unbenanntes Material', subject: matSubject.value, grade: matGrade.value, lb: matLB.value, status: matStatus.value, tag: matTag.value });
+  save(); renderAll(); pendingFileName=''; document.getElementById('fileDrop').textContent='Datei auswaehlen oder hierher ziehen (PDF, Bild, Dokument)'; matLB.value=''; matTag.value='';
+};
+
+document.getElementById('exportData').onclick = () => {
+  const blob = new Blob([JSON.stringify(db, null, 2)], {type:'application/json'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'lehrer-dashboard-v4-export.json'; a.click();
+};
+
+renderAll();
+</script>
+</body>
+</html>

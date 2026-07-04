@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Lehrer-Dashboard</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="app">
+  <div class="nav-backdrop" id="navBackdrop"></div>
+  <aside id="sidebarNav">
+    <div class="brand-wrap">
+      <div class="avatar-wrap">
+        <img class="avatar-img" id="avatarImg" src="" alt="Profil" />
+        <div class="avatar-upload-btn" id="avatarUploadBtn" title="Foto-Upload folgt in Meilenstein 5">+</div>
+      </div>
+      <div><div class="brand"><span id="sidebarDate"></span></div></div>
+    </div>
+    <div class="sub" id="sidebarKW"></div>
+
+    <div class="section-label">Übersicht</div>
+    <button class="nav-btn active" data-view="heute">Schulalltag heute</button>
+    <button class="nav-btn" data-view="klassen">Klassen</button>
+    <button class="nav-btn" data-view="kalender">Planungskalender</button>
+
+    <div class="section-label">Planung</div>
+    <button class="nav-btn" data-view="stoff">Stoffverteilungsplan</button>
+    <button class="nav-btn" data-view="stunde">Unterrichtsplanung</button>
+    <button class="nav-btn" data-view="reflexion">Reflexion</button>
+
+    <div class="section-label">Referendariat</div>
+    <button class="nav-btn" data-view="asuv">ASUV-Entwürfe</button>
+
+    <div class="section-label">Material</div>
+    <button class="nav-btn" data-view="material">Materialbibliothek</button>
+
+    <div class="section-label">System</div>
+    <button class="nav-btn" data-view="settings">Einstellungen</button>
+
+    <div class="nav-footer"><div style="font-weight:700; margin-bottom:5px;">Angemeldet</div><span id="navUser">–</span></div>
+  </aside>
+
+  <main>
+    <div class="topbar">
+      <div class="topbar-head">
+        <button class="burger-btn" id="burgerBtn" aria-label="Menü öffnen"><span></span></button>
+        <div class="topbar-titles">
+          <div class="title" id="pageTitle">Schulalltag heute</div>
+          <div class="page-sub" id="pageSub">Dein Tag auf einen Blick.</div>
+        </div>
+      </div>
+      <div class="hero-tag">Frühling</div>
+    </div>
+
+    <!-- HEUTE -->
+    <section id="heute" class="view">
+      <div class="hero-grid">
+        <div class="hero-panel">
+          <h2>Guten Tag!</h2>
+          <p style="margin:0 0 16px; color:#dcfce7;">Klicke auf eine Stunde für die Detailansicht mit Klafki, Meyer-Ampel und Phasentabelle.</p>
+          <div class="mini-list" id="todayLessonList"></div>
+        </div>
+        <div class="card dark">
+          <h3>Woche im Blick</h3>
+          <div class="mini-list">
+            <div class="mini-item" data-view-target="reflexion"><span id="openReflectCount">0 Reflexionen offen</span><span class="badge warn">ansehen</span></div>
+            <div class="mini-item" data-view-target="stunde"><span id="openLessonCount">0 Stunden geplant</span><span class="badge ok">planen</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid grid-4">
+        <div class="card kpi-card" data-view-target="klassen"><div class="muted">Angelegte Klassen</div><div class="kpi" id="kpiClasses">0</div><div class="small muted">aktuelles Schuljahr</div></div>
+        <div class="card kpi-card yellow" data-view-target="stunde"><div class="muted">Geplante Stunden</div><div class="kpi" id="kpiLessons">0</div><div class="small muted">mit Klafki, Meyer und Phasen</div></div>
+        <div class="card kpi-card orange" data-view-target="reflexion"><div class="muted">Reflexionen</div><div class="kpi" id="kpiReflect">0</div><div class="small muted">als Journal mit Ampel-Logik</div></div>
+        <div class="card kpi-card" data-view-target="material"><div class="muted">Materialien</div><div class="kpi" id="kpiMaterial">0</div><div class="small muted">getaggt &amp; referenziert</div></div>
+      </div>
+
+      <div class="card soft" style="margin-top:16px;">
+        <h3>Aufgaben &amp; To-dos</h3>
+        <div id="todoList"></div>
+        <div class="row" style="margin-top:9px;">
+          <div style="grid-column: span 2;"><input id="newTodoInput" placeholder="Neue Aufgabe eintragen und Enter drücken ..." /></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- KLASSEN -->
+    <section id="klassen" class="view hidden">
+      <div class="card">
+        <h3>Klasse anlegen</h3>
+        <div class="row">
+          <div><label>Klassenname</label><input id="className" placeholder="z. B. 8a" /></div>
+          <div><label>Fach</label><select id="classSubject"><option>Deutsch</option><option>WTH</option></select></div>
+          <div><label>Klassenstufe</label><select id="classGrade"><option>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>10</option></select></div>
+          <div><label>Bildungsgang</label><select id="classTrack"><option>RS</option><option>HS</option><option>gemischt</option></select></div>
+        </div>
+        <div class="row">
+          <div><label>Wochenstunden</label><input id="classHours" type="number" min="1" max="10" value="2" /></div>
+          <div><label>Parallelgruppe</label><input id="classGroup" placeholder="z. B. Deutsch 8" /></div>
+        </div>
+        <div style="margin-top:12px;"><button class="btn" id="saveClass">Klasse speichern</button></div>
+      </div>
+      <div class="card" style="margin-top:14px;">
+        <h3>Klassenübersicht</h3>
+        <div class="table-scroll"><table id="classTable"><thead><tr><th>Klasse</th><th>Fach</th><th>Stufe</th><th>Bildungsgang</th><th>Std.</th><th>Parallelgruppe</th><th></th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </section>
+
+    <!-- KALENDER -->
+    <section id="kalender" class="view hidden">
+      <div class="card">
+        <h3>Klassenfilter</h3>
+        <p class="muted small">Klassen an- und abwählen, um ihre Termine und Lernbereiche ein- oder auszublenden.</p>
+        <div class="class-toggle-row" id="classToggleRow"></div>
+      </div>
+      <div class="card" style="margin-top:14px;">
+        <h3 style="margin-bottom:8px;">Lernbereiche im Überblick</h3>
+        <div id="classTimeline"></div>
+      </div>
+      <div class="card" style="margin-top:14px;">
+        <div class="cal-nav">
+          <button id="calPrevBtn">&larr;</button>
+          <strong id="calLabel" style="color:var(--primary-dark);">Monat</strong>
+          <button id="calNextBtn">&rarr;</button>
+          <div class="view-toggle">
+            <button id="calMonthBtn" class="active">Monat</button>
+            <button id="calWeekBtn">Woche</button>
+          </div>
+        </div>
+        <div class="cal-grid" id="calGrid"></div>
+        <p class="small muted" style="margin-top:8px;">Grau hinterlegt = Ferien/Feiertag. Klick auf einen Stundentermin öffnet die Detailansicht.</p>
+        <div class="row" style="margin-top:14px;">
+          <div><label>Neuer Termin: Titel</label><input id="calEntryTitle" placeholder="z. B. LUE Rechtschreibung" /></div>
+          <div><label>Datum</label><input id="calEntryDate" type="date" /></div>
+        </div>
+        <div class="row">
+          <div><label>Klasse</label><select id="calEntryClass"></select></div>
+          <div><label>Typ</label><select id="calEntryType"><option value="lu">Lernerfolgskontrolle</option><option value="exam">Klassenarbeit/Präsentation</option><option value="normal">Sonstiges</option></select></div>
+        </div>
+        <label style="display:flex; align-items:center; gap:8px; margin-top:8px;"><input type="checkbox" id="calEntryFixed" style="width:auto;" /> Fixer Termin (nicht durch die Verplanung verschiebbar)</label>
+        <div style="margin-top:10px;"><button class="btn" id="calSaveEntryBtn">Termin speichern</button></div>
+      </div>
+    </section>
+
+    <!-- STOFFVERTEILUNGSPLAN -->
+    <section id="stoff" class="view hidden">
+      <div class="card">
+        <h3>Jahres-Verplanung (Vorschlag)</h3>
+        <p class="muted small">Verteilt die Lernbereiche der Klasse über das Schuljahr – Stundenrichtwerte, Wochenstunden, Ferien/Feiertage und fixe Termine werden berücksichtigt.</p>
+        <div class="row">
+          <div><label>Schuljahr</label><select id="planYear"></select></div>
+          <div><label>Klasse</label><select id="planClass"></select></div>
+        </div>
+        <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap;">
+          <button class="btn" id="planPreviewBtn">Jahresplan vorschlagen</button>
+          <button class="btn ai" id="stoffAiBtn">✨ KI-Vorschlag</button>
+        </div>
+        <div class="note-box" style="margin-top:12px;">„Jahresplan vorschlagen" verteilt deterministisch; „✨ KI-Vorschlag" nutzt Claude (Sonnet) für eine didaktische Sequenzierung.</div>
+      </div>
+      <div class="card" style="margin-top:14px;">
+        <h3>Planvorschlag</h3>
+        <div id="planSummary" class="small muted" style="margin-bottom:8px;"></div>
+        <div class="table-scroll"><table id="planTable"><thead><tr><th>LB</th><th>Thema</th><th>Ustd.</th><th>Wochen</th><th>Zeitraum</th><th>Hinweis</th></tr></thead><tbody></tbody></table></div>
+      </div>
+      <div class="card" id="stoffUploadCard" style="margin-top:14px; display:none;">
+        <h3>Material zu einem Lernbereich hochladen</h3>
+        <p class="muted small">Wird in der Materialbibliothek abgelegt, indiziert und mit dem Lernbereich verknüpft (Direkt-Upload).</p>
+        <div class="row-3">
+          <div><label>Lernbereich</label><select id="stoffLb"></select></div>
+          <div><label>Datei</label><input type="file" id="stoffFile" /></div>
+          <div style="align-self:flex-end;"><button class="btn" id="stoffUpload">Hochladen &amp; verknüpfen</button></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- STUNDE -->
+    <section id="stunde" class="view hidden">
+      <div class="ai-box">
+        <div class="txt"><strong>Ideenfeld:</strong> Trage lose Gedanken oder Impulse zur Stunde ein. Die KI erzeugt daraus einen Vorschlag (Titel, Klafki, Meyer-Ampel, Phasen) – prüfen und anpassen.</div>
+      </div>
+      <div class="card">
+        <h3>Ideenfeld</h3>
+        <textarea id="lessonIdeas" rows="3" placeholder="z. B. Balladen szenisch erschließen, Hörbeispiel als Einstieg, Gruppenarbeit mit Standbild ..."></textarea>
+        <div style="margin-top:8px;"><button class="btn ai" id="aiPlanBtn">✨ Stundenvorschlag aus Ideen generieren</button></div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Unterrichtsplanung</h3>
+        <div class="row">
+          <div><label>Titel/Thema</label><input id="lessonTitle" placeholder="z. B. Balladen szenisch erschließen" /></div>
+          <div><label>Fach</label><select id="lessonSubject"><option>Deutsch</option><option>WTH</option></select></div>
+        </div>
+        <div class="row">
+          <div><label>Klassenstufe</label><select id="lessonGrade"><option>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>10</option></select></div>
+          <div><label>Stundentyp</label><select id="lessonType"><option>Einführung</option><option>Übung</option><option>Übungsstunde vor LUE</option><option>Sicherung</option><option>Lehrprobe</option></select></div>
+        </div>
+        <div class="row">
+          <div><label>Klasse</label><select id="lessonClass"><option value="">– keine –</option></select></div>
+          <div><label>Datum</label><input id="lessonDate" type="date" /><div class="hint">Mit Datum erscheint die Stunde automatisch im Kalender.</div></div>
+        </div>
+        <div id="lueHint" class="note-box hidden">Diese Stunde dient als Übungsstunde vor der Lernerfolgskontrolle – Fokus auf intelligentes Üben (Meyer-Merkmal 8) und Fehleranalyse legen.</div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Phasentabelle</h3>
+        <div id="phases"></div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Lehrbuch-Referenz (BiBox)</h3>
+        <p class="muted small">Reine Referenz, kein Upload von Verlagsmaterial (aus Lizenzgründen).</p>
+        <div class="row-3">
+          <div><label>Lehrwerk</label><input id="biboxWerk" placeholder="z. B. Deutschbuch 8" /></div>
+          <div><label>Kapitel/Seite</label><input id="biboxSeite" placeholder="z. B. Kapitel 4, S. 88-91" /></div>
+          <div><label>Notiz</label><input id="biboxNotiz" placeholder="z. B. Aufgabe 3 als Einstieg nutzen" /></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Abschließende didaktisch-methodische Reflexion (Klafki &amp; Meyer)</h3>
+        <p class="muted small">Bewusst am Ende: Erst die Stunde konkret planen, dann prüfen, ob sie didaktisch und methodisch trägt.</p>
+        <div class="row">
+          <div><label>Gegenwartsbedeutung</label><div class="hint">Welche Bedeutung hat das Thema jetzt im Leben der Schüler:innen?</div><textarea id="klafki1"></textarea></div>
+          <div><label>Zukunftsbedeutung</label><div class="hint">Welche Bedeutung wird das Thema künftig haben?</div><textarea id="klafki2"></textarea></div>
+        </div>
+        <div class="row">
+          <div><label>Exemplarische Bedeutung</label><div class="hint">Wofür steht der Inhalt exemplarisch?</div><textarea id="klafki3"></textarea></div>
+          <div><label>Zugänglichkeit/Einstieg</label><div class="hint">Wie wird der Inhalt für die Lerngruppe zugänglich?</div><textarea id="klafki4"></textarea></div>
+        </div>
+        <label>Struktur des Inhalts</label><div class="hint">Wie lässt sich der Inhalt sachlogisch gliedern?</div><textarea id="klafki5"></textarea>
+
+        <h3 style="margin-top:16px;">Die 10 Merkmale guten Unterrichts (Meyer) – geplant</h3>
+        <p class="muted small">Ampel je Merkmal: grün = gut umsetzbar/geplant, gelb = teilweise, rot = noch offen/Risiko.</p>
+        <div class="meyer-grid" id="meyerPlanGrid"></div>
+        <div class="row" style="margin-top:12px;">
+          <div><label>Differenzierung (G/M/E) bedacht?</label><select id="diff"><option>ja</option><option>teilweise</option><option>nein</option></select></div>
+          <div><label>Selbstständiges Lernen ermöglicht?</label><select id="lernen"><option>ja</option><option>teilweise</option><option>nein</option></select></div>
+        </div>
+        <div style="margin-top:14px;"><button class="btn" id="saveLesson">Stunde speichern</button></div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Gespeicherte Stunden</h3>
+        <div class="table-scroll"><table id="lessonTable"><thead><tr><th>Thema</th><th>Fach</th><th>Stufe</th><th>Typ</th><th>Lehrwerk</th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </section>
+
+    <!-- REFLEXION -->
+    <section id="reflexion" class="view hidden">
+      <div class="card">
+        <h3>Offene Reflexionen</h3>
+        <p class="muted small">Stunden ohne Reflexion. Manuell überspringen, falls keine Reflexion nötig ist (z. B. Vertretungsstunde).</p>
+        <div id="openReflectList"></div>
+      </div>
+      <div class="card" style="margin-top:14px;">
+        <h3>Reflexion erfassen</h3>
+        <label>Stunde</label><select id="reflectLesson"></select>
+        <h3 style="margin-top:14px;">Die 10 Merkmale guten Unterrichts – tatsächlich beobachtet</h3>
+        <div class="meyer-grid" id="meyerReflectGrid"></div>
+        <label style="margin-top:12px;">Freitext</label>
+        <textarea id="reflectText" placeholder="Was ist gut gelaufen? Was würde ich beim nächsten Mal ändern?"></textarea>
+        <div style="margin-top:10px;"><button class="btn" id="saveReflect">Reflexion speichern</button></div>
+      </div>
+      <div class="card" style="margin-top:14px;">
+        <h3>Reflexionsjournal</h3>
+        <div class="table-scroll"><table id="reflectTable"><thead><tr><th>Stunde</th><th>Ampel-Übersicht</th><th>Notiz</th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </section>
+
+    <!-- ASUV -->
+    <section id="asuv" class="view hidden">
+      <div class="card dark">
+        <h3 id="asuvHeadline">ASUV-Entwurf</h3>
+        <p class="small" style="color:#dcfce7;">Automatisch vorbefüllt aus Klafki, Phasen und Lehrbuch-Referenz der gewählten Stunde – bitte prüfen und ergänzen.</p>
+        <label style="color:#dcfce7;">Stunde</label>
+        <select id="asuvLesson"></select>
+      </div>
+      <div class="note-box" id="asuvBiboxHint" style="margin-top:14px; display:none;">Erinnerung: Für diese Stunde ist noch keine Lehrbuch-Referenz (BiBox) hinterlegt.</div>
+      <div class="note-box" style="margin-top:14px;"><strong>Formale Vorgaben (bindend):</strong> Arial 11, Zeilenabstand 1,5, Blocksatz, Deckblatt, Inhaltsverzeichnis, normgerechte Quellen, Selbständigkeitserklärung.</div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Deckblatt</h3>
+        <div class="row-3">
+          <div><label>Schule</label><input id="asuv_schule" placeholder="z. B. Oberschule Stolpen" /></div>
+          <div><label>Prüfer/in / Seminarleiter/in</label><input id="asuv_pruefer" /></div>
+          <div><label>Datum</label><input id="asuv_deckblatt_datum" type="date" /></div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:14px;">
+        <h3>1. Bedingungsanalyse</h3>
+        <label>1.1 Organisatorische und technische Rahmenbedingungen</label><textarea id="asuv_bedingung_org"></textarea>
+        <label>1.2 Lernvoraussetzungen der Schüler:innen</label><textarea id="asuv_bedingung_lern"></textarea>
+        <label>1.3 Einordnung in den Lernbereich</label><textarea id="asuv_bedingung_einordnung"></textarea>
+        <div class="hint">Nur Bedingungen aufführen, die in Kapitel 4 wieder aufgegriffen werden.</div>
+      </div>
+      <div class="card" style="margin-top:14px;"><h3>2. Lehr- und Lernziele</h3><textarea id="asuv_ziele" rows="4"></textarea></div>
+      <div class="card" style="margin-top:14px;">
+        <h3>3. Sachanalyse</h3><textarea id="asuv_sachanalyse" rows="5"></textarea>
+        <label>Quellen / Fachliteratur</label><textarea id="asuv_quellen"></textarea>
+      </div>
+      <div class="card" style="margin-top:14px;">
+        <h3>4. Didaktische Analyse und methodische Entscheidungen</h3>
+        <label>Didaktische Analyse</label><textarea id="asuv_didaktisch" rows="4"></textarea>
+        <label>Didaktische Reduktion</label><textarea id="asuv_reduktion"></textarea>
+        <label>Methodische Entscheidungen (getrennt von der didaktischen Analyse)</label><textarea id="asuv_methodisch" rows="4"></textarea>
+      </div>
+      <div class="card" style="margin-top:14px;"><h3>5. Verlaufsplanung</h3><div id="asuvPhases"></div><div class="hint">Automatisch aus der Phasentabelle der Stunde übernommen.</div></div>
+      <div class="card" style="margin-top:14px;"><h3>6. Anhang</h3><div id="asuvBibox" class="small muted" style="margin-bottom:8px;"></div><label>Weitere Materialhinweise</label><textarea id="asuv_anhang"></textarea></div>
+      <div class="card soft" style="margin-top:14px;"><h3>Formalien-Checkliste (Selbstkontrolle vor Abgabe)</h3><div id="asuvChecklist"></div></div>
+
+      <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap;">
+        <button class="btn ai" id="asuvAiBtn">✨ ASUV ausformulieren</button>
+        <button class="btn" id="asuvSave">ASUV speichern</button>
+        <button class="btn secondary" id="asuvExportDocx">Als Word (.docx)</button>
+        <button class="btn secondary" id="asuvExportPdf">Als PDF</button>
+      </div>
+    </section>
+
+    <!-- MATERIAL -->
+    <section id="material" class="view hidden">
+      <div class="card">
+        <h3>Material hochladen</h3>
+        <div class="row-3">
+          <div><label>Datei</label><input type="file" id="matFile" /></div>
+          <div><label>Fach</label><select id="matSubject"><option>Deutsch</option><option>WTH</option></select></div>
+          <div><label>Klassenstufe</label><select id="matGrade"><option>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>10</option></select></div>
+        </div>
+        <div class="row-3">
+          <div><label>Schuljahr</label><select id="matYear"></select></div>
+          <div><label>Lernbereich (Freitext)</label><input id="matLB" placeholder="z. B. LB4 Printmedien" /></div>
+          <div><label>Status</label><select id="matStatus"><option>neu</option><option>in Bearbeitung</option><option>fertig</option></select></div>
+        </div>
+        <div class="row">
+          <div><label>Freitext-Tag</label><input id="matTag" placeholder="z. B. Lehrprobe, Einstieg" /></div>
+          <div><label>Optionaler Link</label><input id="matLink" placeholder="z. B. Turory- oder Schulportal-Link" /></div>
+        </div>
+        <div style="margin-top:12px;"><button class="btn" id="saveMaterial">Hochladen</button></div>
+        <div class="small muted" style="margin-top:6px;">PDFs werden automatisch in durchsuchbare Abschnitte (mit Seitenangabe) zerlegt.</div>
+      </div>
+      <div class="card" style="margin-top:14px;">
+        <h3>Volltextsuche in Begleitmaterialien</h3>
+        <p class="muted small">Durchsucht die extrahierten PDF-Abschnitte (Grundlage für den gezielten KI-Abruf ab M7).</p>
+        <input id="matSearch" placeholder="Suchbegriff eingeben und Enter drücken ..." />
+        <div id="searchResults" class="file-list" style="margin-top:10px;"></div>
+      </div>
+      <div class="card" style="margin-top:14px;">
+        <h3>Materialbibliothek</h3>
+        <div class="file-list" id="materialList"></div>
+      </div>
+    </section>
+
+    <!-- EINSTELLUNGEN -->
+    <section id="settings" class="view hidden">
+      <div class="card">
+        <h3>Anthropic API-Key</h3>
+        <p class="muted small">Wird verschlüsselt gespeichert. Solange kein Key hinterlegt ist, bleiben KI-Funktionen deaktiviert.</p>
+        <div style="margin:8px 0 12px;"><span id="apiKeyStatus" class="badge bad">Kein API-Key hinterlegt</span> <span class="small muted" id="apiKeyMeta"></span></div>
+        <label>API-Key</label>
+        <input id="apiKeyInput" type="password" placeholder="sk-ant-..." />
+        <div id="apiKeyWarn" class="note-box hidden">Serverseitig ist kein <code>APP_SECRET_KEY</code> gesetzt – der Key kann nicht verschlüsselt gespeichert werden.</div>
+        <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap;">
+          <button class="btn" id="saveApiKey">API-Key speichern</button>
+          <button class="btn danger" id="removeApiKey">Entfernen</button>
+        </div>
+      </div>
+      <div class="card" style="margin-top:14px;">
+        <h3>KI-Kosten</h3>
+        <p class="muted small">Grobe Schätzung der Token-Nutzung pro Modell (Referenz: ca. 2–3 USD/Monat bei normaler Nutzung).</p>
+        <div id="aiUsage"><p class="muted small">Noch keine KI-Nutzung.</p></div>
+      </div>
+      <div class="card" style="margin-top:14px;">
+        <h3>Schuljahre</h3>
+        <p class="muted small">Beim Anlegen werden Ferien &amp; Feiertage (Sachsen) automatisch abgerufen und gespeichert.</p>
+        <div class="row-3">
+          <div><label>Bezeichnung</label><input id="syLabel" placeholder="z. B. 2025/2026" /></div>
+          <div><label>Beginn</label><input id="syStart" type="date" /></div>
+          <div><label>Ende</label><input id="syEnd" type="date" /></div>
+        </div>
+        <div style="margin-top:10px;"><button class="btn" id="saveSchoolYear">Schuljahr anlegen</button></div>
+        <div id="schoolYearList" class="file-list" style="margin-top:12px;"></div>
+      </div>
+      <div class="card" style="margin-top:14px;">
+        <h3>Konto</h3>
+        <p class="muted small">Angemeldet als <strong id="settingsUser">–</strong>.</p>
+        <button class="btn secondary" id="logoutBtn">Abmelden</button>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- Login/Registrierung -->
+<div class="modal-overlay hidden" id="authOverlay">
+  <div class="modal-box" style="max-width:420px;">
+    <h2 id="authTitle">Anmelden</h2>
+    <p class="muted small" id="authIntro">Bitte melde dich an.</p>
+    <div id="authNameRow" class="hidden"><label>Anzeigename</label><input id="authDisplayName" placeholder="z. B. Jonathan Adler" /></div>
+    <label>E-Mail</label><input id="authEmail" type="email" autocomplete="username" />
+    <label>Passwort</label><input id="authPassword" type="password" autocomplete="current-password" />
+    <div id="authError" class="note-box hidden"></div>
+    <div style="margin-top:14px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+      <button class="btn" id="authSubmit">Anmelden</button>
+      <button class="btn ghost" id="authToggle">Erstes Konto anlegen</button>
+    </div>
+  </div>
+</div>
+
+<div id="modalRoot"></div>
+<script src="api.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

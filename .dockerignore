@@ -1,0 +1,17 @@
+.venv/
+.git/
+.gitignore
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.env
+data.db
+data.db-wal
+data.db-shm
+storage/*
+uploads/*
+.claude/
+.DS_Store
+tests/
+reference/
+DEPLOY.md
