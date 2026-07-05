@@ -15,6 +15,27 @@ def test_chunk_pages_splits_with_page_refs():
     assert chunks[1]["page_from"] == 2 and chunks[1]["page_to"] == 2   # Rest auf S2
 
 
+def test_stored_path_outside_storage_rejected(client, auth):
+    """Regression M9.1: freier storedPath erlaubte via Download beliebige Container-Dateien."""
+    r = client.post("/api/materials", json={"filename": "x.pdf", "storedPath": "/etc/passwd"})
+    assert r.status_code == 400
+    r = client.post("/api/materials", json={"filename": "x.pdf", "storedPath": "/storage/../data/data.db"})
+    assert r.status_code == 400
+
+
+def test_download_refuses_path_outside_storage(client, app, auth):
+    """Defense-in-Depth: auch Altbestand mit Fremdpfad wird nicht ausgeliefert."""
+    from src.db import connect
+    uid = client.get("/api/auth/me").json()["id"]
+    conn = connect(app.state.db_path)
+    cur = conn.execute(
+        "INSERT INTO materials(user_id, filename, stored_path) VALUES (?, 'h.txt', '/etc/hosts')", (uid,))
+    conn.commit()
+    mid = cur.lastrowid
+    conn.close()
+    assert client.get(f"/api/materials/{mid}/download").status_code == 400
+
+
 def test_upload_text_file_stores_without_chunks(client, auth):
     r = client.post("/api/materials/upload",
                     files={"file": ("notiz.txt", b"nur eine Notiz", "text/plain")},

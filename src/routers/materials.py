@@ -16,7 +16,6 @@ from typing import Dict, List, Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 
-from ..config import settings
 from ..deps import get_db, get_storage_root, get_user_id, row_or_404
 from ..lib.extract import extract_chunks
 from ..lib.storage_path import build_storage_path
@@ -24,6 +23,20 @@ from ..schemas import MaterialCreate, MaterialLink, MaterialOut, MaterialUpdate,
 
 router = APIRouter(prefix="/materials", tags=["materials"])
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
+
+
+def _ensure_under_root(path: str, storage_root: str) -> str:
+    """M9.1: Client-gelieferte/gespeicherte Pfade müssen im Storage-Baum liegen.
+
+    Verhindert, dass über POST /materials (storedPath) + GET /download beliebige
+    Dateien des Containers gelesen werden (z. B. /data/data.db).
+    """
+    resolved = os.path.realpath(path)
+    root = os.path.realpath(storage_root)
+    if resolved != root and not resolved.startswith(root + os.sep):
+        raise HTTPException(status_code=400,
+                            detail="storedPath muss unterhalb des Storage-Verzeichnisses liegen.")
+    return resolved
 
 
 def _unique_path(path: str) -> str:
@@ -47,7 +60,7 @@ def _get(conn, user_id, mid):
     return MaterialOut(**dict(row)) if row else None
 
 
-def _provisional_path(conn, user_id, body: MaterialCreate) -> str:
+def _provisional_path(conn, user_id, body: MaterialCreate, storage_root: str) -> str:
     year_label = "unsortiert"
     if body.school_year_id is not None:
         r = conn.execute(
@@ -58,12 +71,16 @@ def _provisional_path(conn, user_id, body: MaterialCreate) -> str:
             year_label = r["label"]
     klasse = f"Klasse-{body.grade}" if body.grade else "Allgemein"
     return build_storage_path(year_label, body.subject or "Allgemein", klasse, body.filename,
-                              root=settings.storage_root)
+                              root=storage_root)
 
 
 @router.post("", response_model=MaterialOut, status_code=201)
-def create(body: MaterialCreate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
-    stored_path = body.stored_path or _provisional_path(conn, user_id, body)
+def create(body: MaterialCreate, conn=Depends(get_db), user_id: int = Depends(get_user_id),
+           storage_root: str = Depends(get_storage_root)):
+    if body.stored_path:
+        stored_path = _ensure_under_root(body.stored_path, storage_root)
+    else:
+        stored_path = _provisional_path(conn, user_id, body, storage_root)
     try:
         cur = conn.execute(
             """INSERT INTO materials
@@ -219,13 +236,15 @@ def search(
 
 
 @router.get("/{mid}/download")
-def download(mid: int, conn: sqlite3.Connection = Depends(get_db), user_id: int = Depends(get_user_id)):
+def download(mid: int, conn: sqlite3.Connection = Depends(get_db), user_id: int = Depends(get_user_id),
+             storage_root: str = Depends(get_storage_root)):
     row = row_or_404(
         conn.execute("SELECT stored_path, filename, mime_type FROM materials WHERE id = ? AND user_id = ?",
                      (mid, user_id)).fetchone(), "Material")
-    if not os.path.exists(row["stored_path"]):
+    path = _ensure_under_root(row["stored_path"], storage_root)  # Defense-in-Depth (Altbestand)
+    if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="Datei nicht auf dem Speicher gefunden.")
-    return FileResponse(row["stored_path"], filename=row["filename"],
+    return FileResponse(path, filename=row["filename"],
                         media_type=row["mime_type"] or "application/octet-stream")
 
 

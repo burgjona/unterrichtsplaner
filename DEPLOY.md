@@ -26,10 +26,16 @@ docker compose build
 docker compose up -d
 docker compose logs -f app        # erwartet: Seed "62 Lernbereiche", dann uvicorn läuft
 ```
-- **Volumes:** `./data` (SQLite, persistent) und `./storage` (Materialdateien). Auf der NAS
-  `./storage` auf einen Freigabe-Ordner mappen, z. B. `/volume1/docker/lehrer-dashboard/storage:/storage`.
-- **Rechte:** Schreibt der Container nicht ins Storage, in `docker-compose.yml` `user: "UID:GID"`
-  auf Besitzer der Freigabe setzen (Synology: Benutzer-UID via `id` bzw. Freigabe-Eigner).
+- **Volumes (Named Volumes):** `ldb_data` (SQLite-DB) und `ldb_storage` (Materialdateien) werden
+  von Docker verwaltet (unter `/volume1/@docker/volumes/`). Das ist auf Synology robust gegen
+  Freigabe-ACLs, die das Schreiben in per File Station angelegte Bind-Mount-Ordner selbst für
+  root blockieren (`unable to open database file`). Es müssen **keine** Host-Ordner vorab
+  angelegt werden.
+- **Backup:** Beide Volumes über *Hyper Backup* (schließt `/volume1/@docker` ein) oder per
+  `docker cp lehrer-dashboard:/data ./backup-data` bzw. `…:/storage ./backup-storage` sichern.
+- **Materialien direkt browsebar (optional, später):** Wer die Dateien in File Station sehen
+  will, legt eine echte DSM-Freigabe an, setzt darauf Schreibrechte und mountet sie statt
+  `ldb_storage` als Bind-Mount (`- /volume1/<freigabe>:/storage`).
 
 ## 3. Lokal testen
 `http://<NAS-IP>:8097/api/health` → `{"status":"ok", ...}`. Dann `http://<NAS-IP>:8097/`

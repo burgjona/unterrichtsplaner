@@ -943,8 +943,8 @@ async function submitAuth() {
     } else {
       await API.post("/auth/login", { email, password });
     }
-    showAuth(false);
     await startApp();
+    showAuth(false);
   } catch (e) {
     errBox.textContent = e.message;
     errBox.classList.remove("hidden");

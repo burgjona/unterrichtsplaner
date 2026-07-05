@@ -15,7 +15,7 @@ WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 
 
 def create_app(db_path: str = None, storage_root: str = None) -> FastAPI:
-    app = FastAPI(title="Lehrer-Dashboard API", version="0.7.0-m7")
+    app = FastAPI(title="Lehrer-Dashboard API", version="0.9.1")
     app.state.db_path = db_path or settings.db_path
     app.state.storage_root = storage_root or settings.storage_root
 
@@ -24,7 +24,7 @@ def create_app(db_path: str = None, storage_root: str = None) -> FastAPI:
 
     @app.get("/api/health", tags=["meta"])
     def health():
-        return {"status": "ok", "milestone": 7}
+        return {"status": "ok", "milestone": 9}
 
     for module in (auth, settings_router, users, school_years, classes, lernbereiche,
                    lessons, calendar, materials, reflections, todos, planning, asuv, ai):

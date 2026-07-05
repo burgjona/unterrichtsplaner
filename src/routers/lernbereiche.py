@@ -1,14 +1,15 @@
 """Lernbereich-Referenz (global, geseedet aus den LP-Dateien).
 
-GET ist offen und filterbar; POST/PUT/DELETE dienen Korrekturen/Erweiterungen
-der Referenz und sind nicht nutzer-gescoped.
+Die Daten sind nicht nutzer-gescoped (gemeinsame Referenz), aber seit M9.1 sind
+alle Endpunkte nur angemeldet erreichbar – vorher konnte jeder Unangemeldete die
+Referenz per POST/DELETE verändern.
 """
 import sqlite3
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from ..deps import get_db, row_or_404
+from ..deps import get_db, get_user_id, row_or_404
 from ..schemas import LernbereichCreate, LernbereichOut
 
 router = APIRouter(prefix="/lernbereiche", tags=["lernbereiche"])
@@ -25,6 +26,7 @@ def list_(
     grade: Optional[int] = None,
     track: Optional[str] = None,
     conn=Depends(get_db),
+    user_id: int = Depends(get_user_id),
 ):
     sql = "SELECT * FROM lernbereiche WHERE 1=1"
     params = []
@@ -37,12 +39,12 @@ def list_(
 
 
 @router.get("/{lid}", response_model=LernbereichOut)
-def get_(lid: int, conn=Depends(get_db)):
+def get_(lid: int, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
     return row_or_404(_get(conn, lid), "Lernbereich")
 
 
 @router.post("", response_model=LernbereichOut, status_code=201)
-def create(body: LernbereichCreate, conn=Depends(get_db)):
+def create(body: LernbereichCreate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
     try:
         cur = conn.execute(
             """INSERT INTO lernbereiche
@@ -58,7 +60,7 @@ def create(body: LernbereichCreate, conn=Depends(get_db)):
 
 
 @router.delete("/{lid}", status_code=204)
-def delete(lid: int, conn=Depends(get_db)):
+def delete(lid: int, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
     cur = conn.execute("DELETE FROM lernbereiche WHERE id = ?", (lid,))
     conn.commit()
     if cur.rowcount == 0:

@@ -17,6 +17,9 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 def _start_session(conn: sqlite3.Connection, response: Response, user_id: int) -> None:
+    # Housekeeping (M9.1): abgelaufene Sessions bei jeder Neuanmeldung entsorgen,
+    # damit die Tabelle nicht unbegrenzt wächst.
+    conn.execute("DELETE FROM sessions WHERE expires_at <= datetime('now')")
     token = generate_token()
     conn.execute(
         "INSERT INTO sessions(token, user_id, expires_at) VALUES (?, ?, datetime('now', ?))",

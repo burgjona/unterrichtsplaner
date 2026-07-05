@@ -4,7 +4,7 @@
 def test_health(client):
     r = client.get("/api/health")
     assert r.status_code == 200
-    assert r.json()["milestone"] == 7
+    assert r.json()["milestone"] == 9
 
 
 def test_requires_login(client):

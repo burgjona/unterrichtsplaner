@@ -11,11 +11,15 @@ services:
       COOKIE_SECURE: "1"            # Cookies nur über HTTPS (Cloudflare Tunnel liefert HTTPS)
       SESSION_TTL_HOURS: "168"
     volumes:
-      - ./data:/data                # persistente SQLite-DB (data.db)
-      - ./storage:/storage          # Materialdateien – auf der NAS auf einen Share mappen,
-                                    # z. B. /volume1/docker/lehrer-dashboard/storage:/storage
-    # Auf der Synology ggf. auf UID/GID des Share-Besitzers setzen (Schreibrechte):
-    # user: "1026:100"
+      # Named Volumes: Docker verwaltet den Speicher selbst (unter /volume1/@docker/volumes).
+      # Robust gegen Synology-Freigabe-ACLs, die das Schreiben in per File Station angelegte
+      # Bind-Mount-Ordner selbst fuer root blockieren ("unable to open database file").
+      - ldb_data:/data              # persistente SQLite-DB (data.db)
+      - ldb_storage:/storage        # Materialdateien
+    # Synology: als root laufen, damit der Container in die per File Station
+    # angelegten Bind-Mount-Ordner (./data, ./storage) schreiben darf. Ohne das
+    # scheitert SQLite mit "unable to open database file" (uid 1000 hat keine Rechte).
+    user: "0:0"
     ports:
       - "127.0.0.1:8097:8000"       # nur lokal erreichbar; der Tunnel greift intern zu
 
@@ -30,3 +34,7 @@ services:
   #     TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
   #   depends_on:
   #     - app
+
+volumes:
+  ldb_data:
+  ldb_storage:
