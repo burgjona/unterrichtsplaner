@@ -350,10 +350,13 @@ class AsuvOut(AsuvDraft):
 
 # ---------- KI-Anfragen (Meilenstein 7) ----------
 class LessonSuggestIn(Base):
-    ideas: str
+    ideas: str = ""
     subject: Optional[str] = None
     grade: Optional[int] = None
     title: Optional[str] = None
+    lesson_type: Optional[str] = None
+    class_id: Optional[int] = None
+    date: Optional[str] = None
 
 
 class StoffplanIn(Base):

@@ -184,11 +184,14 @@
       <div class="card">
         <h3>Ideenfeld</h3>
         <textarea id="lessonIdeas" rows="3" placeholder="z. B. Balladen szenisch erschließen, Hörbeispiel als Einstieg, Gruppenarbeit mit Standbild ..."></textarea>
-        <div style="margin-top:8px;"><button class="btn ai" id="aiPlanBtn">✨ Stundenvorschlag aus Ideen generieren</button></div>
       </div>
 
       <div class="card" style="margin-top:14px;">
         <h3>Unterrichtsplanung</h3>
+        <div id="editHint" class="note-box hidden" style="margin-bottom:10px;">
+          Bearbeite: <strong id="editHintTitle"></strong>
+          <button class="btn small secondary" id="cancelEditBtn" style="margin-left:10px;">Abbrechen / Neue Stunde</button>
+        </div>
         <div class="row">
           <div><label>Titel/Thema</label><input id="lessonTitle" placeholder="z. B. Balladen szenisch erschließen" /></div>
           <div><label>Fach</label><select id="lessonSubject"><option>Deutsch</option><option>WTH</option></select></div>
@@ -239,7 +242,10 @@
           <div><label>Differenzierung (G/M/E) bedacht?</label><select id="diff"><option>ja</option><option>teilweise</option><option>nein</option></select></div>
           <div><label>Selbstständiges Lernen ermöglicht?</label><select id="lernen"><option>ja</option><option>teilweise</option><option>nein</option></select></div>
         </div>
-        <div style="margin-top:14px;"><button class="btn" id="saveLesson">Stunde speichern</button></div>
+        <div style="margin-top:14px;">
+          <button class="btn" id="saveLesson">Stunde speichern</button>
+          <button class="btn ai" id="aiPlanBtn">✨ Stundenvorschlag generieren (aus Ideen + Planungsfeldern)</button>
+        </div>
       </div>
 
       <div class="card" style="margin-top:14px;">
