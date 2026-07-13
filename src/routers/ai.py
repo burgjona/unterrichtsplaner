@@ -5,8 +5,9 @@ import json
 import sqlite3
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 
+from ..db import connect
 from ..deps import get_db, get_user_id, row_or_404
 from ..lib import ai
 from ..schemas import AsuvSuggestIn, LessonSuggestIn, StoffplanIn
@@ -136,11 +137,38 @@ _ASUV_SCHEMA = {
 }
 
 
+def _run_asuv_job(db_path: str, job_id: int, user_id: int, user_text: str):
+    """Background-Task: eigener DB-Connect (keine Request-Dependency), Ergebnis in ai_jobs."""
+    conn = connect(db_path)
+    try:
+        status, result_json, error = "error", None, None
+        try:
+            result = ai.run(conn, user_id, "asuv", _ASUV_SYSTEM, user_text, _ASUV_SCHEMA, max_tokens=3000)
+            data = json.loads(result["text"])
+        except ai.NoApiKey:
+            error = "Kein API-Key hinterlegt – bitte in den Einstellungen eintragen."
+        except (ValueError, TypeError):
+            error = "KI-Antwort war kein gültiges JSON."
+        except Exception as exc:  # Netz-/Auth-/API-Fehler lesbar ablegen
+            error = f"KI-Anfrage fehlgeschlagen: {exc}"
+        else:
+            status = "done"
+            result_json = json.dumps({"suggestion": data, "cached": result["cached"]}, ensure_ascii=False)
+        conn.execute("UPDATE ai_jobs SET status=?, result_json=?, error=? WHERE id=?",
+                     (status, result_json, error, job_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+
 @router.post("/asuv/{lesson_id}")
-def asuv_suggestion(lesson_id: int, body: AsuvSuggestIn = AsuvSuggestIn(),
+def asuv_suggestion(lesson_id: int, background_tasks: BackgroundTasks, request: Request,
+                    body: AsuvSuggestIn = AsuvSuggestIn(),
                     conn: sqlite3.Connection = Depends(get_db), user_id: int = Depends(get_user_id)):
     l = row_or_404(conn.execute("SELECT * FROM lessons WHERE id=? AND user_id=?",
                                 (lesson_id, user_id)).fetchone(), "Stunde")
+    if not ai.get_api_key(conn, user_id):
+        raise HTTPException(status_code=400, detail="Kein API-Key hinterlegt – bitte in den Einstellungen eintragen.")
     phases = conn.execute("SELECT * FROM lesson_phases WHERE lesson_id=? ORDER BY sort_order",
                           (lesson_id,)).fetchall()
     klafki = [l["klafki_gegenwart"], l["klafki_zukunft"], l["klafki_exemplarisch"],
@@ -152,8 +180,26 @@ def asuv_suggestion(lesson_id: int, body: AsuvSuggestIn = AsuvSuggestIn(),
                  f"Klafki: {' | '.join(x for x in klafki if x) or '-'}\n"
                  f"Phasen: {phase_text}\n"
                  f"Lehrwerk: {l['bibox_werk'] or '-'} {l['bibox_seite'] or ''}\n\n{_ctx_block(ctx)}")
-    data, cached = _run_json(conn, user_id, "asuv", _ASUV_SYSTEM, user_text, _ASUV_SCHEMA, max_tokens=3000)
-    return {"suggestion": data, "cached": cached}
+    # Lang laufender KI-Call asynchron (Cloudflare-Tunnel bricht Requests nach 100 s ab):
+    # Job anlegen, sofort jobId liefern, Frontend pollt GET /ai/jobs/{id}.
+    cur = conn.execute("INSERT INTO ai_jobs(user_id, kind, status) VALUES (?, 'asuv', 'pending')", (user_id,))
+    conn.commit()
+    job_id = cur.lastrowid
+    background_tasks.add_task(_run_asuv_job, request.app.state.db_path, job_id, user_id, user_text)
+    return {"jobId": job_id}
+
+
+@router.get("/jobs/{job_id}")
+def ai_job_status(job_id: int, conn: sqlite3.Connection = Depends(get_db),
+                  user_id: int = Depends(get_user_id)):
+    row = row_or_404(conn.execute("SELECT * FROM ai_jobs WHERE id=? AND user_id=?",
+                                  (job_id, user_id)).fetchone(), "KI-Job")
+    out = {"jobId": row["id"], "kind": row["kind"], "status": row["status"]}
+    if row["status"] == "done":
+        out["result"] = json.loads(row["result_json"]) if row["result_json"] else None
+    elif row["status"] == "error":
+        out["error"] = row["error"]
+    return out
 
 
 # ---------- Kostenübersicht ----------
