@@ -912,6 +912,18 @@ function showView(view) {
 }
 function closeMobileNav() { $("sidebarNav").classList.remove("open"); $("navBackdrop").classList.remove("open"); }
 
+/* Sidebar am Desktop ein-/ausklappen (M10 U3) */
+const NAV_COLLAPSED_KEY = "ldb_nav_collapsed";
+function setNavCollapsed(collapsed) {
+  document.querySelector(".app").classList.toggle("nav-collapsed", collapsed);
+  const btn = $("navCollapseBtn");
+  btn.textContent = collapsed ? "›" : "‹";
+  const label = collapsed ? "Navigation ausklappen" : "Navigation einklappen";
+  btn.title = label;
+  btn.setAttribute("aria-label", label);
+  try { localStorage.setItem(NAV_COLLAPSED_KEY, collapsed ? "1" : "0"); } catch (e) { /* egal */ }
+}
+
 /* ---------- Refresh ---------- */
 async function refresh() { await loadAll(); renderAll(); }
 
@@ -979,6 +991,12 @@ function wireEvents() {
     $("navBackdrop").classList.toggle("open", open);
   };
   $("navBackdrop").onclick = closeMobileNav;
+
+  $("navCollapseBtn").onclick = () =>
+    setNavCollapsed(!document.querySelector(".app").classList.contains("nav-collapsed"));
+  try {
+    if (localStorage.getItem(NAV_COLLAPSED_KEY) === "1") setNavCollapsed(true);
+  } catch (e) { /* egal */ }
 
   $("saveClass").onclick = saveClass;
   $("saveLesson").onclick = saveLesson;
