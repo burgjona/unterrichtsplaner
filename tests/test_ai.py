@@ -93,9 +93,14 @@ def test_lesson_suggestion_cache_and_usage(client, auth, monkeypatch):
     assert usage["rows"][0]["outputTokens"] == 400  # genau ein geloggter Call
 
 
-def test_asuv_suggestion(client, auth, monkeypatch):
-    lesson = client.post("/api/lessons", json={"title": "Balladen", "subject": "Deutsch", "grade": 8,
-                                               "klafki": {"gegenwart": "Alltag"}}).json()
+def _make_lesson(client):
+    return client.post("/api/lessons", json={"title": "Balladen", "subject": "Deutsch", "grade": 8,
+                                             "klafki": {"gegenwart": "Alltag"}}).json()
+
+
+def test_asuv_suggestion_async_job(client, auth, monkeypatch):
+    """POST liefert jobId; BackgroundTask (läuft im TestClient nach der Response) schreibt done+suggestion."""
+    lesson = _make_lesson(client)
     payload = json.dumps({f: "Text" for f in
                           ["bedingungOrg", "bedingungLern", "bedingungEinordnung", "ziele", "sachanalyse",
                            "quellen", "didaktisch", "reduktion", "methodisch"]})
@@ -103,7 +108,49 @@ def test_asuv_suggestion(client, auth, monkeypatch):
     _set_key(client)
     r = client.post(f"/api/ai/asuv/{lesson['id']}")
     assert r.status_code == 200, r.text
-    assert r.json()["suggestion"]["sachanalyse"] == "Text"
+    job_id = r.json()["jobId"]
+    assert isinstance(job_id, int)
+
+    j = client.get(f"/api/ai/jobs/{job_id}")
+    assert j.status_code == 200, j.text
+    body = j.json()
+    assert body["status"] == "done"
+    assert body["kind"] == "asuv"
+    assert body["result"]["suggestion"]["sachanalyse"] == "Text"
+    assert body["result"]["cached"] is False
+
+
+def test_asuv_requires_api_key_sync(client, auth):
+    """Ohne API-Key sofort 400 – es wird kein Job angelegt."""
+    lesson = _make_lesson(client)
+    r = client.post(f"/api/ai/asuv/{lesson['id']}")
+    assert r.status_code == 400
+    assert "API-Key" in r.json()["detail"]
+
+
+def test_asuv_job_error_state(client, auth, monkeypatch):
+    """KI liefert kein gültiges JSON -> Job endet mit status=error und Meldung."""
+    lesson = _make_lesson(client)
+    _install(monkeypatch, "<!DOCTYPE html> kein JSON")
+    _set_key(client)
+    job_id = client.post(f"/api/ai/asuv/{lesson['id']}").json()["jobId"]
+    body = client.get(f"/api/ai/jobs/{job_id}").json()
+    assert body["status"] == "error"
+    assert "JSON" in body["error"]
+
+
+def test_ai_job_foreign_user_404(client, auth, app):
+    """Job eines fremden Nutzers ist nicht abrufbar (user_id-Scoping)."""
+    import sqlite3
+    conn = sqlite3.connect(app.state.db_path)
+    conn.execute("INSERT INTO users(email, display_name, password_hash) VALUES ('fremd@t.de', 'F', 'hash')")
+    other_id = conn.execute("SELECT id FROM users WHERE email='fremd@t.de'").fetchone()[0]
+    cur = conn.execute("INSERT INTO ai_jobs(user_id, kind, status) VALUES (?, 'asuv', 'pending')", (other_id,))
+    conn.commit()
+    job_id = cur.lastrowid
+    conn.close()
+    r = client.get(f"/api/ai/jobs/{job_id}")
+    assert r.status_code == 404
 
 
 def test_stoffplan_suggestion(client, auth, monkeypatch):
