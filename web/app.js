@@ -154,6 +154,53 @@ function clearLessonForm() {
   resetMeyerGrid("meyerPlanGrid");
   $("diff").value = "ja";
   $("lernen").value = "ja";
+  $("lueHint").classList.toggle("hidden", $("lessonType").value !== "Übungsstunde vor LUE");
+}
+
+/* ---------- Bearbeitungsmodus Unterrichtsplanung ---------- */
+let editingLessonId = null;
+function resetLessonEditState() {
+  editingLessonId = null;
+  $("editHint").classList.add("hidden");
+}
+function loadLessonIntoForm(l) {
+  clearLessonForm();
+  editingLessonId = l.id;
+  $("lessonTitle").value = l.title || "";
+  $("lessonSubject").value = l.subject || "Deutsch";
+  if (l.grade != null) $("lessonGrade").value = String(l.grade);
+  if (l.lessonType) $("lessonType").value = l.lessonType;
+  $("lueHint").classList.toggle("hidden", $("lessonType").value !== "Übungsstunde vor LUE");
+  const clsVal = l.classId == null ? "" : String(l.classId);
+  if (clsVal && !$("lessonClass").querySelector(`option[value="${clsVal}"]`)) {
+    // Klasse ist archiviert: Zuordnung sichtbar erhalten statt beim Speichern still zu verlieren.
+    const opt = document.createElement("option");
+    opt.value = clsVal;
+    opt.textContent = "(archivierte Klasse)";
+    $("lessonClass").appendChild(opt);
+  }
+  $("lessonClass").value = clsVal;
+  $("lessonDate").value = l.date || "";
+  const k = l.klafki || {};
+  $("klafki1").value = k.gegenwart || ""; $("klafki2").value = k.zukunft || "";
+  $("klafki3").value = k.exemplarisch || ""; $("klafki4").value = k.zugang || "";
+  $("klafki5").value = k.struktur || "";
+  setMeyerGrid("meyerPlanGrid", l.meyerPlan || []);
+  if (l.diff) $("diff").value = l.diff;
+  if (l.selbstLernen) $("lernen").value = l.selbstLernen;
+  const b = l.bibox || {};
+  $("biboxWerk").value = b.werk || ""; $("biboxSeite").value = b.seite || ""; $("biboxNotiz").value = b.notiz || "";
+  (l.phases || []).forEach((p) => {
+    const i = phaseNames.indexOf(p.phaseName);
+    if (i < 0) return;
+    $("time" + i).value = p.minutes == null ? "" : p.minutes;
+    $("social" + i).value = p.socialForm || "EA";
+    $("method" + i).value = p.method || ""; $("material" + i).value = p.material || "";
+    $("teacher" + i).value = p.teacherActivity || ""; $("student" + i).value = p.studentActivity || "";
+    $("gme" + i).value = p.gme || "";
+  });
+  $("editHintTitle").textContent = l.title || "";
+  $("editHint").classList.remove("hidden");
 }
 
 /* ---------- Laden & Rendern ---------- */
@@ -605,12 +652,13 @@ function openLessonModal(l) {
     `<div class="modal-overlay" id="modalOverlay"><div class="modal-box">
       <button class="modal-close" id="modalCloseBtn">Schließen</button>
       <button class="btn small secondary" id="modalAsuvBtn" style="float:right; margin-right:10px;">ASUV-Entwurf</button>
+      <button class="btn small secondary" id="modalEditBtn" style="float:right; margin-right:10px;">Stunde bearbeiten</button>
       <h2>${esc(l.title)}</h2>
       <p class="muted small">${esc(l.subject)} – Klasse ${esc(l.grade || "?")} – ${esc(l.lessonType || "")} ${l.time ? "– " + esc(l.time) + " Uhr" : ""}</p>
-      <div class="modal-section"><h3>Klafki</h3>${klafki}</div>
-      <div class="modal-section"><h3>Meyer-Merkmale (geplant)</h3>${meyer || '<p class="muted small">Noch keine Angaben.</p>'}</div>
       <div class="modal-section"><h3>Phasentabelle</h3>${phases}</div>
       <div class="modal-section"><h3>Lehrbuch-Referenz</h3>${bibox}</div>
+      <div class="modal-section"><h3>Klafki</h3>${klafki}</div>
+      <div class="modal-section"><h3>Meyer-Merkmale (geplant)</h3>${meyer || '<p class="muted small">Noch keine Angaben.</p>'}</div>
       <div class="modal-section"><h3>Material zu dieser Stunde</h3>
         <div id="modalMaterials" class="file-list" style="margin-bottom:8px;"></div>
         <input type="file" id="modalMatFile" />
@@ -620,6 +668,7 @@ function openLessonModal(l) {
   $("modalOverlay").onclick = (e) => { if (e.target.id === "modalOverlay") closeModal(); };
   $("modalCloseBtn").onclick = closeModal;
   $("modalAsuvBtn").onclick = () => { closeModal(); showView("asuv"); loadAsuv(l.id); };
+  $("modalEditBtn").onclick = () => { closeModal(); showView("stunde"); loadLessonIntoForm(l); };
   loadModalMaterials(l);
   $("modalMatUpload").onclick = async () => {
     const f = $("modalMatFile").files[0];
@@ -664,22 +713,30 @@ async function saveLesson() {
   const title = $("lessonTitle").value.trim();
   if (!title) { toast("Bitte einen Titel angeben.", false); return; }
   const meyer = readMeyerGrid("meyerPlanGrid");
+  const body = {
+    title, subject: $("lessonSubject").value, grade: Number($("lessonGrade").value),
+    lessonType: $("lessonType").value,
+    classId: $("lessonClass").value ? Number($("lessonClass").value) : null,
+    date: $("lessonDate").value || null,
+    klafki: {
+      gegenwart: $("klafki1").value, zukunft: $("klafki2").value, exemplarisch: $("klafki3").value,
+      zugang: $("klafki4").value, struktur: $("klafki5").value,
+    },
+    meyerPlan: meyer.some((v) => v) ? meyer : null,
+    diff: $("diff").value, selbstLernen: $("lernen").value,
+    bibox: { werk: $("biboxWerk").value, seite: $("biboxSeite").value, notiz: $("biboxNotiz").value },
+    phases: readPhases(),
+  };
   try {
-    await API.post("/lessons", {
-      title, subject: $("lessonSubject").value, grade: Number($("lessonGrade").value),
-      lessonType: $("lessonType").value, time: null,
-      classId: $("lessonClass").value ? Number($("lessonClass").value) : null,
-      date: $("lessonDate").value || null,
-      klafki: {
-        gegenwart: $("klafki1").value, zukunft: $("klafki2").value, exemplarisch: $("klafki3").value,
-        zugang: $("klafki4").value, struktur: $("klafki5").value,
-      },
-      meyerPlan: meyer.some((v) => v) ? meyer : null,
-      diff: $("diff").value, selbstLernen: $("lernen").value,
-      bibox: { werk: $("biboxWerk").value, seite: $("biboxSeite").value, notiz: $("biboxNotiz").value },
-      phases: readPhases(),
-    });
-    clearLessonForm(); await refresh(); toast("Stunde gespeichert.");
+    if (editingLessonId) {
+      await API.put("/lessons/" + editingLessonId, body);
+    } else {
+      await API.post("/lessons", { ...body, time: null });
+    }
+    const updated = Boolean(editingLessonId);
+    resetLessonEditState();
+    clearLessonForm(); await refresh();
+    toast(updated ? "Stunde aktualisiert." : "Stunde gespeichert.");
   } catch (e) { toast(e.message, false); }
 }
 
@@ -826,12 +883,18 @@ async function renderAiUsage() {
 
 async function aiLessonSuggest() {
   const ideas = $("lessonIdeas").value.trim();
-  if (!ideas) { toast("Bitte zuerst Ideen im Ideenfeld eintragen.", false); return; }
+  const title = $("lessonTitle").value.trim();
+  if (!ideas && !title) { toast("Bitte Ideen im Ideenfeld oder einen Titel eintragen.", false); return; }
   const btn = $("aiPlanBtn"), label = btn.textContent;
   btn.disabled = true; btn.textContent = "✨ generiere …";
   try {
-    const res = await API.post("/ai/lesson-suggestion",
-      { ideas, subject: $("lessonSubject").value, grade: Number($("lessonGrade").value) });
+    const res = await API.post("/ai/lesson-suggestion", {
+      ideas, title,
+      subject: $("lessonSubject").value, grade: Number($("lessonGrade").value),
+      lessonType: $("lessonType").value,
+      classId: $("lessonClass").value ? Number($("lessonClass").value) : null,
+      date: $("lessonDate").value || null,
+    });
     const s = res.suggestion || {};
     if (s.title && !$("lessonTitle").value) $("lessonTitle").value = s.title;
     if (s.klafki) {
@@ -982,6 +1045,7 @@ function wireEvents() {
 
   $("saveClass").onclick = saveClass;
   $("saveLesson").onclick = saveLesson;
+  $("cancelEditBtn").onclick = () => { resetLessonEditState(); clearLessonForm(); toast("Formular geleert – neue Stunde."); };
   $("saveReflect").onclick = saveReflect;
 
   // Kalender

@@ -27,11 +27,13 @@ class _Resp:
 
 
 class _FakeClient:
-    def __init__(self, payload):
+    def __init__(self, payload, calls=None):
         self._payload = payload
         self.messages = self
+        self._calls = calls if calls is not None else []
 
     def create(self, **kwargs):  # client.messages.create(...)
+        self._calls.append(kwargs)
         return _Resp(self._payload)
 
 
@@ -43,11 +45,11 @@ def _clear_prompt_cache():
 
 
 def _install(monkeypatch, payload):
-    state = {"makes": 0}
+    state = {"makes": 0, "calls": []}
 
     def make(api_key):
         state["makes"] += 1
-        return _FakeClient(payload)
+        return _FakeClient(payload, state["calls"])
 
     monkeypatch.setattr(ai, "_make_client", make)
     return state
@@ -91,6 +93,44 @@ def test_lesson_suggestion_cache_and_usage(client, auth, monkeypatch):
     assert usage["totalUsd"] > 0
     assert usage["rows"][0]["model"] == "claude-sonnet-4-6"
     assert usage["rows"][0]["outputTokens"] == 400  # genau ein geloggter Call
+
+
+def test_lesson_suggestion_full_fields_in_prompt(client, auth, monkeypatch):
+    """M10: Alle Planungsfelder (Titel, Stundentyp, Klasse/Bildungsgang, Datum) landen im Prompt."""
+    cls = client.post("/api/classes", json={"name": "8a", "subject": "Deutsch", "grade": 8, "track": "RS"}).json()
+    payload = json.dumps({
+        "title": "Balladen szenisch erschließen",
+        "klafki": {"gegenwart": "", "zukunft": "", "exemplarisch": "", "zugang": "", "struktur": ""},
+        "meyerPlan": ["gruen"] * 10,
+        "phases": [],
+    })
+    state = _install(monkeypatch, payload)
+    _set_key(client)
+    r = client.post("/api/ai/lesson-suggestion", json={
+        "ideas": "", "title": "Balladen szenisch erschließen", "subject": "Deutsch", "grade": 8,
+        "lessonType": "Lehrprobe", "classId": cls["id"], "date": "2026-09-14",
+    })
+    assert r.status_code == 200, r.text
+    prompt = state["calls"][0]["messages"][0]["content"]
+    assert "Titel/Thema: Balladen szenisch erschließen" in prompt
+    assert "Stundentyp: Lehrprobe" in prompt
+    assert "Klasse: 8a" in prompt and "Bildungsgang: RS" in prompt
+    assert "Datum der Stunde: 2026-09-14" in prompt
+
+
+def test_lesson_suggestion_requires_ideas_or_title(client, auth, monkeypatch):
+    _install(monkeypatch, "{}")
+    _set_key(client)
+    r = client.post("/api/ai/lesson-suggestion", json={"ideas": "", "subject": "Deutsch"})
+    assert r.status_code == 400
+    assert "Ideen oder einen Titel" in r.json()["detail"]
+
+
+def test_lesson_suggestion_foreign_class_404(client, auth, monkeypatch):
+    _install(monkeypatch, "{}")
+    _set_key(client)
+    r = client.post("/api/ai/lesson-suggestion", json={"ideas": "Balladen", "classId": 9999})
+    assert r.status_code == 404
 
 
 def test_asuv_suggestion(client, auth, monkeypatch):

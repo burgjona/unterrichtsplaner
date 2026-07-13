@@ -78,9 +78,25 @@ _LESSON_SCHEMA = {
 @router.post("/lesson-suggestion")
 def lesson_suggestion(body: LessonSuggestIn, conn: sqlite3.Connection = Depends(get_db),
                       user_id: int = Depends(get_user_id)):
+    if not body.ideas.strip() and not (body.title or "").strip():
+        raise HTTPException(status_code=400,
+                            detail="Bitte Ideen oder einen Titel angeben – ohne beides kann kein Vorschlag erzeugt werden.")
+    cls = None
+    if body.class_id is not None:
+        cls = row_or_404(conn.execute("SELECT * FROM classes WHERE id=? AND user_id=?",
+                                      (body.class_id, user_id)).fetchone(), "Klasse")
     ctx = ai.fts_context(conn, user_id, f"{body.ideas} {body.title or ''}", body.subject, body.grade)
-    user_text = (f"Fach: {body.subject or '-'} · Klassenstufe: {body.grade or '-'}\n"
-                 f"Ideen/Impulse der Lehrkraft:\n{body.ideas}\n\n{_ctx_block(ctx)}")
+    lines = [f"Fach: {body.subject or '-'} · Klassenstufe: {body.grade or '-'}"]
+    if body.title:
+        lines.append(f"Titel/Thema: {body.title}")
+    if body.lesson_type:
+        lines.append(f"Stundentyp: {body.lesson_type}")
+    if cls is not None:
+        lines.append(f"Klasse: {cls['name']} · Bildungsgang: {cls['track'] or '-'}")
+    if body.date:
+        lines.append(f"Datum der Stunde: {body.date}")
+    lines.append(f"Ideen/Impulse der Lehrkraft:\n{body.ideas.strip() or '-'}")
+    user_text = "\n".join(lines) + f"\n\n{_ctx_block(ctx)}"
     data, cached = _run_json(conn, user_id, "lesson_suggestion", _LESSON_SYSTEM, user_text, _LESSON_SCHEMA)
     return {"suggestion": data, "cached": cached}
 
