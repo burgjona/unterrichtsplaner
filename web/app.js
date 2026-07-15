@@ -913,6 +913,54 @@ async function loadSettings() {
     state.aiActive = s.apiKeyStatus === "aktiv";
     applyAiGating(state.aiActive);
     renderAiUsage();
+    refreshLogoPreview();
+  } catch (e) { toast(e.message, false); }
+}
+
+/* ---------- Branding: Profilbild & Logo (M12/U10) ---------- */
+function refreshFavicon() {
+  const link = document.getElementById("faviconLink");
+  if (link) link.href = `/favicon.ico?t=${Date.now()}`;
+}
+
+function refreshLogoPreview() {
+  const img = $("logoPreview");
+  if (!img) return;
+  img.onerror = () => { img.onerror = null; img.src = TRANSPARENT_PX; };
+  img.src = `/api/settings/logo?t=${Date.now()}`;
+}
+
+async function uploadAvatar(file) {
+  if (!file) return;
+  if (!state.user) { toast("Nicht angemeldet.", false); return; }
+  const fd = new FormData();
+  fd.append("file", file);
+  try {
+    const u = await API.upload(`/users/${state.user.id}/avatar`, fd);
+    state.user.avatarPath = u.avatarPath;
+    $("avatarImg").src = `/api/users/${state.user.id}/avatar?t=${Date.now()}`;
+    toast("Profilbild aktualisiert.");
+  } catch (e) { toast(e.message, false); }
+}
+
+async function uploadLogo(file) {
+  if (!file) return;
+  const fd = new FormData();
+  fd.append("file", file);
+  try {
+    await API.upload("/settings/logo", fd);
+    refreshLogoPreview();
+    refreshFavicon();
+    toast("Logo gespeichert.");
+  } catch (e) { toast(e.message, false); }
+}
+
+async function removeLogo() {
+  try {
+    await API.del("/settings/logo");
+    refreshLogoPreview();
+    refreshFavicon();
+    toast("Logo entfernt.");
   } catch (e) { toast(e.message, false); }
 }
 
@@ -1222,7 +1270,7 @@ async function startApp() {
   state.user = me;
   $("navUser").textContent = me.displayName;
   $("settingsUser").textContent = `${me.displayName} (${me.email})`;
-  $("avatarImg").src = me.avatarPath || TRANSPARENT_PX;
+  $("avatarImg").src = me.avatarPath ? `/api/users/${me.id}/avatar?t=${Date.now()}` : TRANSPARENT_PX;
   const now = new Date();
   $("sidebarDate").textContent = now.toLocaleDateString("de-DE", { weekday: "long", day: "2-digit", month: "long" });
   $("sidebarKW").textContent = "Kalenderwoche " + isoWeek(now);
@@ -1311,6 +1359,17 @@ function wireEvents() {
     try { await API.post("/auth/logout"); } catch (e) { /* egal */ }
     location.reload();
   };
+
+  // Branding: Profilbild & Logo (M12/U10)
+  $("avatarUploadBtn").onclick = () => $("avatarFileInput").click();
+  $("avatarFileInput").addEventListener("change", (e) => {
+    uploadAvatar(e.target.files[0]); e.target.value = "";
+  });
+  $("logoUploadBtn").onclick = () => $("logoFileInput").click();
+  $("logoFileInput").addEventListener("change", (e) => {
+    uploadLogo(e.target.files[0]); e.target.value = "";
+  });
+  $("logoRemoveBtn").onclick = removeLogo;
 
   $("authSubmit").onclick = submitAuth;
   $("authToggle").onclick = () => setAuthMode(authMode === "login" ? "register" : "login");

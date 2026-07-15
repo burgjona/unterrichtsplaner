@@ -7,8 +7,8 @@ from fastapi.staticfiles import StaticFiles
 from .config import settings
 from .db import init_db
 from .routers import (
-    ai, asuv, auth, calendar, classes, lernbereiche, lessons, materials, planning,
-    reflections, school_years, settings as settings_router, todos, users,
+    ai, asuv, auth, branding, calendar, classes, lernbereiche, lessons, materials,
+    planning, reflections, school_years, settings as settings_router, todos, users,
 )
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
@@ -29,6 +29,9 @@ def create_app(db_path: str = None, storage_root: str = None) -> FastAPI:
     for module in (auth, settings_router, users, school_years, classes, lernbereiche,
                    lessons, calendar, materials, reflections, todos, planning, asuv, ai):
         app.include_router(module.router, prefix="/api")
+
+    # Branding-Routen (Favicon/Manifest, teils Root-Level) VOR dem StaticFiles-Mount.
+    app.include_router(branding.router)
 
     # Frontend zuletzt mounten, damit /api-Routen Vorrang haben.
     if WEB_DIR.is_dir():

@@ -4,11 +4,14 @@ Der Key wird AES-256-GCM-verschlüsselt gespeichert; nur die letzten 4 Zeichen
 liegen im Klartext für die Anzeige vor. Die eigentliche Nutzung des Keys (Calls)
 kommt in Meilenstein 7.
 """
+import os
 import sqlite3
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 
-from ..deps import get_db, get_user_id
+from ..deps import get_db, get_storage_root, get_user_id
+from ..lib.branding import media_type_for, resolve_relpath, save_image_upload
 from ..lib.security import encrypt_secret, secret_available
 from ..schemas import ApiKeyIn, SettingsOut
 
@@ -73,3 +76,52 @@ def delete_api_key(conn: sqlite3.Connection = Depends(get_db), user_id: int = De
     )
     conn.commit()
     return _settings_out(conn, user_id)
+
+
+# ---------- Branding: Logo (Favicon & PWA-App-Icon) — M12/U10, ans Router-Ende ----------
+@router.post("/logo")
+async def upload_logo(file: UploadFile = File(...),
+                      conn: sqlite3.Connection = Depends(get_db),
+                      user_id: int = Depends(get_user_id),
+                      storage_root: str = Depends(get_storage_root)):
+    """Logo hochladen (image/*, max. 5 MB). Dient als Favicon + PWA-App-Icon."""
+    rel = await save_image_upload(file, "logo", storage_root)
+    conn.execute(
+        """INSERT INTO user_settings (user_id, logo_path, updated_at)
+             VALUES (?, ?, datetime('now'))
+           ON CONFLICT(user_id) DO UPDATE SET
+             logo_path = excluded.logo_path, updated_at = datetime('now')""",
+        (user_id, rel),
+    )
+    conn.commit()
+    return {"logoPath": rel}
+
+
+@router.get("/logo")
+def get_logo(conn: sqlite3.Connection = Depends(get_db),
+             user_id: int = Depends(get_user_id),
+             storage_root: str = Depends(get_storage_root)):
+    row = conn.execute("SELECT logo_path FROM user_settings WHERE user_id = ?", (user_id,)).fetchone()
+    if not row or not row["logo_path"]:
+        raise HTTPException(status_code=404, detail="Kein Logo hinterlegt.")
+    path = resolve_relpath(row["logo_path"], storage_root)
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="Logo-Datei nicht gefunden.")
+    return FileResponse(path, media_type=media_type_for(path))
+
+
+@router.delete("/logo", status_code=204)
+def delete_logo(conn: sqlite3.Connection = Depends(get_db),
+                user_id: int = Depends(get_user_id),
+                storage_root: str = Depends(get_storage_root)):
+    row = conn.execute("SELECT logo_path FROM user_settings WHERE user_id = ?", (user_id,)).fetchone()
+    if row and row["logo_path"]:
+        try:
+            path = resolve_relpath(row["logo_path"], storage_root)
+            if os.path.exists(path):
+                os.remove(path)
+        except HTTPException:  # Fremdpfad-Altbestand: nur DB-Feld leeren
+            pass
+        conn.execute("UPDATE user_settings SET logo_path = NULL, updated_at = datetime('now') WHERE user_id = ?",
+                     (user_id,))
+        conn.commit()

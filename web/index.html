@@ -4,6 +4,10 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Lehrer-Dashboard</title>
+<link rel="icon" id="faviconLink" href="/favicon.ico" />
+<link rel="apple-touch-icon" href="/api/branding/favicon" />
+<link rel="manifest" href="/manifest.webmanifest" />
+<meta name="theme-color" content="#14532d" />
 <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -13,7 +17,8 @@
     <div class="brand-wrap">
       <div class="avatar-wrap">
         <img class="avatar-img" id="avatarImg" src="" alt="Profil" />
-        <div class="avatar-upload-btn" id="avatarUploadBtn" title="Foto-Upload folgt in Meilenstein 5">+</div>
+        <div class="avatar-upload-btn" id="avatarUploadBtn" title="Profilbild hochladen">+</div>
+        <input type="file" id="avatarFileInput" accept="image/*" hidden />
       </div>
       <div><div class="brand"><span id="sidebarDate"></span></div></div>
     </div>
@@ -406,6 +411,16 @@
         </div>
         <div style="margin-top:10px;"><button class="btn" id="saveSchoolYear">Schuljahr anlegen</button></div>
         <div id="schoolYearList" class="file-list" style="margin-top:12px;"></div>
+      </div>
+      <div class="card" style="margin-top:14px;" id="logoCard">
+        <h3>Logo (Favicon &amp; App-Icon)</h3>
+        <p class="muted small">Wird als Browser-Favicon genutzt und – beim Speichern der Seite als Web-App auf dem Startbildschirm – als App-Icon. Quadratische PNG-Dateien wirken am besten (max. 5 MB).</p>
+        <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-top:6px;">
+          <img id="logoPreview" alt="Logo-Vorschau" style="width:56px; height:56px; object-fit:contain; border-radius:12px; background:rgba(20,83,45,.08); border:1px solid var(--line);" />
+          <input type="file" id="logoFileInput" accept="image/*" hidden />
+          <button class="btn" id="logoUploadBtn">Logo hochladen</button>
+          <button class="btn danger" id="logoRemoveBtn">Entfernen</button>
+        </div>
       </div>
       <div class="card" style="margin-top:14px;">
         <h3>Konto</h3>
