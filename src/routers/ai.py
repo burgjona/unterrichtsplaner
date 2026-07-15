@@ -126,15 +126,36 @@ def stoffplan(body: StoffplanIn, conn: sqlite3.Connection = Depends(get_db),
                                  (body.school_year_id, user_id)).fetchone(), "Schuljahr")
     cls = row_or_404(conn.execute("SELECT * FROM classes WHERE id=? AND user_id=?",
                                   (body.class_id, user_id)).fetchone(), "Klasse")
+    from ..lib.planning import effective_blocks, resolve_track
+    track = resolve_track(cls["subject"], cls["grade"], cls["track"])
     lbs = conn.execute(
         "SELECT code, title, richtwert_ustd FROM lernbereiche WHERE subject=? AND grade=? AND track=? ORDER BY sort_order",
-        (cls["subject"], cls["grade"], cls["track"])).fetchall()
+        (cls["subject"], cls["grade"], track)).fetchall()
     if not lbs:
         raise HTTPException(status_code=404, detail="Keine Lernbereiche für diese Klasse gefunden.")
-    lb_text = "\n".join(f"- {r['code']}: {r['title']} ({r['richtwert_ustd']} Ustd.)" for r in lbs)
-    user_text = (f"Fach {cls['subject']}, Klassenstufe {cls['grade']}, Bildungsgang {cls['track']}, "
-                 f"{cls['weekly_hours']} Wochenstunden. Schuljahr {sy['label']} "
-                 f"({sy['start_date']} bis {sy['end_date']}).\nLernbereiche:\n{lb_text}")
+    blocks = effective_blocks(cls["subject"], [dict(r) for r in lbs])
+    lb_text = "\n".join(f"- {b['code']}: {b['title']} ({b['richtwert_ustd']} Ustd.)" for b in blocks)
+
+    note_row = conn.execute(
+        "SELECT text FROM plan_notes WHERE user_id=? AND class_id=? AND school_year_id=?",
+        (user_id, body.class_id, body.school_year_id)).fetchone()
+    note = (note_row["text"] if note_row else "").strip()
+
+    parts = [(f"Fach {cls['subject']}, Klassenstufe {cls['grade']}, Bildungsgang {cls['track']}, "
+              f"{cls['weekly_hours']} Wochenstunden. Schuljahr {sy['label']} "
+              f"({sy['start_date']} bis {sy['end_date']}).")]
+    if note:
+        parts.append("Hinweise/Ideen des Lehrers – diese haben Vorrang vor den Standardregeln:\n" + note)
+    if cls["subject"] == "Deutsch" and cls["track"] == "gemischt" and (cls["grade"] or 0) >= 7:
+        parts.append("Die Klasse ist ein gemischter Bildungsgang: Richte die Planung nach dem "
+                     "Realschulbildungsgang aus und plane durchgängig Differenzierung auf "
+                     "Hauptschulniveau ein – außer die Lehrer-Hinweise (Freitext) sagen etwas anderes.")
+    if cls["subject"] == "Deutsch":
+        parts.append("Lernbereiche 1 und 2 (Deutsch) nicht als eigene Blöcke ausweisen – ihre Lernziele "
+                     "(Sprechen/Zuhören, Sprache untersuchen/Rechtschreibung) durchgängig in die "
+                     "thematischen Lernbereiche 3–6 integrieren und in den Blocknotizen erwähnen.")
+    parts.append("Lernbereiche:\n" + lb_text)
+    user_text = "\n\n".join(parts)
     data, cached = _run_json(conn, user_id, "stoffplan", _STOFF_SYSTEM, user_text, _STOFF_SCHEMA, max_tokens=2500)
     return {"suggestion": data, "cached": cached}
 

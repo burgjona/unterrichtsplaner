@@ -390,6 +390,7 @@ function renderClassSelects() {
   $("planYear").innerHTML = state.schoolYears.map((s) => `<option value="${s.id}">${esc(s.label)}</option>`).join("");
   $("matYear").innerHTML = '<option value="">– kein Schuljahr –</option>' +
     state.schoolYears.map((s) => `<option value="${s.id}">${esc(s.label)}</option>`).join("");
+  loadPlanNotes();
 }
 
 /* ---------- Materialbibliothek ---------- */
@@ -476,6 +477,35 @@ function renderClassToggles() {
   });
 }
 
+// Effektiver Bildungsgang für die Anzeige (Deutsch 'gemischt' ab Kl. 7 → RS).
+function resolveTrack(subject, grade, track) {
+  if (subject === "Deutsch" && track === "gemischt" && (grade || 0) >= 7) return "RS";
+  return track;
+}
+
+// Deutsch: LB1/LB2 nicht als eigene Blöcke; ihre Stunden proportional aufschlagen
+// (Largest-Remainder, Gesamtsumme bleibt erhalten). WTH unverändert.
+function effectiveBlocks(subject, lbs) {
+  if (subject !== "Deutsch") return lbs.slice();
+  const isLB12 = (e) => e.code === "LB1" || e.code === "LB2";
+  const removed = lbs.filter(isLB12);
+  const keep = lbs.filter((e) => !isLB12(e)).map((e) => Object.assign({}, e));
+  if (!removed.length || !keep.length) return lbs.slice();
+  const extra = removed.reduce((s, e) => s + (e.richtwertUstd || 0), 0);
+  const base = keep.map((e) => e.richtwertUstd || 0);
+  const baseSum = base.reduce((s, v) => s + v, 0);
+  const totalTarget = baseSum + extra;
+  const weights = baseSum > 0 ? base : keep.map(() => 1);
+  const wsum = baseSum > 0 ? baseSum : keep.length;
+  const floats = keep.map((_, i) => base[i] + extra * (weights[i] / wsum));
+  const floors = floats.map((f) => Math.floor(f));
+  let remainder = totalTarget - floors.reduce((s, v) => s + v, 0);
+  const order = keep.map((_, i) => i).sort((a, b) => (floats[b] - floors[b]) - (floats[a] - floors[a]));
+  for (let i = 0; i < remainder; i++) floors[order[i]] += 1;
+  keep.forEach((e, i) => { e.richtwertUstd = floors[i]; });
+  return keep;
+}
+
 async function renderTimeline() {
   const wrap = $("classTimeline");
   if (!wrap) return;
@@ -484,8 +514,9 @@ async function renderTimeline() {
   for (const c of state.classes) {
     if (c.visibleInCalendar === false) continue;
     let lbs = [];
-    try { lbs = await getLernbereiche(c); } catch (e) { /* ignore */ }
-    const blocks = lbs.map((e, j) =>
+    try { lbs = await getLernbereiche({ subject: c.subject, grade: c.grade, track: resolveTrack(c.subject, c.grade, c.track) }); } catch (e) { /* ignore */ }
+    const eff = effectiveBlocks(c.subject, lbs);
+    const blocks = eff.map((e, j) =>
       `<div class="timeline-block" style="background:${colors[j % colors.length]}">${esc(e.code)} ${esc(e.title)} (${e.richtwertUstd == null ? "?" : e.richtwertUstd} Std.)</div>`).join("");
     const rowEl = document.createElement("div");
     rowEl.className = "timeline-row";
@@ -626,6 +657,45 @@ async function stoffUpload() {
   fd.append("lernbereichId", lbId);
   try { await API.upload("/materials/upload", fd); $("stoffFile").value = ""; await refresh(); toast("Material mit Lernbereich verknüpft."); }
   catch (e) { toast(e.message, false); }
+}
+
+/* ---------- Jahresplan-Ideen (Freitext, KI-relevant) ---------- */
+let planNotesTimer = null;
+let planNotesKey = "";     // classId|schoolYearId der aktuell geladenen Notiz
+
+async function loadPlanNotes() {
+  const ta = $("planNotes");
+  if (!ta) return;
+  if (planNotesTimer) { clearTimeout(planNotesTimer); planNotesTimer = null; }  // ausstehenden Save der alten Auswahl verwerfen (kein Cross-Klassen-Schreiben)
+  const clsId = Number($("planClass").value), syId = Number($("planYear").value);
+  const status = $("planNotesStatus");
+  if (!clsId || !syId) { ta.value = ""; planNotesKey = ""; if (status) status.textContent = ""; return; }
+  planNotesKey = clsId + "|" + syId;
+  if (status) status.textContent = "";
+  try {
+    const res = await API.get(`/planning/notes?classId=${clsId}&schoolYearId=${syId}`);
+    if (planNotesKey === clsId + "|" + syId) ta.value = res.text || "";
+  } catch (e) { /* stumm – Notizen sind optional */ }
+}
+
+async function savePlanNotes(silent) {
+  const ta = $("planNotes");
+  if (!ta) return;
+  const clsId = Number($("planClass").value), syId = Number($("planYear").value);
+  if (!clsId || !syId) { if (!silent) toast("Bitte Schuljahr und Klasse wählen.", false); return; }
+  const status = $("planNotesStatus");
+  try {
+    await API.put("/planning/notes", { classId: clsId, schoolYearId: syId, text: ta.value });
+    if (status) status.textContent = "Gespeichert.";
+    if (!silent) toast("Ideen gespeichert.");
+  } catch (e) { if (status) status.textContent = ""; toast(e.message, false); }
+}
+
+function schedulePlanNotesSave() {
+  const status = $("planNotesStatus");
+  if (status) status.textContent = "…";
+  if (planNotesTimer) clearTimeout(planNotesTimer);
+  planNotesTimer = setTimeout(() => savePlanNotes(true), 900);
 }
 
 /* ---------- Stunden-Detail-Modal ---------- */
@@ -1101,6 +1171,10 @@ function wireEvents() {
   $("saveSchoolYear").onclick = saveSchoolYear;
   $("planPreviewBtn").onclick = runPlanning;
   $("stoffUpload").onclick = stoffUpload;
+  $("planClass").addEventListener("change", loadPlanNotes);
+  $("planYear").addEventListener("change", loadPlanNotes);
+  $("planNotes").addEventListener("input", schedulePlanNotesSave);
+  $("planNotesSave").onclick = () => savePlanNotes(false);
 
   // Material
   $("saveMaterial").onclick = saveMaterial;

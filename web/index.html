@@ -159,6 +159,14 @@
           <button class="btn ai" id="stoffAiBtn">✨ KI-Vorschlag</button>
         </div>
         <div class="note-box" style="margin-top:12px;">„Jahresplan vorschlagen" verteilt deterministisch; „✨ KI-Vorschlag" nutzt Claude (Sonnet) für eine didaktische Sequenzierung.</div>
+        <div style="margin-top:14px;">
+          <label for="planNotes">Ideen für den Jahresplan (KI berücksichtigt sie bei der Generierung)</label>
+          <textarea id="planNotes" rows="3" placeholder="z. B. Projektwoche im Mai, Klassenfahrt vor den Herbstferien, Schwerpunkt Lektüre in Kl. 8 …"></textarea>
+          <div style="margin-top:8px; display:flex; gap:10px; align-items:center;">
+            <button class="btn small secondary" id="planNotesSave">Ideen speichern</button>
+            <span id="planNotesStatus" class="small muted"></span>
+          </div>
+        </div>
       </div>
       <div class="card" style="margin-top:14px;">
         <h3>Planvorschlag</h3>

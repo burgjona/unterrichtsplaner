@@ -446,3 +446,17 @@ class PlanningResult(Base):
     planned: int
     unplaced: int
     blocks: List[PlanningBlock]
+
+
+# ---------- Jahresplan-Notizen (Meilenstein 11) ----------
+class PlanNoteIn(Base):
+    class_id: int
+    school_year_id: int
+    text: str = ""
+
+
+class PlanNoteOut(Base):
+    class_id: int
+    school_year_id: int
+    text: str = ""
+    updated_at: Optional[str] = None

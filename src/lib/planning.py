@@ -11,6 +11,53 @@ from datetime import date, timedelta
 from typing import List, Tuple
 
 
+def resolve_track(subject: str, grade, track):
+    """Effektiver Bildungsgang für die Planung.
+
+    Deutsch ist ab Kl. 7 in HS/RS gesplittet; eine Klasse mit Bildungsgang
+    'gemischt' (grade >= 7) findet daher keine eigenen Lernbereiche. Sie wird auf
+    dem Realschulbildungsgang geplant (mit Differenzierung nach unten). Kl. 5/6 und
+    WTH ('gemischt') sowie reine HS/RS-Klassen bleiben unverändert.
+    """
+    if subject == "Deutsch" and track == "gemischt" and (grade or 0) >= 7:
+        return "RS"
+    return track
+
+
+def effective_blocks(subject: str, lbs: List[dict]) -> List[dict]:
+    """Planungs-Blöcke aus den Referenz-Lernbereichen ableiten.
+
+    Für Deutsch werden LB1 und LB2 (Sprechen/Zuhören, Sprache untersuchen/
+    Rechtschreibung) nicht als eigene Blöcke geführt; ihre Richtwertstunden werden
+    proportional auf die verbleibenden Lernbereiche verteilt, sodass die
+    Gesamtsumme der Stunden erhalten bleibt (Rundung per Largest-Remainder). Für
+    WTH (und wenn nichts zu entfernen/behalten ist) unverändert. Ändert die
+    Referenzdaten nicht – arbeitet auf Kopien.
+    """
+    out = [dict(lb) for lb in lbs]
+    if subject != "Deutsch":
+        return out
+    removed = [lb for lb in out if lb.get("code") in ("LB1", "LB2")]
+    keep = [lb for lb in out if lb.get("code") not in ("LB1", "LB2")]
+    if not removed or not keep:
+        return out
+    extra = sum(lb.get("richtwert_ustd") or 0 for lb in removed)
+    base = [lb.get("richtwert_ustd") or 0 for lb in keep]
+    base_sum = sum(base)
+    total_target = base_sum + extra
+    weights = base if base_sum > 0 else [1] * len(keep)
+    wsum = base_sum if base_sum > 0 else len(keep)
+    floats = [base[i] + extra * (weights[i] / wsum) for i in range(len(keep))]
+    floors = [math.floor(f) for f in floats]
+    remainder = total_target - sum(floors)
+    order = sorted(range(len(keep)), key=lambda i: floats[i] - floors[i], reverse=True)
+    for i in range(remainder):
+        floors[order[i]] += 1
+    for i, lb in enumerate(keep):
+        lb["richtwert_ustd"] = floors[i]
+    return keep
+
+
 def _d(s: str) -> date:
     return date.fromisoformat(s[:10])
 
