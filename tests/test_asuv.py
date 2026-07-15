@@ -24,6 +24,39 @@ def test_prefill_and_bibox_reminder(client, auth):
     assert "Deutsch" in a["bedingungEinordnung"]
 
 
+def test_prefill_ziele_from_lernziele(client, auth):
+    """M12/U7: Kap. 2 aus Lernzielen vorbefüllt, je Feinziel Phasennachweis."""
+    lesson = client.post("/api/lessons", json={
+        "title": "Balladen", "subject": "Deutsch", "grade": 8,
+        "phases": [
+            {"phaseName": "Einstieg", "minutes": 10, "socialForm": "Plenum", "method": "Hörimpuls"},
+            {"phaseName": "Erarbeitung", "minutes": 20, "socialForm": "GA", "method": "Standbild"},
+        ],
+        "lernziele": [
+            {"kind": "grob", "text": "Balladen verstehen", "bloomStufe": "Verstehen"},
+            {"kind": "fein", "text": "Merkmale nennen", "bloomStufe": "Erinnern", "phaseSortOrder": 1},
+            {"kind": "fein", "text": "Wirkung reflektieren", "bloomStufe": "Bewerten", "phaseSortOrder": None},
+        ],
+    }).json()
+    a = client.get(f"/api/lessons/{lesson['id']}/asuv").json()
+    assert "Balladen verstehen" in a["ziele"]
+    assert "Merkmale nennen" in a["ziele"]
+    assert "erreicht in Phase: Erarbeitung" in a["ziele"]   # phaseSortOrder 1 -> zweite Phase
+    assert "(keiner Phase zugeordnet)" in a["ziele"]         # phaseSortOrder None
+    assert "Klafki" not in a["ziele"]                        # Lernziele haben Vorrang vor Klafki-Ableitung
+
+
+def test_prefill_ziele_not_overwritten(client, auth):
+    """Vorhandener Nutzertext im Feld ziele wird nie durch die Lernziel-Ableitung ersetzt."""
+    lesson = client.post("/api/lessons", json={
+        "title": "Balladen", "subject": "Deutsch", "grade": 8,
+        "lernziele": [{"kind": "grob", "text": "Ziel A"}],
+    }).json()
+    client.put(f"/api/lessons/{lesson['id']}/asuv", json={"ziele": "Mein eigener Zieltext."})
+    a = client.get(f"/api/lessons/{lesson['id']}/asuv").json()
+    assert a["ziele"] == "Mein eigener Zieltext."
+
+
 def test_save_and_persist(client, auth):
     lesson = _lesson_with_phase(client)
     put = client.put(f"/api/lessons/{lesson['id']}/asuv", json={

@@ -25,7 +25,41 @@ def _lesson(conn, user_id, lid):
     return conn.execute("SELECT * FROM lessons WHERE id = ? AND user_id = ?", (lid, user_id)).fetchone()
 
 
-def _prefill(lrow) -> dict:
+def _phase_names(conn, lesson_id) -> dict:
+    """Map phase_sort_order (== lesson_phases.sort_order) -> Phasenname."""
+    rows = conn.execute(
+        "SELECT sort_order, phase_name FROM lesson_phases WHERE lesson_id = ?", (lesson_id,)).fetchall()
+    return {r["sort_order"]: r["phase_name"] for r in rows}
+
+
+def _ziele_from_lernziele(conn, lesson_id) -> str:
+    """Kap. 2 aus den erfassten Lernzielen ableiten – je Feinziel Phasennachweis."""
+    rows = conn.execute(
+        "SELECT kind, text, bloom_stufe, phase_sort_order FROM lesson_lernziele "
+        "WHERE lesson_id = ? ORDER BY sort_order, id", (lesson_id,)).fetchall()
+    if not rows:
+        return ""
+    names = _phase_names(conn, lesson_id)
+    grob = [r for r in rows if r["kind"] == "grob"]
+    fein = [r for r in rows if r["kind"] == "fein"]
+    lines = []
+    if grob:
+        lines.append("Grobziel(e):")
+        for r in grob:
+            bloom = f" (Bloom: {r['bloom_stufe']})" if r["bloom_stufe"] else ""
+            lines.append(f"- {r['text']}{bloom}")
+    if fein:
+        lines.append("Feinziele:")
+        for r in fein:
+            bloom = f" (Bloom: {r['bloom_stufe']})" if r["bloom_stufe"] else ""
+            pso = r["phase_sort_order"]
+            phase = names.get(pso) if pso is not None else None
+            nachweis = f"erreicht in Phase: {phase}" if phase else "(keiner Phase zugeordnet)"
+            lines.append(f"- {r['text']}{bloom} — {nachweis}")
+    return "\n".join(lines)
+
+
+def _prefill(conn, lrow) -> dict:
     d = dict(lrow)
     klafki = [d["klafki_gegenwart"], d["klafki_zukunft"], d["klafki_exemplarisch"],
               d["klafki_zugang"], d["klafki_struktur"]]
@@ -34,7 +68,10 @@ def _prefill(lrow) -> dict:
     pre["bedingung_einordnung"] = (
         f"Diese Stunde ({d['lesson_type'] or 'Unterrichtsstunde'}) ist Teil der laufenden "
         f"Unterrichtseinheit in {d['subject']}, Klasse {d['grade'] or '?'}.")
-    if joined:
+    ziele_lz = _ziele_from_lernziele(conn, d["id"])
+    if ziele_lz:                                    # erfasste Lernziele haben Vorrang vor der Klafki-Ableitung
+        pre["ziele"] = ziele_lz
+    elif joined:
         pre["ziele"] = "Ableitung aus der Klafki-Analyse: " + joined
     if d["klafki_exemplarisch"]:
         pre["didaktisch"] = "Exemplarische Bedeutung: " + d["klafki_exemplarisch"]
@@ -64,7 +101,7 @@ def get_asuv(lid: int, conn: sqlite3.Connection = Depends(get_db), user_id: int 
         return AsuvOut(lesson_id=lid, saved=True, bibox_empty=bibox_empty,
                        checks=json.loads(d["checks_json"]) if d["checks_json"] else {},
                        **{f: d[f] or "" for f in _FIELDS})
-    return AsuvOut(lesson_id=lid, saved=False, bibox_empty=bibox_empty, checks={}, **_prefill(lrow))
+    return AsuvOut(lesson_id=lid, saved=False, bibox_empty=bibox_empty, checks={}, **_prefill(conn, lrow))
 
 
 @router.put("/lessons/{lid}/asuv", response_model=AsuvOut)
@@ -94,7 +131,7 @@ def export_asuv(lid: int, format: str = Query("docx"),
         d = dict(row)
         draft = {f: d[f] or "" for f in _FIELDS}
     else:
-        draft = _prefill(lrow)
+        draft = _prefill(conn, lrow)
     author = conn.execute("SELECT display_name FROM users WHERE id = ?", (user_id,)).fetchone()["display_name"]
     ldict = _export_lesson(conn, lrow)
     base = "".join(c for c in (ldict["title"] or "ASUV") if c.isalnum() or c in " -_").strip() or "ASUV"

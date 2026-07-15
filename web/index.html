@@ -200,6 +200,11 @@
           Bearbeite: <strong id="editHintTitle"></strong>
           <button class="btn small secondary" id="cancelEditBtn" style="margin-left:10px;">Abbrechen / Neue Stunde</button>
         </div>
+        <div id="stundeEinordnungHint" class="note-box hidden" style="margin-bottom:10px;">
+          Diese Stunde ist keinem Lernbereich zugeordnet (frei geplant).
+          <button class="btn ai small" id="stundeEinordnungBtn" style="margin-left:8px;">✨ Einordnung vorschlagen</button>
+          <div id="stundeEinordnungResult" class="small" style="margin-top:6px;"></div>
+        </div>
         <div class="row">
           <div><label>Titel/Thema</label><input id="lessonTitle" placeholder="z. B. Balladen szenisch erschließen" /></div>
           <div><label>Fach</label><select id="lessonSubject"><option>Deutsch</option><option>WTH</option></select></div>
@@ -319,6 +324,11 @@
         <label>1.1 Organisatorische und technische Rahmenbedingungen</label><textarea id="asuv_bedingung_org"></textarea>
         <label>1.2 Lernvoraussetzungen der Schüler:innen</label><textarea id="asuv_bedingung_lern"></textarea>
         <label>1.3 Einordnung in den Lernbereich</label><textarea id="asuv_bedingung_einordnung"></textarea>
+        <div id="asuvEinordnungBox" class="hidden" style="margin-top:6px;">
+          <button class="btn ai small" id="asuvEinordnungBtn">✨ Einordnung vorschlagen</button>
+          <span class="hint">Frei geplante Stunde ohne Lernbereich – die KI schlägt Lernbereich und Lernziel vor (füllt nur das leere Feld).</span>
+          <div id="asuvEinordnungResult" class="small" style="margin-top:6px; white-space:pre-line;"></div>
+        </div>
         <div class="hint">Nur Bedingungen aufführen, die in Kapitel 4 wieder aufgegriffen werden.</div>
       </div>
       <div class="card" style="margin-top:14px;"><h3>2. Lehr- und Lernziele</h3><textarea id="asuv_ziele" rows="4"></textarea></div>

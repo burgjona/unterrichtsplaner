@@ -212,10 +212,26 @@ def asuv_suggestion(lesson_id: int, background_tasks: BackgroundTasks, request: 
               l["klafki_zugang"], l["klafki_struktur"]]
     phase_text = "; ".join(f"{p['phase_name']} ({p['minutes']} Min., {p['social_form']}): {p['method']}"
                            for p in phases) or "keine Phasen erfasst"
+    # Erfasste Lernziele + Phasen-Verortung: Kap. 2 und Verlaufsplan konsistent formulieren.
+    phase_by_so = {p["sort_order"]: p["phase_name"] for p in phases}
+    lz_rows = conn.execute(
+        "SELECT kind, text, bloom_stufe, phase_sort_order FROM lesson_lernziele "
+        "WHERE lesson_id=? ORDER BY sort_order, id", (lesson_id,)).fetchall()
+    lz_lines = []
+    for z in lz_rows:
+        bloom = f", Bloom: {z['bloom_stufe']}" if z["bloom_stufe"] else ""
+        pso = z["phase_sort_order"]
+        phase = phase_by_so.get(pso) if pso is not None else None
+        verortung = f", erreicht in Phase: {phase}" if phase else ""
+        lz_lines.append(f"- [{z['kind']}{bloom}{verortung}] {z['text']}")
+    lz_text = ("Erfasste Lernziele (Kapitel 2 und Verlaufsplan konsistent damit formulieren, "
+               "die Phasen-Verortung je Feinziel im Verlaufsplan nachweisen):\n" + "\n".join(lz_lines)
+               ) if lz_lines else "Keine Lernziele erfasst – aus Klafki/Phasen ableiten."
     ctx = ai.fts_context(conn, user_id, f"{l['title']} {l['subject']}", l["subject"], l["grade"])
     user_text = (f"Stunde: {l['title']} · Fach {l['subject']} · Klasse {l['grade']} · Typ {l['lesson_type']}\n"
                  f"Klafki: {' | '.join(x for x in klafki if x) or '-'}\n"
                  f"Phasen: {phase_text}\n"
+                 f"{lz_text}\n"
                  f"Lehrwerk: {l['bibox_werk'] or '-'} {l['bibox_seite'] or ''}\n\n{_ctx_block(ctx)}")
     # Lang laufender KI-Call asynchron (Cloudflare-Tunnel bricht Requests nach 100 s ab):
     # Job anlegen, sofort jobId liefern, Frontend pollt GET /ai/jobs/{id}.
@@ -313,3 +329,57 @@ def usage(conn: sqlite3.Connection = Depends(get_db), user_id: int = Depends(get
         "rows": [{"month": r["month"], "model": r["model"], "inputTokens": r["inp"],
                   "outputTokens": r["outp"], "costUsd": round(r["cost"], 4)} for r in rows],
     }
+
+
+# ---------- 5) Einordnung freier Stunden (Lernbereich/Lernziel-Vorschlag) — Meilenstein 12 (U7) ----------
+_EINORDNUNG_SYSTEM = (
+    "Du bist didaktische Assistenz für eine Referendarin an einer sächsischen Oberschule "
+    "(Fächer Deutsch und WTH). Eine frei geplante Stunde ohne Lernbereichszuordnung soll in den "
+    "sächsischen Lehrplan eingeordnet werden. Wähle aus den vorgegebenen Kandidaten-Lernbereichen "
+    "den am besten passenden aus (nur aus der Liste, nichts erfinden) und gib einen kurzen Hinweis, "
+    "unter welchem Lernziel des Lehrplans die Stunde dort verortet werden kann. Umlaute korrekt. "
+    "Nur Vorschlag – die Lehrkraft prüft und entscheidet."
+)
+_EINORDNUNG_SCHEMA = {
+    "type": "object", "additionalProperties": False,
+    "required": ["lernbereichCode", "lernbereichTitle", "lernzielHinweis", "begruendung"],
+    "properties": {k: _STR for k in
+                   ["lernbereichCode", "lernbereichTitle", "lernzielHinweis", "begruendung"]},
+}
+
+
+@router.post("/einordnung/{lesson_id}")
+def einordnung_suggestion(lesson_id: int, conn: sqlite3.Connection = Depends(get_db),
+                          user_id: int = Depends(get_user_id)):
+    l = row_or_404(conn.execute("SELECT * FROM lessons WHERE id=? AND user_id=?",
+                                (lesson_id, user_id)).fetchone(), "Stunde")
+    # Kandidaten-Lernbereiche über subject/grade (+ Bildungsgang der Klasse, falls verknüpft).
+    from ..lib.planning import resolve_track
+    track = None
+    if l["class_id"] is not None:
+        cls = conn.execute("SELECT * FROM classes WHERE id=? AND user_id=?",
+                           (l["class_id"], user_id)).fetchone()
+        if cls is not None:
+            track = resolve_track(cls["subject"], cls["grade"], cls["track"])
+    params = [l["subject"], l["grade"]]
+    sql = "SELECT code, title, detail_md FROM lernbereiche WHERE subject=? AND grade=?"
+    if track:
+        sql += " AND track=?"
+        params.append(track)
+    sql += " ORDER BY track, sort_order"
+    lbs = conn.execute(sql, params).fetchall()
+    if not lbs:
+        raise HTTPException(status_code=404, detail="Keine passenden Lernbereiche gefunden.")
+    lb_lines = []
+    for b in lbs:
+        line = f"- {b['code']}: {b['title']}"
+        if b["detail_md"]:
+            line += f"\n  Lehrplan-Detail (OCR-holprig, nur als Grundlage): {b['detail_md'][:800]}"
+        lb_lines.append(line)
+    user_text = (
+        f"Frei geplante Stunde: {l['title']} · Fach {l['subject']} · Klassenstufe {l['grade'] or '-'} · "
+        f"Stundentyp {l['lesson_type'] or '-'}\n\n"
+        "Kandidaten-Lernbereiche:\n" + "\n".join(lb_lines)
+    )
+    data, cached = _run_json(conn, user_id, "einordnung", _EINORDNUNG_SYSTEM, user_text, _EINORDNUNG_SCHEMA)
+    return {"suggestion": data, "cached": cached}

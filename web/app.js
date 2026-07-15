@@ -215,6 +215,8 @@ let editingLessonId = null;
 function resetLessonEditState() {
   editingLessonId = null;
   $("editHint").classList.add("hidden");
+  const h = $("stundeEinordnungHint");
+  if (h) { h.classList.add("hidden"); $("stundeEinordnungResult").textContent = ""; }
 }
 function loadLessonIntoForm(l) {
   clearLessonForm();
@@ -260,6 +262,12 @@ function loadLessonIntoForm(l) {
   });
   $("editHintTitle").textContent = l.title || "";
   $("editHint").classList.remove("hidden");
+  // Freie Stunde ohne Lernbereich: KI-Einordnungshinweis anbieten.
+  const h = $("stundeEinordnungHint");
+  if (h) {
+    $("stundeEinordnungResult").textContent = "";
+    h.classList.toggle("hidden", l.lernbereichId != null);
+  }
 }
 
 /* ---------- Laden & Rendern ---------- */
@@ -967,14 +975,25 @@ async function loadAsuv(lessonId) {
       cl.appendChild(div);
     });
     if (lesson) {
+      const ziele = lesson.lernziele || [];
+      const zielMark = (p) => ziele
+        .filter((z) => z.kind === "fein" && z.phaseSortOrder != null && String(z.phaseSortOrder) === String(p.sortOrder))
+        .map((z) => `<br><span style="${ZIEL_BADGE}">🎯 ${esc((z.text || "").slice(0, 45))}${(z.text || "").length > 45 ? "…" : ""}</span>`)
+        .join("");
       $("asuvPhases").innerHTML = (lesson.phases || []).map((p) =>
         `<div class="phase"><strong>${esc(p.phaseName)}</strong> (${esc(p.minutes == null ? "–" : p.minutes)} Min., ${esc(p.socialForm || "–")})<br>` +
         `<span class="small muted">Methode: ${esc(p.method || "–")} – Material: ${esc(p.material || "–")}</span><br>` +
-        `<span class="small">L: ${esc(p.teacherActivity || "–")} · S: ${esc(p.studentActivity || "–")}</span></div>`).join("")
+        `<span class="small">L: ${esc(p.teacherActivity || "–")} · S: ${esc(p.studentActivity || "–")}</span>${zielMark(p)}</div>`).join("")
         || '<p class="muted small">Noch keine Phasen erfasst.</p>';
       $("asuvBibox").textContent = lesson.bibox && lesson.bibox.werk
         ? `Lehrwerk: ${lesson.bibox.werk} – ${lesson.bibox.seite || ""} ${lesson.bibox.notiz || ""}`
         : "Keine Lehrbuch-Referenz hinterlegt.";
+      // Freie Stunde (kein Lernbereich): KI-Einordnung anbieten; der Button füllt nur ein leeres Feld.
+      const box = $("asuvEinordnungBox");
+      if (box) {
+        box.classList.toggle("hidden", lesson.lernbereichId != null);
+        $("asuvEinordnungResult").textContent = "";
+      }
     }
   } catch (e) { toast(e.message, false); }
 }
@@ -1001,7 +1020,7 @@ function exportAsuv(fmt) {
 
 /* ---------- KI (Meilenstein 7) ---------- */
 function applyAiGating(active) {
-  ["aiPlanBtn", "stoffAiBtn", "asuvAiBtn", "aiLernzieleBtn"].forEach((id) => {
+  ["aiPlanBtn", "stoffAiBtn", "asuvAiBtn", "aiLernzieleBtn", "asuvEinordnungBtn", "stundeEinordnungBtn"].forEach((id) => {
     const b = $(id);
     if (b) { b.disabled = !active; b.title = active ? "" : "Kein API-Key hinterlegt – in den Einstellungen eintragen"; }
   });
@@ -1139,6 +1158,44 @@ async function aiAsuvSuggest() {
     toast(res.cached ? "ASUV-Vorschlag (aus Cache)." : "ASUV ausformuliert – bitte prüfen.");
   } catch (e) { toast(e.message, false); }
   finally { btn.disabled = false; btn.textContent = label; }
+}
+
+/* ---------- Einordnung freier Stunden (M12/U7) ---------- */
+function formatEinordnung(s) {
+  const code = [s.lernbereichCode, s.lernbereichTitle].filter(Boolean).join(" – ");
+  return [code ? `Lernbereich: ${code}` : "", s.lernzielHinweis ? `Lernziel: ${s.lernzielHinweis}` : "",
+          s.begruendung ? `Begründung: ${s.begruendung}` : ""].filter(Boolean).join("\n");
+}
+// Holt den KI-Einordnungsvorschlag für eine freie Stunde und liefert das Suggestion-Objekt.
+async function fetchEinordnung(lessonId, btn) {
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = "✨ ordne ein …";
+  try {
+    const res = await API.post(`/ai/einordnung/${lessonId}`, {});
+    if (res.cached) toast("Einordnung (aus Cache) – bitte prüfen.");
+    return res.suggestion || {};
+  } finally { btn.disabled = false; btn.textContent = label; }
+}
+async function asuvEinordnungSuggest() {
+  if (!asuvLessonId) { toast("Bitte eine Stunde wählen.", false); return; }
+  const btn = $("asuvEinordnungBtn");
+  try {
+    const s = await fetchEinordnung(asuvLessonId, btn);
+    const ta = $("asuv_bedingung_einordnung");
+    const text = formatEinordnung(s);
+    const out = $("asuvEinordnungResult");
+    if (out) out.textContent = text;                 // Vorschlag immer sichtbar machen
+    if (!ta.value.trim()) { ta.value = text; toast("Einordnung eingetragen – bitte prüfen."); }
+    else { toast("Feld schon ausgefüllt – Vorschlag unten angezeigt, nicht überschrieben."); }
+  } catch (e) { toast(e.message, false); }
+}
+async function stundeEinordnungSuggest() {
+  if (!editingLessonId) { toast("Bitte die Stunde zuerst speichern.", false); return; }
+  const btn = $("stundeEinordnungBtn"), out = $("stundeEinordnungResult");
+  try {
+    const s = await fetchEinordnung(editingLessonId, btn);
+    out.textContent = formatEinordnung(s);
+  } catch (e) { toast(e.message, false); }
 }
 
 /* ---------- Navigation ---------- */
@@ -1287,6 +1344,8 @@ function wireEvents() {
   $("asuvAiBtn").onclick = aiAsuvSuggest;
   $("addLernzielBtn").onclick = addLernziel;
   $("aiLernzieleBtn").onclick = aiLernzieleSuggest;
+  $("asuvEinordnungBtn").onclick = asuvEinordnungSuggest;
+  $("stundeEinordnungBtn").onclick = stundeEinordnungSuggest;
   $("lessonType").addEventListener("change", (e) =>
     $("lueHint").classList.toggle("hidden", e.target.value !== "Übungsstunde vor LUE"));
 
