@@ -1,0 +1,147 @@
+/* Schüleransicht / Präsentationsmodus (M12 U8)
+   Read-only Vollbild-taugliche Ansicht für Beamer / interaktive Tafel.
+   Große Typografie, nutzt die vorhandenen CSS-Variablen aus styles.css,
+   damit spätere Themes automatisch greifen. Desktop-Layout von styles.css
+   wird nicht verändert; Mobile-Anpassungen nur in @media-Blöcken. */
+
+/* ---------- Kopfleiste: Umschalter + Steuerung ---------- */
+.praesent-bar {
+  display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+  justify-content: space-between; margin-bottom: 18px;
+}
+.praesent-tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+.praesent-tab {
+  border: 1px solid var(--line); background: var(--surface); color: var(--primary-dark);
+  padding: 12px 20px; border-radius: 999px; cursor: pointer;
+  font-family: inherit; font-weight: 800; font-size: 16px;
+}
+.praesent-tab:hover { background: var(--surface-2); }
+.praesent-tab.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+.praesent-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.praesent-select {
+  width: auto; min-width: 180px; max-width: 340px;
+  padding: 11px 12px; font-weight: 700;
+}
+.praesent-navbtn {
+  border: 1px solid var(--line); background: var(--surface); color: var(--primary-dark);
+  padding: 11px 16px; border-radius: 10px; cursor: pointer;
+  font-family: inherit; font-weight: 800; font-size: 15px;
+}
+.praesent-navbtn:hover { background: var(--surface-2); }
+.praesent-navbtn:disabled { opacity: .45; cursor: default; }
+
+/* ---------- Bühne ---------- */
+.praesent-stage {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  padding: 32px; min-height: 60vh;
+}
+.praesent-h {
+  margin: 0 0 22px; color: var(--primary-dark);
+  font-size: 40px; font-weight: 800; line-height: 1.1;
+}
+.praesent-sub { margin: -14px 0 26px; color: var(--muted); font-size: 20px; font-weight: 700; }
+.praesent-empty {
+  color: var(--muted); font-size: 22px; font-weight: 700;
+  text-align: center; padding: 60px 20px;
+}
+.praesent-loading { color: var(--muted); font-size: 20px; font-weight: 700; padding: 30px; }
+
+/* ---------- Jahresplan-Timeline (groß) ---------- */
+.praesent-jp { display: flex; flex-direction: column; gap: 18px; }
+.praesent-jp-row { display: flex; flex-direction: column; gap: 8px; }
+.praesent-jp-label {
+  font-size: 22px; font-weight: 800; color: var(--primary-dark);
+}
+.praesent-jp-track { display: flex; flex-wrap: wrap; gap: 10px; }
+.praesent-lb {
+  display: flex; flex-direction: column; gap: 3px;
+  color: #fff; border-radius: 14px; padding: 14px 18px;
+  min-width: 150px; flex: 1 1 150px;
+}
+.praesent-lb-code { font-size: 15px; font-weight: 800; opacity: .95; }
+.praesent-lb-title { font-size: 20px; font-weight: 800; line-height: 1.15; }
+.praesent-lb-std { font-size: 15px; font-weight: 700; opacity: .9; }
+
+/* ---------- Lernbereichsplanung (Lernziele groß) ---------- */
+.praesent-goals { display: flex; flex-direction: column; gap: 16px; }
+.praesent-goal {
+  border: 1px solid var(--line); border-radius: 16px;
+  padding: 20px 24px; background: var(--surface-2);
+  display: flex; align-items: flex-start; gap: 16px;
+}
+.praesent-goal.grob {
+  background: var(--primary); color: #fff; border-color: var(--primary);
+}
+.praesent-goal-kind {
+  flex-shrink: 0; font-size: 14px; font-weight: 800;
+  text-transform: uppercase; letter-spacing: .05em;
+  padding: 4px 12px; border-radius: 999px;
+  background: rgba(0, 0, 0, .12);
+}
+.praesent-goal.grob .praesent-goal-kind { background: rgba(255, 255, 255, .22); }
+.praesent-goal-text { font-size: 24px; font-weight: 700; line-height: 1.3; }
+.praesent-goal.grob .praesent-goal-text { font-weight: 800; }
+.praesent-goal-bloom {
+  display: inline-block; margin-left: 10px; font-size: 15px; font-weight: 800;
+  padding: 2px 10px; border-radius: 999px; background: var(--yellow); color: #3f2d00;
+  vertical-align: middle;
+}
+.praesent-goal-phase { display: block; margin-top: 6px; font-size: 15px; font-weight: 700; opacity: .8; }
+
+/* ---------- Unterrichtsablauf heute (Schritte + Marker) ---------- */
+.praesent-steps { display: flex; flex-direction: column; gap: 14px; }
+.praesent-step {
+  position: relative; display: flex; align-items: flex-start; gap: 18px;
+  border: 2px solid var(--line); border-radius: 16px;
+  padding: 20px 24px; background: var(--surface); cursor: pointer;
+  transition: .12s;
+}
+.praesent-step:hover { border-color: var(--primary); }
+.praesent-step.active {
+  border-color: var(--primary); background: var(--surface-2);
+  box-shadow: 0 10px 26px rgba(20, 83, 45, .16);
+}
+.praesent-step.done { opacity: .6; }
+.praesent-step-num {
+  flex-shrink: 0; width: 52px; height: 52px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 24px; font-weight: 800;
+  background: var(--surface-2); color: var(--primary-dark); border: 2px solid var(--line);
+}
+.praesent-step.active .praesent-step-num { background: var(--primary); color: #fff; border-color: var(--primary); }
+.praesent-step-body { flex: 1; min-width: 0; }
+.praesent-step-title { font-size: 26px; font-weight: 800; color: var(--primary-dark); }
+.praesent-step-meta { margin-top: 4px; font-size: 17px; font-weight: 700; color: var(--muted); }
+.praesent-step-goals { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.praesent-step-goal { font-size: 18px; font-weight: 700; color: var(--text); }
+.praesent-here {
+  display: inline-flex; align-items: center; gap: 6px; margin-left: 12px;
+  font-size: 15px; font-weight: 800; color: #fff; background: var(--orange);
+  padding: 3px 12px; border-radius: 999px; vertical-align: middle;
+}
+
+/* ---------- Vollbild ---------- */
+:root:fullscreen .app { grid-template-columns: 1fr; }
+:root:fullscreen #sidebarNav,
+:root:fullscreen .topbar,
+:root:fullscreen .nav-backdrop { display: none; }
+:root:fullscreen main { padding: 24px 32px; }
+:root:fullscreen .praesent-stage { min-height: 78vh; }
+
+/* ---------- Mobile ---------- */
+@media (max-width: 920px) {
+  .praesent-bar { flex-direction: column; align-items: stretch; }
+  .praesent-controls { justify-content: flex-start; }
+  .praesent-select { max-width: 100%; flex: 1 1 auto; }
+  .praesent-stage { padding: 20px; }
+  .praesent-h { font-size: 30px; }
+  .praesent-goal-text { font-size: 20px; }
+  .praesent-step-title { font-size: 21px; }
+}
+@media (max-width: 600px) {
+  .praesent-tab { padding: 10px 14px; font-size: 14px; }
+  .praesent-h { font-size: 25px; }
+  .praesent-step { padding: 14px 16px; gap: 12px; }
+  .praesent-step-num { width: 42px; height: 42px; font-size: 20px; }
+}

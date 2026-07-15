@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Lehrer-Dashboard</title>
 <link rel="stylesheet" href="styles.css" />
+<link rel="stylesheet" href="praesentation.css" />
 </head>
 <body>
 <div class="app">
@@ -23,6 +24,9 @@
     <button class="nav-btn active" data-view="heute">Schulalltag heute</button>
     <button class="nav-btn" data-view="klassen">Klassen</button>
     <button class="nav-btn" data-view="kalender">Planungskalender</button>
+
+    <div class="section-label">Präsentation</div>
+    <button class="nav-btn" data-view="praesentation">Schüleransicht</button>
 
     <div class="section-label">Planung</div>
     <button class="nav-btn" data-view="stoff">Stoffverteilungsplan</button>
@@ -143,6 +147,25 @@
         <label style="display:flex; align-items:center; gap:8px; margin-top:8px;"><input type="checkbox" id="calEntryFixed" style="width:auto;" /> Fixer Termin (nicht durch die Verplanung verschiebbar)</label>
         <div style="margin-top:10px;"><button class="btn" id="calSaveEntryBtn">Termin speichern</button></div>
       </div>
+    </section>
+
+    <!-- PRÄSENTATION / SCHÜLERANSICHT -->
+    <section id="praesentation" class="view hidden">
+      <div class="praesent-bar">
+        <div class="praesent-tabs">
+          <button class="praesent-tab active" data-praesent="jahresplan">Jahresplan</button>
+          <button class="praesent-tab" data-praesent="lernbereich">Lernbereichsplanung</button>
+          <button class="praesent-tab" data-praesent="ablauf">Unterrichtsablauf heute</button>
+        </div>
+        <div class="praesent-controls">
+          <select id="praesentClass" class="praesent-select" style="display:none;" aria-label="Klasse"></select>
+          <select id="praesentLesson" class="praesent-select" style="display:none;" aria-label="Stunde"></select>
+          <button class="praesent-navbtn" id="praesentPrevBtn" style="display:none;" aria-label="Vorherige Phase">‹ Zurück</button>
+          <button class="praesent-navbtn" id="praesentNextBtn" style="display:none;" aria-label="Nächste Phase">Weiter ›</button>
+          <button class="btn" id="praesentFullscreenBtn">Vollbild</button>
+        </div>
+      </div>
+      <div id="praesentStage" class="praesent-stage"></div>
     </section>
 
     <!-- STOFFVERTEILUNGSPLAN -->
