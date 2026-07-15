@@ -1,0 +1,172 @@
+/* U9 (M12) — Jahreszeiten-Paletten (hell/dunkel) + Schriftart-Umschaltung.
+   Wird in index.html NACH styles.css eingebunden, damit diese Overrides gewinnen.
+   Frühling-hell = Default aus styles.css (:root); hier zusätzlich explizit + 3 weitere
+   Jahreszeiten je hell/dunkel. Overrides betreffen NUR Farb-/Schrift-Tokens, kein Layout.
+
+   Selektor-Präzedenz: :root[data-theme="…"] schlägt :root aus styles.css;
+   :root[data-theme="…"][data-dark="1"] schlägt die Hell-Variante. */
+
+/* ============================ Settings-UI: Jahreszeit-Swatches ============================ */
+.theme-swatches { display:flex; flex-wrap:wrap; gap:10px; margin-top:4px; }
+.theme-swatch { display:flex; flex-direction:column; align-items:center; gap:5px; border:2px solid var(--line); background:var(--surface); border-radius:12px; padding:8px 10px; cursor:pointer; font-size:12px; font-weight:700; color:var(--muted); font-family:inherit; }
+.theme-swatch:hover { border-color:var(--primary); }
+.theme-swatch.active { border-color:var(--primary); color:var(--primary-dark); box-shadow:0 0 0 3px rgba(22,163,74,0.15); }
+.theme-swatch .dots { display:flex; gap:3px; }
+.theme-swatch .dot { width:14px; height:14px; border-radius:50%; }
+
+/* ============================ Schriftart ============================ */
+:root[data-font="standard"] {
+  --font-family: -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+/* ============================ FRÜHLING (grün) ============================ */
+:root[data-theme="fruehling"] {
+  --bg: #f7fbf3; --sidebar: #14532d;
+  --surface: #ffffff; --surface-2: #f0faf0;
+  --text: #14261a; --muted: #5b6b5f;
+  --line: #dbe8da; --primary: #16a34a; --primary-dark: #14532d;
+  --yellow: #eab308; --orange: #f97316; --ok: #22c55e; --warn: #eab308; --bad: #ef4444;
+  --shadow: 0 12px 30px rgba(20,83,45,0.10);
+  --sidebar-text: #dcfce7; --sidebar-sub: #bbf7d0; --sidebar-label: #86efac;
+  --avatar-bg: #a3e635;
+  --badge-ok-bg: #bbf7d0; --badge-ok-text: #14532d;
+  --badge-warn-bg: #fef08a; --badge-warn-text: #713f12;
+  --badge-bad-bg: #fecaca; --badge-bad-text: #7f1d1d;
+  --note-bg: #fff7ed; --note-border: #fed7aa; --note-text: #9a3412;
+  --mini-item-bg: rgba(255,255,255,0.16); --mini-item-bg-hover: rgba(255,255,255,0.26);
+  --mini-time: #fef9c3;
+  --tl-1: #16a34a; --tl-2: #eab308; --tl-3: #f97316; --tl-4: #0ea5e9; --tl-5: #22c55e; --tl-6: #a855f7;
+  --cal-holiday: #fde68a; --cal-vacation: #e5e7eb;
+}
+:root[data-theme="fruehling"][data-dark="1"] {
+  --bg: #0d1a12; --sidebar: #0a2418;
+  --surface: #142218; --surface-2: #18301f;
+  --text: #e6f5e9; --muted: #9db8a5;
+  --line: #24402d; --primary: #22c55e; --primary-dark: #14532d;
+  --yellow: #eab308; --orange: #fb923c; --ok: #22c55e; --warn: #eab308; --bad: #f87171;
+  --shadow: 0 12px 30px rgba(0,0,0,0.45);
+  --sidebar-text: #c7ecd3; --sidebar-sub: #86efac; --sidebar-label: #4ade80;
+  --avatar-bg: #65a30d;
+  --badge-ok-bg: #14532d; --badge-ok-text: #bbf7d0;
+  --badge-warn-bg: #713f12; --badge-warn-text: #fde68a;
+  --badge-bad-bg: #7f1d1d; --badge-bad-text: #fecaca;
+  --note-bg: #2a1c0e; --note-border: #7c4a1e; --note-text: #fdba74;
+  --mini-item-bg: rgba(255,255,255,0.08); --mini-item-bg-hover: rgba(255,255,255,0.16);
+  --mini-time: #fde68a;
+  --tl-1: #22c55e; --tl-2: #eab308; --tl-3: #fb923c; --tl-4: #38bdf8; --tl-5: #4ade80; --tl-6: #c084fc;
+  --cal-holiday: #78551a; --cal-vacation: #374151;
+}
+
+/* ============================ SOMMER (sonnig / blau-türkis) ============================ */
+:root[data-theme="sommer"] {
+  --bg: #f2fbfd; --sidebar: #0e5a6b;
+  --surface: #ffffff; --surface-2: #e8f8fb;
+  --text: #10262b; --muted: #4f6b71;
+  --line: #cfeaf0; --primary: #0891b2; --primary-dark: #0e5a6b;
+  --yellow: #f59e0b; --orange: #fb923c; --ok: #14b8a6; --warn: #f59e0b; --bad: #ef4444;
+  --shadow: 0 12px 30px rgba(8,145,178,0.12);
+  --sidebar-text: #d1f4fa; --sidebar-sub: #a5e9f2; --sidebar-label: #67e8f9;
+  --avatar-bg: #fcd34d;
+  --badge-ok-bg: #bae6fd; --badge-ok-text: #075985;
+  --badge-warn-bg: #fef08a; --badge-warn-text: #854d0e;
+  --badge-bad-bg: #fecaca; --badge-bad-text: #7f1d1d;
+  --note-bg: #fff7ed; --note-border: #fed7aa; --note-text: #9a3412;
+  --mini-item-bg: rgba(255,255,255,0.18); --mini-item-bg-hover: rgba(255,255,255,0.28);
+  --mini-time: #fde68a;
+  --tl-1: #0891b2; --tl-2: #f59e0b; --tl-3: #fb7185; --tl-4: #0ea5e9; --tl-5: #14b8a6; --tl-6: #8b5cf6;
+  --cal-holiday: #fde68a; --cal-vacation: #dbeafe;
+}
+:root[data-theme="sommer"][data-dark="1"] {
+  --bg: #071a1f; --sidebar: #062a33;
+  --surface: #0e2a31; --surface-2: #123640;
+  --text: #e0f7fb; --muted: #93b8c0;
+  --line: #1d4450; --primary: #22d3ee; --primary-dark: #0e5a6b;
+  --yellow: #fbbf24; --orange: #fb923c; --ok: #2dd4bf; --warn: #fbbf24; --bad: #f87171;
+  --shadow: 0 12px 30px rgba(0,0,0,0.5);
+  --sidebar-text: #b8ecf4; --sidebar-sub: #67e8f9; --sidebar-label: #22d3ee;
+  --avatar-bg: #f59e0b;
+  --badge-ok-bg: #075985; --badge-ok-text: #bae6fd;
+  --badge-warn-bg: #854d0e; --badge-warn-text: #fde68a;
+  --badge-bad-bg: #7f1d1d; --badge-bad-text: #fecaca;
+  --note-bg: #2a1c0e; --note-border: #7c4a1e; --note-text: #fdba74;
+  --mini-item-bg: rgba(255,255,255,0.09); --mini-item-bg-hover: rgba(255,255,255,0.17);
+  --mini-time: #fde68a;
+  --tl-1: #22d3ee; --tl-2: #fbbf24; --tl-3: #fb7185; --tl-4: #38bdf8; --tl-5: #2dd4bf; --tl-6: #a78bfa;
+  --cal-holiday: #78551a; --cal-vacation: #1e3a5f;
+}
+
+/* ============================ HERBST (orange / braun) ============================ */
+:root[data-theme="herbst"] {
+  --bg: #fdf6ee; --sidebar: #7c2d12;
+  --surface: #ffffff; --surface-2: #fbeee0;
+  --text: #2b1a0e; --muted: #6b5545;
+  --line: #ecdcc9; --primary: #ea580c; --primary-dark: #7c2d12;
+  --yellow: #ca8a04; --orange: #f97316; --ok: #65a30d; --warn: #ca8a04; --bad: #dc2626;
+  --shadow: 0 12px 30px rgba(124,45,18,0.12);
+  --sidebar-text: #fde4cf; --sidebar-sub: #fbcfa5; --sidebar-label: #fdba74;
+  --avatar-bg: #f59e0b;
+  --badge-ok-bg: #d9f99d; --badge-ok-text: #3f6212;
+  --badge-warn-bg: #fde68a; --badge-warn-text: #854d0e;
+  --badge-bad-bg: #fecaca; --badge-bad-text: #7f1d1d;
+  --note-bg: #fff7ed; --note-border: #fed7aa; --note-text: #9a3412;
+  --mini-item-bg: rgba(255,255,255,0.16); --mini-item-bg-hover: rgba(255,255,255,0.26);
+  --mini-time: #fef3c7;
+  --tl-1: #ea580c; --tl-2: #ca8a04; --tl-3: #b45309; --tl-4: #dc2626; --tl-5: #65a30d; --tl-6: #9a3412;
+  --cal-holiday: #fdba74; --cal-vacation: #e7d5c0;
+}
+:root[data-theme="herbst"][data-dark="1"] {
+  --bg: #1a0f07; --sidebar: #2a1206;
+  --surface: #241610; --surface-2: #2f1e14;
+  --text: #f7e7d6; --muted: #bda491;
+  --line: #40291b; --primary: #fb923c; --primary-dark: #7c2d12;
+  --yellow: #eab308; --orange: #fb923c; --ok: #84cc16; --warn: #eab308; --bad: #f87171;
+  --shadow: 0 12px 30px rgba(0,0,0,0.5);
+  --sidebar-text: #fbd9bd; --sidebar-sub: #fdba74; --sidebar-label: #fb923c;
+  --avatar-bg: #b45309;
+  --badge-ok-bg: #3f6212; --badge-ok-text: #d9f99d;
+  --badge-warn-bg: #854d0e; --badge-warn-text: #fde68a;
+  --badge-bad-bg: #7f1d1d; --badge-bad-text: #fecaca;
+  --note-bg: #2a1c0e; --note-border: #7c4a1e; --note-text: #fdba74;
+  --mini-item-bg: rgba(255,255,255,0.08); --mini-item-bg-hover: rgba(255,255,255,0.16);
+  --mini-time: #fde68a;
+  --tl-1: #fb923c; --tl-2: #eab308; --tl-3: #d97706; --tl-4: #f87171; --tl-5: #84cc16; --tl-6: #c2703c;
+  --cal-holiday: #78551a; --cal-vacation: #3a2a1c;
+}
+
+/* ============================ WINTER (kühl blau-grau) ============================ */
+:root[data-theme="winter"] {
+  --bg: #f4f7fb; --sidebar: #1e293b;
+  --surface: #ffffff; --surface-2: #eef2f8;
+  --text: #16202e; --muted: #5a6675;
+  --line: #d8e0ec; --primary: #2563eb; --primary-dark: #1e293b;
+  --yellow: #eab308; --orange: #f97316; --ok: #0ea5e9; --warn: #eab308; --bad: #ef4444;
+  --shadow: 0 12px 30px rgba(30,41,59,0.12);
+  --sidebar-text: #dbe4f0; --sidebar-sub: #b6c6dc; --sidebar-label: #93c5fd;
+  --avatar-bg: #7dd3fc;
+  --badge-ok-bg: #bae6fd; --badge-ok-text: #075985;
+  --badge-warn-bg: #fef08a; --badge-warn-text: #713f12;
+  --badge-bad-bg: #fecaca; --badge-bad-text: #7f1d1d;
+  --note-bg: #eff6ff; --note-border: #bfdbfe; --note-text: #1e40af;
+  --mini-item-bg: rgba(255,255,255,0.16); --mini-item-bg-hover: rgba(255,255,255,0.26);
+  --mini-time: #e0f2fe;
+  --tl-1: #2563eb; --tl-2: #0ea5e9; --tl-3: #6366f1; --tl-4: #0891b2; --tl-5: #64748b; --tl-6: #8b5cf6;
+  --cal-holiday: #bae6fd; --cal-vacation: #e2e8f0;
+}
+:root[data-theme="winter"][data-dark="1"] {
+  --bg: #0b111c; --sidebar: #0f1826;
+  --surface: #141d2b; --surface-2: #1a2537;
+  --text: #e6edf7; --muted: #97a6bb;
+  --line: #26344a; --primary: #60a5fa; --primary-dark: #1e293b;
+  --yellow: #eab308; --orange: #fb923c; --ok: #38bdf8; --warn: #eab308; --bad: #f87171;
+  --shadow: 0 12px 30px rgba(0,0,0,0.55);
+  --sidebar-text: #cbd8ea; --sidebar-sub: #93c5fd; --sidebar-label: #60a5fa;
+  --avatar-bg: #0284c7;
+  --badge-ok-bg: #075985; --badge-ok-text: #bae6fd;
+  --badge-warn-bg: #713f12; --badge-warn-text: #fde68a;
+  --badge-bad-bg: #7f1d1d; --badge-bad-text: #fecaca;
+  --note-bg: #12233f; --note-border: #1e40af; --note-text: #bfdbfe;
+  --mini-item-bg: rgba(255,255,255,0.08); --mini-item-bg-hover: rgba(255,255,255,0.16);
+  --mini-time: #bae6fd;
+  --tl-1: #60a5fa; --tl-2: #38bdf8; --tl-3: #818cf8; --tl-4: #22d3ee; --tl-5: #94a3b8; --tl-6: #a78bfa;
+  --cal-holiday: #1e4a6b; --cal-vacation: #2a3648;
+}

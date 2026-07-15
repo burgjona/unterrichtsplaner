@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Lehrer-Dashboard</title>
 <link rel="stylesheet" href="styles.css" />
+<link rel="stylesheet" href="themes.css" />
 <link rel="stylesheet" href="praesentation.css" />
 </head>
 <body>
@@ -55,7 +56,7 @@
           <div class="page-sub" id="pageSub">Dein Tag auf einen Blick.</div>
         </div>
       </div>
-      <div class="hero-tag">Frühling</div>
+      <div class="hero-tag" id="heroTag">Frühling</div>
     </div>
 
     <!-- HEUTE -->
@@ -439,6 +440,29 @@
         </div>
         <div style="margin-top:10px;"><button class="btn" id="saveSchoolYear">Schuljahr anlegen</button></div>
         <div id="schoolYearList" class="file-list" style="margin-top:12px;"></div>
+      </div>
+      <!-- U9: Darstellung (Jahreszeit-Theme, Hell/Dunkel, Schriftart) -->
+      <div class="card" style="margin-top:14px;">
+        <h3>Darstellung</h3>
+        <p class="muted small">Jahreszeit-Farbschema, Hell-/Dunkelmodus und Schriftart. Wird sofort übernommen und gespeichert.</p>
+        <label>Jahreszeit</label>
+        <div id="themeSwatches" class="theme-swatches"></div>
+        <div class="row" style="margin-top:12px;">
+          <div>
+            <label>Modus</label>
+            <div class="view-toggle" id="darkToggle" role="group" aria-label="Hell- oder Dunkelmodus">
+              <button type="button" data-dark="0" class="active">Hell</button>
+              <button type="button" data-dark="1">Dunkel</button>
+            </div>
+          </div>
+          <div>
+            <label>Schriftart</label>
+            <div class="view-toggle" id="fontToggle" role="group" aria-label="Schriftart">
+              <button type="button" data-font="verspielt" class="active">Verspielt</button>
+              <button type="button" data-font="standard">Standard</button>
+            </div>
+          </div>
+        </div>
       </div>
       <div class="card" style="margin-top:14px;">
         <h3>Konto</h3>

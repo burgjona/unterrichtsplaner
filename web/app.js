@@ -17,6 +17,7 @@ const $ = (id) => document.getElementById(id);
 const state = {
   user: null, classes: [], lessons: [], reflections: [], open: [], materials: [], todos: [],
   schoolYears: [], schoolDates: [], calendar: [],
+  appearance: { theme: "fruehling", darkMode: false, font: "verspielt" },
 };
 const lbCache = {};                 // Lernbereiche je Fach|Stufe|Bildungsgang
 let calMode = "month";
@@ -578,7 +579,7 @@ async function renderTimeline() {
   const wrap = $("classTimeline");
   if (!wrap) return;
   wrap.innerHTML = "";
-  const colors = ["#16a34a", "#eab308", "#f97316", "#0ea5e9", "#22c55e", "#a855f7"];
+  const colors = timelineColors();
   for (const c of state.classes) {
     if (c.visibleInCalendar === false) continue;
     let lbs = [];
@@ -638,7 +639,7 @@ function renderCalendar() {
     const cell = document.createElement("div");
     cell.className = "cal-cell" + (other ? " otherMonth" : "") + (dStr === todayStr ? " today" : "");
     const sd = schoolDateFor(dStr);
-    if (sd) { cell.style.background = sd.kind === "feiertag" ? "#fde68a" : "#e5e7eb"; cell.title = sd.name; }
+    if (sd) { cell.style.background = cssVar(sd.kind === "feiertag" ? "--cal-holiday" : "--cal-vacation", sd.kind === "feiertag" ? "#fde68a" : "#e5e7eb"); cell.title = sd.name; }
     cell.innerHTML = `<div class="cal-daynum">${d.getDate()}</div>` +
       entriesForDate(dStr).map((e) =>
         `<div class="cal-entry ${esc(e.entryType)}" data-lesson="${e.lessonId == null ? "" : e.lessonId}">${esc(e.title)}</div>`).join("");
@@ -921,8 +922,93 @@ async function loadSettings() {
     $("saveApiKey").disabled = !s.secretConfigured;
     state.aiActive = s.apiKeyStatus === "aktiv";
     applyAiGating(state.aiActive);
+    applyAppearance(s.theme, s.darkMode, s.font);
     renderAiUsage();
   } catch (e) { toast(e.message, false); }
+}
+
+/* ---------- Darstellung (Themes/Schriftart, U9) ---------- */
+// Themebare Farbe aus CSS-Variable lesen, damit JS-Inline-Farben mit dem Theme wechseln.
+function cssVar(name, fallback) {
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return v || fallback;
+}
+function timelineColors() {
+  const fb = ["#16a34a", "#eab308", "#f97316", "#0ea5e9", "#22c55e", "#a855f7"];
+  return fb.map((hex, i) => cssVar(`--tl-${i + 1}`, hex));
+}
+
+const SEASONS = [
+  { key: "fruehling", label: "Frühling", dots: ["#16a34a", "#a3e635", "#eab308"] },
+  { key: "sommer", label: "Sommer", dots: ["#0891b2", "#22d3ee", "#f59e0b"] },
+  { key: "herbst", label: "Herbst", dots: ["#ea580c", "#ca8a04", "#7c2d12"] },
+  { key: "winter", label: "Winter", dots: ["#2563eb", "#7dd3fc", "#1e293b"] },
+];
+const SEASON_KEYS = SEASONS.map((s) => s.key);
+
+// Aktuelle Auswahl auf <html> anwenden + Hero-Tag/Steuerung synchronisieren.
+function applyAppearance(theme, darkMode, font) {
+  const t = SEASON_KEYS.includes(theme) ? theme : "fruehling";
+  const f = font === "standard" ? "standard" : "verspielt";
+  const dark = darkMode === true || darkMode === 1 || darkMode === "1";
+  state.appearance = { theme: t, darkMode: dark, font: f };
+  const root = document.documentElement;
+  root.setAttribute("data-theme", t);
+  root.setAttribute("data-dark", dark ? "1" : "0");
+  root.setAttribute("data-font", f);
+  const hero = $("heroTag");
+  if (hero) hero.textContent = SEASONS.find((s) => s.key === t).label;
+  syncAppearanceControls();
+}
+
+function buildThemeSwatches() {
+  const wrap = $("themeSwatches");
+  if (!wrap || wrap.dataset.built === "1") return;
+  wrap.innerHTML = SEASONS.map((s) =>
+    `<button type="button" class="theme-swatch" data-theme="${esc(s.key)}">` +
+    `<span class="dots">${s.dots.map((c) => `<span class="dot" style="background:${esc(c)}"></span>`).join("")}</span>` +
+    `<span>${esc(s.label)}</span></button>`
+  ).join("");
+  wrap.dataset.built = "1";
+  wrap.querySelectorAll(".theme-swatch").forEach((btn) => {
+    btn.onclick = () => saveAppearance({ theme: btn.dataset.theme });
+  });
+}
+
+// Aktive Zustände der Swatches/Toggles an state.appearance angleichen.
+function syncAppearanceControls() {
+  const a = state.appearance || { theme: "fruehling", darkMode: false, font: "verspielt" };
+  document.querySelectorAll("#themeSwatches .theme-swatch").forEach((b) =>
+    b.classList.toggle("active", b.dataset.theme === a.theme));
+  document.querySelectorAll("#darkToggle button").forEach((b) =>
+    b.classList.toggle("active", (b.dataset.dark === "1") === a.darkMode));
+  document.querySelectorAll("#fontToggle button").forEach((b) =>
+    b.classList.toggle("active", b.dataset.font === a.font));
+}
+
+// Teil-Update: Vorschau sofort anwenden, dann persistieren.
+async function saveAppearance(patch) {
+  const cur = state.appearance || { theme: "fruehling", darkMode: false, font: "verspielt" };
+  const next = { theme: cur.theme, darkMode: cur.darkMode, font: cur.font, ...patch };
+  applyAppearance(next.theme, next.darkMode, next.font);  // sofortige Vorschau
+  try {
+    await API.put("/settings/appearance", {
+      theme: next.theme, darkMode: next.darkMode, font: next.font,
+    });
+  } catch (e) {
+    toast(e.message, false);
+    applyAppearance(cur.theme, cur.darkMode, cur.font);   // Rollback bei Fehler
+  }
+}
+
+function wireAppearance() {
+  buildThemeSwatches();
+  document.querySelectorAll("#darkToggle button").forEach((btn) => {
+    btn.onclick = () => saveAppearance({ darkMode: btn.dataset.dark === "1" });
+  });
+  document.querySelectorAll("#fontToggle button").forEach((btn) => {
+    btn.onclick = () => saveAppearance({ font: btn.dataset.font });
+  });
 }
 
 /* ---------- ASUV ---------- */
@@ -1027,7 +1113,11 @@ function applyAiGating(active) {
   });
 }
 async function refreshAiStatus() {
-  try { const s = await API.get("/settings"); state.aiActive = s.apiKeyStatus === "aktiv"; }
+  try {
+    const s = await API.get("/settings");
+    state.aiActive = s.apiKeyStatus === "aktiv";
+    applyAppearance(s.theme, s.darkMode, s.font);  // Theme/Schriftart beim Start anwenden
+  }
   catch (e) { state.aiActive = false; }
   applyAiGating(state.aiActive);
 }
@@ -1486,6 +1576,7 @@ function wireEvents() {
   buildMeyerGrid("meyerReflectGrid");
   buildPhases();
   renderLernziele();
+  wireAppearance();
 
   document.querySelectorAll(".nav-btn").forEach((btn) => (btn.onclick = () => showView(btn.dataset.view)));
   document.querySelectorAll("[data-view-target]").forEach((el) => (el.onclick = () => showView(el.dataset.viewTarget)));
