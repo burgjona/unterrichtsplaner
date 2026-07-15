@@ -318,6 +318,7 @@ function renderAll() {
   renderTimeline();
   renderMaterialList();
   renderAsuvLessonSelect();
+  renderPraesentControls();
 }
 
 function renderClassTable() {
@@ -1198,11 +1199,203 @@ async function stundeEinordnungSuggest() {
   } catch (e) { toast(e.message, false); }
 }
 
+/* ---------- Schüleransicht / Präsentationsmodus (M12 U8) ----------
+   Read-only Ansicht für Beamer/Tafel mit drei Unteransichten:
+   Jahresplan, Lernbereichsplanung, Unterrichtsablauf heute. */
+const PRAESENT_COLORS = ["#16a34a", "#eab308", "#f97316", "#0ea5e9", "#22c55e", "#a855f7"];
+const praesent = { mode: "jahresplan", classId: "", lessonId: null, phaseIdx: 0 };
+let praesentToken = 0;   // Guard gegen veraltete async-Renderings (Jahresplan lädt Lernbereiche)
+
+function lessonOptionLabel(l) {
+  const dat = l.date ? l.date + " · " : "";
+  return `${dat}${l.title} (${l.subject} ${l.grade || ""})`;
+}
+function todayLessons() {
+  const todayStr = isoDate(new Date());
+  return state.lessons.filter((l) => l.date === todayStr);
+}
+
+// Steuer-Selects befüllen (aus renderAll aufgerufen). Auswahl möglichst beibehalten.
+function renderPraesentControls() {
+  const clsSel = $("praesentClass");
+  if (clsSel) {
+    const prev = praesent.classId;
+    clsSel.innerHTML = '<option value="">Alle Klassen</option>' +
+      state.classes.map((c) => `<option value="${c.id}">${esc(c.name)} (${esc(c.subject)})</option>`).join("");
+    clsSel.value = state.classes.some((c) => String(c.id) === String(prev)) ? prev : "";
+    praesent.classId = clsSel.value;
+  }
+  const lesSel = $("praesentLesson");
+  if (lesSel) {
+    const prev = praesent.lessonId;
+    lesSel.innerHTML = state.lessons.length
+      ? state.lessons.map((l) => `<option value="${l.id}">${esc(lessonOptionLabel(l))}</option>`).join("")
+      : '<option value="">Keine Stunden</option>';
+    if (state.lessons.some((l) => String(l.id) === String(prev))) lesSel.value = String(prev);
+    praesent.lessonId = lesSel.value ? Number(lesSel.value) : (state.lessons[0] ? state.lessons[0].id : null);
+    if (praesent.lessonId != null) lesSel.value = String(praesent.lessonId);
+  }
+}
+
+function renderPraesentation() {
+  praesentToken++;   // laufende async-Renderings entwerten
+  const clsSel = $("praesentClass"), lesSel = $("praesentLesson");
+  const prevBtn = $("praesentPrevBtn"), nextBtn = $("praesentNextBtn");
+  // Steuerungssichtbarkeit je Unteransicht
+  if (clsSel) clsSel.style.display = praesent.mode === "jahresplan" ? "" : "none";
+  if (lesSel) lesSel.style.display = (praesent.mode === "lernbereich" || praesent.mode === "ablauf") ? "" : "none";
+  const showPhaseNav = praesent.mode === "ablauf";
+  if (prevBtn) prevBtn.style.display = showPhaseNav ? "" : "none";
+  if (nextBtn) nextBtn.style.display = showPhaseNav ? "" : "none";
+  document.querySelectorAll(".praesent-tab").forEach((b) =>
+    b.classList.toggle("active", b.dataset.praesent === praesent.mode));
+
+  if (praesent.mode === "jahresplan") renderPraesentJahresplan();
+  else if (praesent.mode === "lernbereich") renderPraesentLernbereich();
+  else renderPraesentAblauf();
+}
+
+async function renderPraesentJahresplan() {
+  const stage = $("praesentStage");
+  if (!stage) return;
+  const token = praesentToken;
+  const classes = state.classes.filter((c) => c.visibleInCalendar !== false);
+  if (!classes.length) {
+    stage.innerHTML = '<h2 class="praesent-h">Jahresplan</h2><div class="praesent-empty">Noch keine Klassen angelegt.</div>';
+    return;
+  }
+  const shown = praesent.classId ? classes.filter((c) => String(c.id) === String(praesent.classId)) : classes;
+  stage.innerHTML = '<h2 class="praesent-h">Jahresplan</h2><div class="praesent-loading">Lernbereiche werden geladen …</div>';
+  const rows = [];
+  for (const c of shown) {
+    let lbs = [];
+    try { lbs = await getLernbereiche({ subject: c.subject, grade: c.grade, track: resolveTrack(c.subject, c.grade, c.track) }); }
+    catch (e) { /* ignore */ }
+    if (token !== praesentToken) return;   // Nutzer hat inzwischen umgeschaltet
+    const eff = effectiveBlocks(c.subject, lbs);
+    const blocks = eff.map((e, j) =>
+      `<div class="praesent-lb" style="background:${PRAESENT_COLORS[j % PRAESENT_COLORS.length]}">` +
+      `<span class="praesent-lb-code">${esc(e.code)}</span>` +
+      `<span class="praesent-lb-title">${esc(e.title)}</span>` +
+      `<span class="praesent-lb-std">${e.richtwertUstd == null ? "?" : e.richtwertUstd} Std.</span></div>`).join("");
+    rows.push(`<div class="praesent-jp-row"><div class="praesent-jp-label">${esc(c.name)} · ${esc(c.subject)}</div>` +
+      `<div class="praesent-jp-track">${blocks || '<span class="praesent-empty" style="padding:10px;">Kein Plan</span>'}</div></div>`);
+  }
+  if (token !== praesentToken) return;
+  stage.innerHTML = '<h2 class="praesent-h">Jahresplan</h2><div class="praesent-jp">' + rows.join("") + "</div>";
+}
+
+function renderPraesentLernbereich() {
+  const stage = $("praesentStage");
+  if (!stage) return;
+  if (!state.lessons.length) {
+    stage.innerHTML = '<div class="praesent-empty">Noch keine Stunden geplant. Lege eine Stunde in der Unterrichtsplanung an.</div>';
+    return;
+  }
+  const l = state.lessons.find((x) => String(x.id) === String(praesent.lessonId)) || state.lessons[0];
+  praesent.lessonId = l.id;
+  const ziele = l.lernziele || [];
+  const grob = ziele.filter((z) => z.kind === "grob");
+  const fein = ziele.filter((z) => z.kind === "fein");
+  const bloom = (z) => z.bloomStufe ? `<span class="praesent-goal-bloom">${esc(z.bloomStufe)}</span>` : "";
+  const phaseNote = (z) => z.phaseSortOrder != null
+    ? `<span class="praesent-goal-phase">Phase: ${esc(phaseNames[z.phaseSortOrder] || "–")}</span>` : "";
+  const goalHtml = (z, kind) =>
+    `<div class="praesent-goal ${kind}"><span class="praesent-goal-kind">${kind === "grob" ? "Grobziel" : "Feinziel"}</span>` +
+    `<span class="praesent-goal-text">${esc(z.text)}${bloom(z)}${phaseNote(z)}</span></div>`;
+  const goals = grob.map((z) => goalHtml(z, "grob")).concat(fein.map((z) => goalHtml(z, "fein"))).join("");
+  stage.innerHTML =
+    `<h2 class="praesent-h">${esc(l.title)}</h2>` +
+    `<div class="praesent-sub">${esc(l.subject)} · Klasse ${esc(l.grade || "?")}${l.lessonType ? " · " + esc(l.lessonType) : ""}</div>` +
+    `<div class="praesent-goals">${goals || '<div class="praesent-empty">Für diese Stunde sind noch keine Lernziele hinterlegt.</div>'}</div>`;
+}
+
+function renderPraesentAblauf() {
+  const stage = $("praesentStage");
+  if (!stage) return;
+  const l = state.lessons.find((x) => String(x.id) === String(praesent.lessonId));
+  if (!l) {
+    stage.innerHTML = '<div class="praesent-empty">Noch keine Stunden geplant. Lege eine Stunde in der Unterrichtsplanung an.</div>';
+    return;
+  }
+  const phases = l.phases || [];
+  const ziele = l.lernziele || [];
+  const isToday = l.date === isoDate(new Date());
+  const hint = isToday ? "" :
+    '<div class="praesent-sub" style="color:var(--orange);">Diese Stunde ist nicht für heute geplant – frei gewählte Stunde.</div>';
+  if (!phases.length) {
+    stage.innerHTML = `<h2 class="praesent-h">${esc(l.title)}</h2>${hint}` +
+      '<div class="praesent-empty">Für diese Stunde sind noch keine Phasen erfasst.</div>';
+    return;
+  }
+  if (praesent.phaseIdx >= phases.length) praesent.phaseIdx = phases.length - 1;
+  if (praesent.phaseIdx < 0) praesent.phaseIdx = 0;
+  const steps = phases.map((p, i) => {
+    const active = i === praesent.phaseIdx;
+    const cls = "praesent-step" + (active ? " active" : "") + (i < praesent.phaseIdx ? " done" : "");
+    const meta = [
+      p.minutes != null ? `${esc(p.minutes)} Min.` : null,
+      p.socialForm ? esc(p.socialForm) : null,
+      p.method ? esc(p.method) : null,
+    ].filter(Boolean).join(" · ");
+    const stepZiele = ziele
+      .filter((z) => z.kind === "fein" && z.phaseSortOrder != null && String(z.phaseSortOrder) === String(p.sortOrder))
+      .map((z) => `<div class="praesent-step-goal">🎯 ${esc(z.text)}</div>`).join("");
+    const here = active ? '<span class="praesent-here">📍 Wir sind hier</span>' : "";
+    return `<div class="${cls}" data-phaseidx="${i}">` +
+      `<div class="praesent-step-num">${i + 1}</div>` +
+      `<div class="praesent-step-body"><div class="praesent-step-title">${esc(p.phaseName)}${here}</div>` +
+      (meta ? `<div class="praesent-step-meta">${meta}</div>` : "") +
+      (stepZiele ? `<div class="praesent-step-goals">${stepZiele}</div>` : "") +
+      `</div></div>`;
+  }).join("");
+  stage.innerHTML = `<h2 class="praesent-h">${esc(l.title)}</h2>${hint}<div class="praesent-steps">${steps}</div>`;
+  stage.querySelectorAll("[data-phaseidx]").forEach((el) => {
+    el.onclick = () => { praesent.phaseIdx = Number(el.dataset.phaseidx); renderPraesentAblauf(); updatePraesentPhaseButtons(); };
+  });
+  updatePraesentPhaseButtons();
+}
+
+function updatePraesentPhaseButtons() {
+  const l = state.lessons.find((x) => String(x.id) === String(praesent.lessonId));
+  const n = l && l.phases ? l.phases.length : 0;
+  const prevBtn = $("praesentPrevBtn"), nextBtn = $("praesentNextBtn");
+  if (prevBtn) prevBtn.disabled = praesent.phaseIdx <= 0 || n === 0;
+  if (nextBtn) nextBtn.disabled = praesent.phaseIdx >= n - 1 || n === 0;
+}
+
+function setPraesentMode(mode) {
+  praesent.mode = mode;
+  if (mode === "ablauf") {
+    // Standard: erste heutige Stunde, sonst aktuelle/erste
+    const today = todayLessons();
+    if (today.length && !today.some((l) => String(l.id) === String(praesent.lessonId))) {
+      praesent.lessonId = today[0].id;
+      const sel = $("praesentLesson");
+      if (sel) sel.value = String(praesent.lessonId);
+    }
+    praesent.phaseIdx = 0;
+  }
+  renderPraesentation();
+}
+
+function praesentFullscreen() {
+  const el = document.documentElement;
+  try {
+    if (document.fullscreenElement) {
+      if (document.exitFullscreen) document.exitFullscreen();
+    } else if (el.requestFullscreen) {
+      el.requestFullscreen().catch(() => { /* z. B. per Policy blockiert */ });
+    }
+  } catch (e) { /* Fullscreen nicht verfügbar */ }
+}
+
 /* ---------- Navigation ---------- */
 const titles = {
   heute: ["Schulalltag heute", "Dein Tag auf einen Blick."],
   klassen: ["Klassen", "Klassen und Parallelgruppen anlegen und verwalten."],
   kalender: ["Planungskalender", "Monat, Woche und Lernbereichs-Zeitleiste (folgt in M4)."],
+  praesentation: ["Schüleransicht", "Präsentationsmodus für Beamer/Tafel – Jahresplan, Lernbereich, heutiger Ablauf."],
   stoff: ["Stoffverteilungsplan", "Lehrplanbasierte Jahresplanung (folgt in M4)."],
   stunde: ["Unterrichtsplanung", "Ideenfeld, Phasentabelle und abschließende Klafki-/Meyer-Reflexion."],
   reflexion: ["Reflexion", "Offene Reflexionen ansehen, überspringen oder erfassen."],
@@ -1218,6 +1411,7 @@ function showView(view) {
   $("pageSub").textContent = titles[view][1];
   if (view === "settings") loadSettings();
   if (view === "asuv" && state.lessons.length) loadAsuv(asuvLessonId || state.lessons[0].id);
+  if (view === "praesentation") renderPraesentation();
   closeMobileNav();
 }
 function closeMobileNav() { $("sidebarNav").classList.remove("open"); $("navBackdrop").classList.remove("open"); }
@@ -1348,6 +1542,27 @@ function wireEvents() {
   $("stundeEinordnungBtn").onclick = stundeEinordnungSuggest;
   $("lessonType").addEventListener("change", (e) =>
     $("lueHint").classList.toggle("hidden", e.target.value !== "Übungsstunde vor LUE"));
+
+  // Schüleransicht / Präsentationsmodus (M12 U8)
+  document.querySelectorAll(".praesent-tab").forEach((btn) =>
+    (btn.onclick = () => setPraesentMode(btn.dataset.praesent)));
+  $("praesentClass").addEventListener("change", (e) => { praesent.classId = e.target.value; renderPraesentation(); });
+  $("praesentLesson").addEventListener("change", (e) => {
+    praesent.lessonId = e.target.value ? Number(e.target.value) : null;
+    praesent.phaseIdx = 0;
+    renderPraesentation();
+  });
+  $("praesentPrevBtn").onclick = () => { if (praesent.phaseIdx > 0) { praesent.phaseIdx--; renderPraesentAblauf(); } };
+  $("praesentNextBtn").onclick = () => { praesent.phaseIdx++; renderPraesentAblauf(); };
+  $("praesentFullscreenBtn").onclick = praesentFullscreen;
+  document.addEventListener("keydown", (e) => {
+    const view = $("praesentation");
+    if (!view || view.classList.contains("hidden") || praesent.mode !== "ablauf") return;
+    if (e.target && /^(INPUT|SELECT|TEXTAREA|BUTTON|A)$/.test(e.target.tagName)) return;
+    if (e.target && e.target.getAttribute && e.target.getAttribute("role") === "button") return;
+    if (e.key === "ArrowRight" || e.key === " ") { e.preventDefault(); praesent.phaseIdx++; renderPraesentAblauf(); }
+    else if (e.key === "ArrowLeft") { e.preventDefault(); if (praesent.phaseIdx > 0) { praesent.phaseIdx--; renderPraesentAblauf(); } }
+  });
 
   $("newTodoInput").addEventListener("keydown", async (e) => {
     if (e.key === "Enter" && e.target.value.trim()) {
