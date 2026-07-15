@@ -6,7 +6,7 @@ Python 3.9: durchgängig typing.Optional/List statt PEP-604-'|'.
 """
 from typing import Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic.alias_generators import to_camel
 
 
@@ -184,6 +184,7 @@ class LessonCreate(Base):
     class_id: Optional[int] = None
     lernbereich_id: Optional[int] = None
     lesson_type: Optional[str] = None
+    duration_minutes: int = 45
     time: Optional[str] = None
     date: Optional[str] = None
     klafki: Klafki = Field(default_factory=Klafki)
@@ -192,6 +193,14 @@ class LessonCreate(Base):
     selbst_lernen: Optional[str] = None
     bibox: Bibox = Field(default_factory=Bibox)
     phases: List[PhaseIn] = Field(default_factory=list)
+    lernziele: List["LernzielIn"] = Field(default_factory=list)
+
+    @field_validator("duration_minutes")
+    @classmethod
+    def _dur_45_or_90(cls, v: int) -> int:
+        if v not in (45, 90):
+            raise ValueError("Stundendauer muss 45 oder 90 Minuten sein.")
+        return v
 
 
 class LessonUpdate(Base):
@@ -201,6 +210,7 @@ class LessonUpdate(Base):
     class_id: Optional[int] = None
     lernbereich_id: Optional[int] = None
     lesson_type: Optional[str] = None
+    duration_minutes: Optional[int] = None
     time: Optional[str] = None
     date: Optional[str] = None
     klafki: Optional[Klafki] = None
@@ -209,6 +219,14 @@ class LessonUpdate(Base):
     selbst_lernen: Optional[str] = None
     bibox: Optional[Bibox] = None
     phases: Optional[List[PhaseIn]] = None
+    lernziele: Optional[List["LernzielIn"]] = None
+
+    @field_validator("duration_minutes")
+    @classmethod
+    def _dur_45_or_90(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and v not in (45, 90):
+            raise ValueError("Stundendauer muss 45 oder 90 Minuten sein.")
+        return v
 
 
 class LessonOut(Base):
@@ -219,6 +237,7 @@ class LessonOut(Base):
     class_id: Optional[int] = None
     lernbereich_id: Optional[int] = None
     lesson_type: Optional[str] = None
+    duration_minutes: int = 45
     time: Optional[str] = None
     date: Optional[str] = None
     klafki: Klafki
@@ -227,6 +246,7 @@ class LessonOut(Base):
     selbst_lernen: Optional[str] = None
     bibox: Bibox
     phases: List[PhaseOut] = Field(default_factory=list)
+    lernziele: List["LernzielOut"] = Field(default_factory=list)
     created_at: str
     updated_at: str
 
@@ -460,3 +480,29 @@ class PlanNoteOut(Base):
     school_year_id: int
     text: str = ""
     updated_at: Optional[str] = None
+
+
+# ---------- Lernziele (Meilenstein 11) — ans Dateiende (Konfliktvermeidung) ----------
+class LernzielIn(Base):
+    kind: str                                   # 'grob' | 'fein'
+    text: str
+    bloom_stufe: Optional[str] = None           # Erinnern|Verstehen|Anwenden|Analysieren|Bewerten|Erschaffen
+    phase_sort_order: Optional[int] = None      # Zuordnung zu einer Phase (0..3) oder None
+    sort_order: int = 0
+
+    @field_validator("kind")
+    @classmethod
+    def _kind_grob_or_fein(cls, v: str) -> str:
+        if v not in ("grob", "fein"):
+            raise ValueError("Lernziel-Art muss 'grob' oder 'fein' sein.")
+        return v
+
+
+class LernzielOut(LernzielIn):
+    id: int
+
+
+# Forward-Refs der Lesson-Modelle auf Lernziel-Modelle auflösen (Definition folgt erst hier).
+LessonCreate.model_rebuild()
+LessonUpdate.model_rebuild()
+LessonOut.model_rebuild()

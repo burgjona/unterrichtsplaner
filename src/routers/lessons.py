@@ -12,13 +12,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..deps import get_db, get_user_id, row_or_404
 from ..schemas import (
-    Bibox, Klafki, LessonCreate, LessonOut, LessonUpdate, MaterialOut, PhaseIn, PhaseOut,
+    Bibox, Klafki, LernzielIn, LernzielOut, LessonCreate, LessonOut, LessonUpdate,
+    MaterialOut, PhaseIn, PhaseOut,
 )
 
 router = APIRouter(prefix="/lessons", tags=["lessons"])
 
 _LESSON_COLS = (
-    "class_id", "lernbereich_id", "title", "subject", "grade", "lesson_type", "time", "date",
+    "class_id", "lernbereich_id", "title", "subject", "grade", "lesson_type",
+    "duration_minutes", "time", "date",
     "klafki_gegenwart", "klafki_zukunft", "klafki_exemplarisch", "klafki_zugang",
     "klafki_struktur", "meyer_plan_json", "diff", "selbst_lernen",
     "bibox_werk", "bibox_seite", "bibox_notiz",
@@ -59,6 +61,7 @@ def _lesson_values(body, klafki: Klafki, bibox: Bibox, meyer_plan) -> dict:
         "subject": body.subject,
         "grade": body.grade,
         "lesson_type": body.lesson_type,
+        "duration_minutes": body.duration_minutes,
         "time": body.time,
         "date": body.date,
         "klafki_gegenwart": klafki.gegenwart,
@@ -87,15 +90,31 @@ def _insert_phases(conn, lesson_id: int, phases: List[PhaseIn]) -> None:
         )
 
 
+def _insert_lernziele(conn, lesson_id: int, ziele: List[LernzielIn]) -> None:
+    for i, z in enumerate(ziele):
+        # sort_order: expliziter Wert falls gesetzt (>0), sonst Reihenfolge in der Liste
+        so = z.sort_order if z.sort_order else i
+        conn.execute(
+            """INSERT INTO lesson_lernziele
+               (lesson_id, kind, text, bloom_stufe, phase_sort_order, sort_order)
+               VALUES (?,?,?,?,?,?)""",
+            (lesson_id, z.kind, z.text, z.bloom_stufe, z.phase_sort_order, so),
+        )
+
+
 def _row_to_out(conn, row) -> LessonOut:
     d = dict(row)
     phases = conn.execute(
         "SELECT * FROM lesson_phases WHERE lesson_id = ? ORDER BY sort_order", (d["id"],)
     ).fetchall()
+    ziele = conn.execute(
+        "SELECT * FROM lesson_lernziele WHERE lesson_id = ? ORDER BY sort_order, id", (d["id"],)
+    ).fetchall()
     return LessonOut(
         id=d["id"], title=d["title"], subject=d["subject"], grade=d["grade"],
         class_id=d["class_id"], lernbereich_id=d["lernbereich_id"],
-        lesson_type=d["lesson_type"], time=d["time"], date=d["date"],
+        lesson_type=d["lesson_type"], duration_minutes=d["duration_minutes"],
+        time=d["time"], date=d["date"],
         klafki=Klafki(
             gegenwart=d["klafki_gegenwart"] or "", zukunft=d["klafki_zukunft"] or "",
             exemplarisch=d["klafki_exemplarisch"] or "", zugang=d["klafki_zugang"] or "",
@@ -105,6 +124,10 @@ def _row_to_out(conn, row) -> LessonOut:
         diff=d["diff"], selbst_lernen=d["selbst_lernen"],
         bibox=Bibox(werk=d["bibox_werk"] or "", seite=d["bibox_seite"] or "", notiz=d["bibox_notiz"] or ""),
         phases=[PhaseOut(**dict(p)) for p in phases],
+        lernziele=[LernzielOut(
+            id=z["id"], kind=z["kind"], text=z["text"], bloom_stufe=z["bloom_stufe"],
+            phase_sort_order=z["phase_sort_order"], sort_order=z["sort_order"],
+        ) for z in ziele],
         created_at=d["created_at"], updated_at=d["updated_at"],
     )
 
@@ -125,6 +148,7 @@ def create(body: LessonCreate, conn=Depends(get_db), user_id: int = Depends(get_
         with conn:
             cur = conn.execute(f"INSERT INTO lessons({cols}) VALUES ({placeholders})", vals)
             _insert_phases(conn, cur.lastrowid, body.phases)
+            _insert_lernziele(conn, cur.lastrowid, body.lernziele)
             _sync_calendar_entry(conn, user_id, cur.lastrowid)
     except sqlite3.IntegrityError as exc:
         raise HTTPException(status_code=400, detail=f"Ungültige Referenz: {exc}")
@@ -173,7 +197,7 @@ def update(lid: int, body: LessonUpdate, conn=Depends(get_db), user_id: int = De
     data = body.model_dump(exclude_unset=True)
     sets = {}
     for key in ("class_id", "lernbereich_id", "title", "subject", "grade",
-                "lesson_type", "time", "date", "diff", "selbst_lernen"):
+                "lesson_type", "duration_minutes", "time", "date", "diff", "selbst_lernen"):
         if key in data:
             sets[key] = data[key]
     if "klafki" in data and body.klafki is not None:
@@ -197,6 +221,9 @@ def update(lid: int, body: LessonUpdate, conn=Depends(get_db), user_id: int = De
         if "phases" in data and body.phases is not None:
             conn.execute("DELETE FROM lesson_phases WHERE lesson_id = ?", (lid,))
             _insert_phases(conn, lid, body.phases)
+        if "lernziele" in data and body.lernziele is not None:
+            conn.execute("DELETE FROM lesson_lernziele WHERE lesson_id = ?", (lid,))
+            _insert_lernziele(conn, lid, body.lernziele)
         _sync_calendar_entry(conn, user_id, lid)
     return _row_to_out(conn, _fetch(conn, user_id, lid))
 

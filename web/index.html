@@ -208,11 +208,22 @@
           <div><label>Klassenstufe</label><select id="lessonGrade"><option>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>10</option></select></div>
           <div><label>Stundentyp</label><select id="lessonType"><option>Einführung</option><option>Übung</option><option>Übungsstunde vor LUE</option><option>Sicherung</option><option>Lehrprobe</option></select></div>
         </div>
-        <div class="row">
+        <div class="row-3">
           <div><label>Klasse</label><select id="lessonClass"><option value="">– keine –</option></select></div>
           <div><label>Datum</label><input id="lessonDate" type="date" /><div class="hint">Mit Datum erscheint die Stunde automatisch im Kalender.</div></div>
+          <div><label>Stundendauer</label><select id="lessonDuration"><option value="45">45 Minuten (Einzelstunde)</option><option value="90">90 Minuten (Doppelstunde)</option></select></div>
         </div>
         <div id="lueHint" class="note-box hidden">Diese Stunde dient als Übungsstunde vor der Lernerfolgskontrolle – Fokus auf intelligentes Üben (Meyer-Merkmal 8) und Fehleranalyse legen.</div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Lernziele (SMART, Bloom-Taxonomie)</h3>
+        <p class="muted small">Grobziel(e) und Feinziele der Stunde. Feinziele lassen sich einer Phase zuordnen – so ist nachweisbar, an welcher Stelle der Stunde welches Ziel erreicht wird (ASUV-Nachweis). Faustregel: pro 45 Min. 1 Grobziel + mind. 2 Feinziele.</p>
+        <div id="lernzieleList"></div>
+        <div style="margin-top:10px;">
+          <button class="btn small" id="addLernzielBtn">Ziel hinzufügen</button>
+          <button class="btn ai" id="aiLernzieleBtn">✨ Lernziele vorschlagen</button>
+        </div>
       </div>
 
       <div class="card" style="margin-top:14px;">

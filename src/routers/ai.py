@@ -239,6 +239,66 @@ def ai_job_status(job_id: int, conn: sqlite3.Connection = Depends(get_db),
     return out
 
 
+# ---------- 4) Lernziele (SMART, Bloom-Taxonomie) — Meilenstein 11 ----------
+_BLOOM_STUFEN = ["Erinnern", "Verstehen", "Anwenden", "Analysieren", "Bewerten", "Erschaffen"]
+_LERNZIELE_SYSTEM = (
+    "Du bist didaktische Assistenz für eine Referendarin an einer sächsischen Oberschule "
+    "(Fächer Deutsch und WTH). Formuliere SMARTe Lernziele nach der Bloom-Taxonomie "
+    f"(Stufen: {', '.join(_BLOOM_STUFEN)}). Unterscheide Grobziele (übergeordnet, 'grob') und "
+    "Feinziele (konkret, operationalisiert, überprüfbar, 'fein'). Ordne jedes Feinziel möglichst "
+    "einer Phase der Stunde zu (phaseSortOrder: 0=Einstieg, 1=Erarbeitung, 2=Sicherung, "
+    "3=Abschluss, sonst null), damit nachweisbar ist, an welcher Stelle der Stunde welches Ziel "
+    "erreicht wird. Formuliere aus Schülersicht ('Die Schülerinnen und Schüler können ...'). "
+    "Umlaute korrekt. Nur Vorschlag – die Lehrkraft prüft und ändert."
+)
+_LERNZIELE_SCHEMA = {
+    "type": "object", "additionalProperties": False, "required": ["ziele"],
+    "properties": {"ziele": {"type": "array", "items": {
+        "type": "object", "additionalProperties": False,
+        "required": ["kind", "text", "bloomStufe", "phaseSortOrder"],
+        "properties": {
+            "kind": {"type": "string", "enum": ["grob", "fein"]},
+            "text": _STR,
+            "bloomStufe": {"type": "string", "enum": _BLOOM_STUFEN},
+            "phaseSortOrder": {"type": ["integer", "null"]},
+        },
+    }}},
+}
+
+
+@router.post("/lernziele/{lesson_id}")
+def lernziele_suggestion(lesson_id: int, conn: sqlite3.Connection = Depends(get_db),
+                         user_id: int = Depends(get_user_id)):
+    l = row_or_404(conn.execute("SELECT * FROM lessons WHERE id=? AND user_id=?",
+                                (lesson_id, user_id)).fetchone(), "Stunde")
+    dur = l["duration_minutes"] or 45
+    grob, fein = (2, 4) if dur == 90 else (1, 2)
+    regel = (f"Diese Stunde dauert {dur} Minuten. Regel: pro 45-Minuten-Einheit 1 Grobziel und "
+             f"mindestens 2 Feinziele – hier also {grob} Grobziel(e) und mindestens {fein} Feinziele.")
+    phases = conn.execute("SELECT * FROM lesson_phases WHERE lesson_id=? ORDER BY sort_order",
+                          (lesson_id,)).fetchall()
+    phase_text = "; ".join(
+        f"[{p['sort_order']}] {p['phase_name']} ({p['minutes']} Min., {p['social_form']}): {p['method']}"
+        for p in phases) or "keine Phasen erfasst"
+    lb_text = "frei geplante Stunde – passenden Lernbereich aus dem Lehrplan ableiten."
+    if l["lernbereich_id"] is not None:
+        lb = conn.execute("SELECT title, detail_md FROM lernbereiche WHERE id=?",
+                          (l["lernbereich_id"],)).fetchone()
+        if lb is not None:
+            lb_text = f"Zugeordneter Lernbereich: {lb['title']}"
+            if lb["detail_md"]:
+                lb_text += ("\nLehrplan-Detailkontext (nur als fachliche Grundlage nutzen, "
+                            f"OCR-holprig):\n{lb['detail_md'][:2500]}")
+    user_text = (
+        f"Stunde: {l['title']} · Fach {l['subject']} · Klassenstufe {l['grade'] or '-'} · "
+        f"Stundentyp {l['lesson_type'] or '-'} · Dauer {dur} Minuten\n"
+        f"Phasen: {phase_text}\n"
+        f"{lb_text}\n\n{regel}"
+    )
+    data, cached = _run_json(conn, user_id, "lernziele", _LERNZIELE_SYSTEM, user_text, _LERNZIELE_SCHEMA)
+    return {"suggestion": data, "cached": cached}
+
+
 # ---------- Kostenübersicht ----------
 @router.get("/usage")
 def usage(conn: sqlite3.Connection = Depends(get_db), user_id: int = Depends(get_user_id)):

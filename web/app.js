@@ -9,7 +9,9 @@ const meyerMerkmale = [
   "Vorbereitete Umgebung",
 ];
 const phaseNames = ["Einstieg", "Erarbeitung", "Sicherung", "Abschluss"];
+const BLOOM_STUFEN = ["Erinnern", "Verstehen", "Anwenden", "Analysieren", "Bewerten", "Erschaffen"];
 const TRANSPARENT_PX = "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==";
+const ZIEL_BADGE = "display:inline-block;padding:1px 7px;border-radius:8px;background:#e0e7ff;color:#3730a3;font-size:11px;font-weight:700;";
 
 const $ = (id) => document.getElementById(id);
 const state = {
@@ -145,15 +147,66 @@ function readPhases() {
   });
   return phases;
 }
+/* ---------- Lernziele-Editor (M11) ---------- */
+let lessonZiele = [];   // [{kind:'grob'|'fein', text, bloomStufe, phaseSortOrder}]
+
+function renderLernziele() {
+  const wrap = $("lernzieleList");
+  if (!wrap) return;
+  if (!lessonZiele.length) {
+    wrap.innerHTML = '<p class="muted small">Noch keine Lernziele. „Ziel hinzufügen“ oder „✨ Lernziele vorschlagen“.</p>';
+    return;
+  }
+  wrap.innerHTML = lessonZiele.map((z, i) => {
+    const isGrob = z.kind === "grob";
+    const bloomOpts = ['<option value="">– Bloom-Stufe –</option>']
+      .concat(BLOOM_STUFEN.map((b) => `<option value="${b}" ${z.bloomStufe === b ? "selected" : ""}>${b}</option>`)).join("");
+    const phaseOpts = ['<option value="">– keine Phase –</option>']
+      .concat(phaseNames.map((p, pi) => `<option value="${pi}" ${String(z.phaseSortOrder) === String(pi) ? "selected" : ""}>${esc(p)}</option>`)).join("");
+    return `<div class="phase" style="margin-top:8px;">
+      <div class="row-4" style="margin-top:0;">
+        <select data-zk="${i}"><option value="grob" ${isGrob ? "selected" : ""}>Grobziel</option><option value="fein" ${!isGrob ? "selected" : ""}>Feinziel</option></select>
+        <select data-zb="${i}">${bloomOpts}</select>
+        <select data-zp="${i}">${phaseOpts}</select>
+        <button class="btn small danger" data-zdel="${i}">löschen</button>
+      </div>
+      <textarea data-zt="${i}" rows="2" placeholder="Lernziel (aus Schülersicht) …" style="${isGrob ? "font-weight:700;" : ""}">${esc(z.text)}</textarea>
+    </div>`;
+  }).join("");
+  wrap.querySelectorAll("[data-zk]").forEach((el) =>
+    (el.onchange = () => { lessonZiele[+el.dataset.zk].kind = el.value; renderLernziele(); }));
+  wrap.querySelectorAll("[data-zb]").forEach((el) =>
+    (el.onchange = () => { lessonZiele[+el.dataset.zb].bloomStufe = el.value || null; }));
+  wrap.querySelectorAll("[data-zp]").forEach((el) =>
+    (el.onchange = () => { lessonZiele[+el.dataset.zp].phaseSortOrder = el.value === "" ? null : Number(el.value); }));
+  wrap.querySelectorAll("[data-zt]").forEach((el) =>
+    (el.oninput = () => { lessonZiele[+el.dataset.zt].text = el.value; }));
+  wrap.querySelectorAll("[data-zdel]").forEach((el) =>
+    (el.onclick = () => { lessonZiele.splice(+el.dataset.zdel, 1); renderLernziele(); }));
+}
+function addLernziel() {
+  lessonZiele.push({ kind: lessonZiele.some((z) => z.kind === "grob") ? "fein" : "grob", text: "", bloomStufe: null, phaseSortOrder: null });
+  renderLernziele();
+}
+function readLernziele() {
+  return lessonZiele
+    .filter((z) => (z.text || "").trim())
+    .map((z, i) => ({ kind: z.kind, text: z.text.trim(), bloomStufe: z.bloomStufe || null,
+                      phaseSortOrder: z.phaseSortOrder == null ? null : Number(z.phaseSortOrder), sortOrder: i }));
+}
+
 function clearLessonForm() {
   ["lessonIdeas", "lessonTitle", "lessonDate", "klafki1", "klafki2", "klafki3", "klafki4", "klafki5",
    "biboxWerk", "biboxSeite", "biboxNotiz"].forEach((id) => ($(id).value = ""));
   $("lessonClass").value = "";
+  $("lessonDuration").value = "45";
   phaseNames.forEach((_, i) =>
     ["time", "method", "material", "teacher", "student", "gme"].forEach((k) => ($(k + i).value = "")));
   resetMeyerGrid("meyerPlanGrid");
   $("diff").value = "ja";
   $("lernen").value = "ja";
+  lessonZiele = [];
+  renderLernziele();
   $("lueHint").classList.toggle("hidden", $("lessonType").value !== "Übungsstunde vor LUE");
 }
 
@@ -181,6 +234,12 @@ function loadLessonIntoForm(l) {
   }
   $("lessonClass").value = clsVal;
   $("lessonDate").value = l.date || "";
+  $("lessonDuration").value = String(l.durationMinutes || 45);
+  lessonZiele = (l.lernziele || []).map((z) => ({
+    kind: z.kind === "grob" ? "grob" : "fein", text: z.text || "",
+    bloomStufe: z.bloomStufe || null, phaseSortOrder: z.phaseSortOrder == null ? null : Number(z.phaseSortOrder),
+  }));
+  renderLernziele();
   const k = l.klafki || {};
   $("klafki1").value = k.gegenwart || ""; $("klafki2").value = k.zukunft || "";
   $("klafki3").value = k.exemplarisch || ""; $("klafki4").value = k.zugang || "";
@@ -703,13 +762,24 @@ function openLessonModal(l) {
   const meyer = (l.meyerPlan || [])
     .map((v, i) => `<span class="mini-meyer-chip" style="background:${ampelColor(v)}">${i + 1}. ${esc(meyerMerkmale[i])}</span>`)
     .join(" ");
+  const ziele = l.lernziele || [];
+  const bloomBadge = (z) => z.bloomStufe ? ` <span style="${ZIEL_BADGE}">${esc(z.bloomStufe)}</span>` : "";
+  const zielMark = (p) => (ziele
+    .filter((z) => z.kind === "fein" && z.phaseSortOrder != null && String(z.phaseSortOrder) === String(p.sortOrder))
+    .map((z) => `<br><span style="${ZIEL_BADGE}">🎯 ${esc((z.text || "").slice(0, 45))}${(z.text || "").length > 45 ? "…" : ""}</span>`)
+    .join(""));
   const phases = (l.phases || [])
     .map((p) =>
       `<div class="phase"><strong>${esc(p.phaseName)}</strong> (${esc(p.minutes ?? "–")} Min., ${esc(p.socialForm || "–")})<br>` +
       `<span class="small muted">Methode: ${esc(p.method || "–")} – Material: ${esc(p.material || "–")}</span><br>` +
       `<span class="small">L: ${esc(p.teacherActivity || "–")}</span><br>` +
-      `<span class="small">S: ${esc(p.studentActivity || "–")}</span></div>`)
+      `<span class="small">S: ${esc(p.studentActivity || "–")}</span>${zielMark(p)}</div>`)
     .join("") || '<p class="muted small">Noch keine Phasen erfasst.</p>';
+  const zieleHtml = ziele.length
+    ? (ziele.filter((z) => z.kind === "grob").map((z) => `<p class="small"><strong>Grobziel:</strong> ${esc(z.text)}${bloomBadge(z)}</p>`).join("") +
+       ziele.filter((z) => z.kind === "fein").map((z) => `<p class="small">• ${esc(z.text)}${bloomBadge(z)}` +
+         `${z.phaseSortOrder != null ? ` <span class="muted small">(${esc(phaseNames[z.phaseSortOrder] || "Phase")})</span>` : ""}</p>`).join(""))
+    : '<p class="muted small">Noch keine Lernziele erfasst.</p>';
   const k = l.klafki || {};
   const kLabels = [["gegenwart", "Gegenwartsbedeutung"], ["zukunft", "Zukunftsbedeutung"],
     ["exemplarisch", "Exemplarische Bedeutung"], ["zugang", "Zugänglichkeit/Einstieg"], ["struktur", "Struktur des Inhalts"]];
@@ -724,7 +794,8 @@ function openLessonModal(l) {
       <button class="btn small secondary" id="modalAsuvBtn" style="float:right; margin-right:10px;">ASUV-Entwurf</button>
       <button class="btn small secondary" id="modalEditBtn" style="float:right; margin-right:10px;">Stunde bearbeiten</button>
       <h2>${esc(l.title)}</h2>
-      <p class="muted small">${esc(l.subject)} – Klasse ${esc(l.grade || "?")} – ${esc(l.lessonType || "")} ${l.time ? "– " + esc(l.time) + " Uhr" : ""}</p>
+      <p class="muted small">${esc(l.subject)} – Klasse ${esc(l.grade || "?")} – ${esc(l.lessonType || "")} – ${esc(l.durationMinutes || 45)} Min. ${l.time ? "– " + esc(l.time) + " Uhr" : ""}</p>
+      <div class="modal-section"><h3>Lernziele</h3>${zieleHtml}</div>
       <div class="modal-section"><h3>Phasentabelle</h3>${phases}</div>
       <div class="modal-section"><h3>Lehrbuch-Referenz</h3>${bibox}</div>
       <div class="modal-section"><h3>Klafki</h3>${klafki}</div>
@@ -786,6 +857,7 @@ async function saveLesson() {
   const body = {
     title, subject: $("lessonSubject").value, grade: Number($("lessonGrade").value),
     lessonType: $("lessonType").value,
+    durationMinutes: Number($("lessonDuration").value) || 45,
     classId: $("lessonClass").value ? Number($("lessonClass").value) : null,
     date: $("lessonDate").value || null,
     klafki: {
@@ -796,6 +868,7 @@ async function saveLesson() {
     diff: $("diff").value, selbstLernen: $("lernen").value,
     bibox: { werk: $("biboxWerk").value, seite: $("biboxSeite").value, notiz: $("biboxNotiz").value },
     phases: readPhases(),
+    lernziele: readLernziele(),
   };
   try {
     if (editingLessonId) {
@@ -928,7 +1001,7 @@ function exportAsuv(fmt) {
 
 /* ---------- KI (Meilenstein 7) ---------- */
 function applyAiGating(active) {
-  ["aiPlanBtn", "stoffAiBtn", "asuvAiBtn"].forEach((id) => {
+  ["aiPlanBtn", "stoffAiBtn", "asuvAiBtn", "aiLernzieleBtn"].forEach((id) => {
     const b = $(id);
     if (b) { b.disabled = !active; b.title = active ? "" : "Kein API-Key hinterlegt – in den Einstellungen eintragen"; }
   });
@@ -982,6 +1055,27 @@ async function aiLessonSuggest() {
       $("gme" + i).value = p.gme || "";
     });
     toast(res.cached ? "KI-Vorschlag (aus Cache) eingefügt." : "KI-Vorschlag eingefügt – bitte prüfen.");
+  } catch (e) { toast(e.message, false); }
+  finally { btn.disabled = false; btn.textContent = label; }
+}
+
+async function aiLernzieleSuggest() {
+  if (!editingLessonId) {
+    toast("Bitte die Stunde zuerst speichern – Lernziele werden aus den gespeicherten Phasen und dem Lernbereich abgeleitet.", false);
+    return;
+  }
+  const btn = $("aiLernzieleBtn"), label = btn.textContent;
+  btn.disabled = true; btn.textContent = "✨ generiere …";
+  try {
+    const res = await API.post(`/ai/lernziele/${editingLessonId}`, {});
+    const ziele = (res.suggestion && res.suggestion.ziele) || [];
+    // Vorschläge anhängen – vom Nutzer angelegte Ziele bleiben unverändert erhalten.
+    ziele.forEach((z) => lessonZiele.push({
+      kind: z.kind === "grob" ? "grob" : "fein", text: z.text || "",
+      bloomStufe: z.bloomStufe || null, phaseSortOrder: z.phaseSortOrder == null ? null : Number(z.phaseSortOrder),
+    }));
+    renderLernziele();
+    toast(res.cached ? "KI-Lernziele (aus Cache) angehängt – bitte prüfen." : "KI-Lernziele angehängt – bitte prüfen und speichern.");
   } catch (e) { toast(e.message, false); }
   finally { btn.disabled = false; btn.textContent = label; }
 }
@@ -1140,6 +1234,7 @@ function wireEvents() {
   buildMeyerGrid("meyerPlanGrid");
   buildMeyerGrid("meyerReflectGrid");
   buildPhases();
+  renderLernziele();
 
   document.querySelectorAll(".nav-btn").forEach((btn) => (btn.onclick = () => showView(btn.dataset.view)));
   document.querySelectorAll("[data-view-target]").forEach((el) => (el.onclick = () => showView(el.dataset.viewTarget)));
@@ -1190,6 +1285,8 @@ function wireEvents() {
   $("aiPlanBtn").onclick = aiLessonSuggest;
   $("stoffAiBtn").onclick = aiStoffplan;
   $("asuvAiBtn").onclick = aiAsuvSuggest;
+  $("addLernzielBtn").onclick = addLernziel;
+  $("aiLernzieleBtn").onclick = aiLernzieleSuggest;
   $("lessonType").addEventListener("change", (e) =>
     $("lueHint").classList.toggle("hidden", e.target.value !== "Übungsstunde vor LUE"));
 

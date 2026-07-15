@@ -27,6 +27,7 @@ ROUTING = {
     "lesson_suggestion": "sonnet",   # Klafki-Erstentwurf + Meyer/Phasen
     "stoffplan": "sonnet",           # Stoffverteilungsplan-Generierung
     "asuv": "sonnet",                # ASUV-Ausformulierung
+    "lernziele": "sonnet",           # SMARTe Lernziele nach Bloom-Taxonomie
 }
 
 _prompt_cache = {}  # sha256(prompt) -> Antworttext (lokal, prozessweit)
