@@ -10,14 +10,15 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from ..deps import get_db, get_user_id
 from ..lib.security import encrypt_secret, secret_available
-from ..schemas import ApiKeyIn, SettingsOut
+from ..schemas import ApiKeyIn, AppearanceIn, SettingsOut
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
 
 def _settings_out(conn, user_id) -> SettingsOut:
     row = conn.execute(
-        "SELECT anthropic_key_last4, anthropic_key_set_at FROM user_settings WHERE user_id = ?",
+        "SELECT anthropic_key_last4, anthropic_key_set_at, theme, dark_mode, font "
+        "FROM user_settings WHERE user_id = ?",
         (user_id,),
     ).fetchone()
     has_key = row is not None and row["anthropic_key_last4"] is not None
@@ -26,6 +27,9 @@ def _settings_out(conn, user_id) -> SettingsOut:
         api_key_last4=row["anthropic_key_last4"] if has_key else None,
         api_key_set_at=row["anthropic_key_set_at"] if has_key else None,
         secret_configured=secret_available(),
+        theme=row["theme"] if row is not None else "fruehling",
+        dark_mode=bool(row["dark_mode"]) if row is not None else False,
+        font=row["font"] if row is not None else "verspielt",
     )
 
 
@@ -70,6 +74,29 @@ def delete_api_key(conn: sqlite3.Connection = Depends(get_db), user_id: int = De
              anthropic_key_last4 = NULL, anthropic_key_set_at = NULL, updated_at = datetime('now')
            WHERE user_id = ?""",
         (user_id,),
+    )
+    conn.commit()
+    return _settings_out(conn, user_id)
+
+
+# ---------- Darstellung (Meilenstein 12, U9) ----------
+@router.put("/appearance", response_model=SettingsOut)
+def set_appearance(body: AppearanceIn, conn: sqlite3.Connection = Depends(get_db),
+                   user_id: int = Depends(get_user_id)):
+    """Jahreszeit-Theme, Hell/Dunkel und Schriftart persistieren (user-gescoped, upsert).
+
+    Validierung der Werte erfolgt bereits im Pydantic-Modell (AppearanceIn).
+    Legt die Settings-Zeile bei Erstzugriff an, falls sie noch nicht existiert.
+    """
+    conn.execute(
+        """INSERT INTO user_settings (user_id, theme, dark_mode, font, updated_at)
+             VALUES (?, ?, ?, ?, datetime('now'))
+           ON CONFLICT(user_id) DO UPDATE SET
+             theme      = excluded.theme,
+             dark_mode  = excluded.dark_mode,
+             font       = excluded.font,
+             updated_at = datetime('now')""",
+        (user_id, body.theme, 1 if body.dark_mode else 0, body.font),
     )
     conn.commit()
     return _settings_out(conn, user_id)

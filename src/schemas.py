@@ -39,6 +39,9 @@ class SettingsOut(Base):
     api_key_last4: Optional[str] = None
     api_key_set_at: Optional[str] = None
     secret_configured: bool        # ob APP_SECRET_KEY serverseitig gesetzt ist
+    theme: str = "fruehling"       # fruehling | sommer | herbst | winter
+    dark_mode: bool = False
+    font: str = "verspielt"        # verspielt | standard
 
 
 # ---------- Nutzer (Profil) ----------
@@ -500,6 +503,31 @@ class LernzielIn(Base):
 
 class LernzielOut(LernzielIn):
     id: int
+
+
+# ---------- Darstellung / Appearance (Meilenstein 12, U9) — ans Dateiende (Konfliktvermeidung) ----------
+_THEMES = {"fruehling", "sommer", "herbst", "winter"}
+_FONTS = {"verspielt", "standard"}
+
+
+class AppearanceIn(Base):
+    theme: str
+    dark_mode: bool = False
+    font: str = "verspielt"
+
+    @field_validator("theme")
+    @classmethod
+    def _valid_theme(cls, v: str) -> str:
+        if v not in _THEMES:
+            raise ValueError("Ungültige Jahreszeit (fruehling|sommer|herbst|winter).")
+        return v
+
+    @field_validator("font")
+    @classmethod
+    def _valid_font(cls, v: str) -> str:
+        if v not in _FONTS:
+            raise ValueError("Ungültige Schriftart (verspielt|standard).")
+        return v
 
 
 # Forward-Refs der Lesson-Modelle auf Lernziel-Modelle auflösen (Definition folgt erst hier).
