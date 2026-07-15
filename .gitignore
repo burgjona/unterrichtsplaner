@@ -18,3 +18,6 @@ uploads/*
 
 # macOS
 .DS_Store
+
+# Agenten-Worktrees (Batch-Workflow)
+.claude/worktrees/
