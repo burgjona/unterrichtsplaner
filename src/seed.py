@@ -17,6 +17,7 @@ from .config import settings
 from .db import init_db
 
 _LB_RE = re.compile(r"^###\s+Lernbereich\s+(\d+)\s*:?\s*(.+?)\s+(\d+)\s+Ustd\.?\s*$")
+_LB_HEAD_RE = re.compile(r"^###\s+Lernbereich\s+(\d+)\b")  # LB-Überschrift, auch ohne "Ustd." (Detailkapitel)
 _GRADE_RE = re.compile(r"^##\s+Klassenstufe\s+(\d+)\s*$")
 
 _SCOPE = {"Deutsch": {5, 6, 7, 8, 9, 10}, "WTH": {7, 8, 9}}
@@ -70,6 +71,66 @@ def parse_lernbereiche(text: str, subject: str) -> list:
     return rows
 
 
+def extract_detail_md(text: str, subject: str) -> dict:
+    """Best-effort: Roh-Detailtext je Lernbereich aus dem Lehrplan-MD.
+
+    Erfasst den Text zwischen einer LB-Überschrift und der nächsten Überschrift
+    (jeder Zeile mit führendem '#') im jeweiligen Klassenstufen-/Bildungsgang-Kontext.
+    Der kompakte Übersichtsblock (LB-Überschriften ohne Fließtext) liefert leere
+    Bodies und wird verworfen; die Detailkapitel (OCR-holprig) liefern Inhalt und
+    werden behalten. Rückgabe: {(grade, track, code): detail_md}.
+    """
+    grade = None
+    track = None
+    result = {}
+    cur_key = None
+    buf = []
+
+    def _flush():
+        if cur_key is not None:
+            body = "\n".join(buf).strip()
+            if len(body) > 40:  # kompakte Übersicht (leerer Body) verwerfen, nur echte Detailkapitel
+                result[cur_key] = body
+
+    for line in text.splitlines():
+        gm = _GRADE_RE.match(line)
+        if gm:
+            _flush()
+            cur_key, buf = None, []
+            grade = int(gm.group(1))
+            if grade == 5:  # Orientierungsstufe: Bildungsgang-Kontext zurücksetzen
+                track = None
+            continue
+        if line.startswith("## Hauptschulbildungsgang"):
+            _flush()
+            cur_key, buf = None, []
+            track = "HS"
+            continue
+        if line.startswith("## Realschulbildungsgang"):
+            _flush()
+            cur_key, buf = None, []
+            track = "RS"
+            continue
+        m = _LB_HEAD_RE.match(line)
+        if m:
+            _flush()
+            buf = []
+            if grade is None or grade not in _SCOPE[subject]:
+                cur_key = None
+                continue
+            eff_track = "gemischt" if subject == "WTH" else (track or "gemischt")
+            cur_key = (grade, eff_track, f"LB{int(m.group(1))}")
+            continue
+        if line.startswith("#"):  # sonstige Überschrift (z. B. Wahlbereich) beendet den LB-Abschnitt
+            _flush()
+            cur_key, buf = None, []
+            continue
+        if cur_key is not None:
+            buf.append(line)
+    _flush()
+    return result
+
+
 def seed_lernbereiche(conn: sqlite3.Connection, docs_dir: str = None) -> int:
     docs = Path(docs_dir or settings.docs_dir)
     inserted = 0
@@ -78,7 +139,8 @@ def seed_lernbereiche(conn: sqlite3.Connection, docs_dir: str = None) -> int:
         if not path.exists():
             print(f"WARN: {path} fehlt – überspringe {subject}", file=sys.stderr)
             continue
-        for row in parse_lernbereiche(path.read_text(encoding="utf-8"), subject):
+        text = path.read_text(encoding="utf-8")
+        for row in parse_lernbereiche(text, subject):
             cur = conn.execute(
                 """INSERT OR IGNORE INTO lernbereiche
                    (subject, grade, track, code, title, richtwert_ustd, sort_order, source)
@@ -86,6 +148,12 @@ def seed_lernbereiche(conn: sqlite3.Connection, docs_dir: str = None) -> int:
                 row,
             )
             inserted += cur.rowcount
+        # Detail-Rohtext als KI-Kontext nachtragen (idempotent per UPDATE, auch für Bestandszeilen)
+        for (grade, track, code), detail in extract_detail_md(text, subject).items():
+            conn.execute(
+                "UPDATE lernbereiche SET detail_md = ? WHERE subject = ? AND grade = ? AND track = ? AND code = ?",
+                (detail, subject, grade, track, code),
+            )
     conn.commit()
     return inserted
 
