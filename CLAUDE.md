@@ -62,7 +62,7 @@ src/main.py        App-Factory (create_app), Router-Registrierung, StaticFiles(w
 src/deps.py        get_db, get_user_id (Session-Cookie), get_storage_root, row_or_404
 src/routers/       je Ressource ein Router (auth, settings, lessons, materials, ai, …)
 src/lib/           security, ai, storage_path, extract (PDF→FTS), asuv_export, planning, holidays
-migrations/        001_init … 007_ai (keine 005)
+migrations/        001_init … 012_branding (keine 005); laufen automatisch beim App-Start
 web/               index.html, styles.css (verbatim!), api.js, app.js — esc() für alles Dynamische
 tests/             pytest; conftest: DB :memory:/tmp, Auth-Fixture, Holidays gemockt
 ```
