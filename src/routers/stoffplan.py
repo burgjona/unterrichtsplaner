@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from ..deps import get_db, get_user_id, row_or_404
 from ..schemas import (
     StoffPlanCreate, StoffPlanDetail, StoffPlanBlockOut, StoffPlanOut, StoffPlanUpdate,
+    StoffPlanDuplicateIn,
 )
 
 router = APIRouter(prefix="/stoff-plans", tags=["stoffplan"])
@@ -131,3 +132,180 @@ def delete(plan_id: int, conn: sqlite3.Connection = Depends(get_db),
     conn.commit()
     if cur.rowcount == 0:
         raise HTTPException(status_code=404, detail="Stoffplan nicht gefunden.")
+
+
+# ======================================================================================
+# U16 – Wiederverwendung: Plan für Parallelklasse duplizieren bzw. auf neues Schuljahr
+# übernehmen. Additiver Block; erzeugt stets einen NEUEN Plan (status 'entwurf').
+# ======================================================================================
+
+_UEBERNAHME_SYSTEM = (
+    "Du bist didaktische Assistenz und überträgst einen bestehenden Stoffverteilungsplan "
+    "auf eine andere Klasse bzw. ein anderes Schuljahr. Behalte die Lernbereiche/Themen und "
+    "ihre Reihenfolge bei; passe nur die Zeiträume (und bei Bedarf den Stundenumfang leicht) "
+    "an Ferien, Wochenstunden und Schuljahresgrenzen des Ziels an. Halte dich an die "
+    "Schuljahresgrenzen und spare Ferien aus. Umlaute korrekt. Nur Vorschlag."
+)
+_UEBERNAHME_SCHEMA = {
+    "type": "object", "additionalProperties": False, "required": ["blocks"],
+    "properties": {"blocks": {"type": "array", "items": {
+        "type": "object", "additionalProperties": False,
+        "required": ["code", "title", "ustd", "startDate", "endDate", "note"],
+        "properties": {
+            "code": {"type": "string"}, "title": {"type": "string"},
+            "ustd": {"type": "integer"},
+            "startDate": {"type": "string"}, "endDate": {"type": "string"},
+            "note": {"type": "string"},
+        }}}},
+}
+
+
+def _insert_block_dicts(conn, plan_id, block_dicts):
+    """Wie _insert_blocks, aber für einfache dict-Blöcke (Duplikat-Pfad)."""
+    for i, b in enumerate(block_dicts):
+        conn.execute(
+            "INSERT INTO stoff_plan_blocks "
+            "(plan_id, lb_code, title, ustd, start_date, end_date, sort_order, conflict_note) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (plan_id, b.get("lb_code"), b.get("title"), b.get("ustd"),
+             b.get("start_date"), b.get("end_date"), i, b.get("conflict_note")),
+        )
+
+
+def _recompute_dates(conn, user_id, target_cls, school_year_id, src_blocks):
+    """Verteilt die Quellblöcke über Ferien/Wochenstunden des Ziels neu.
+
+    Nutzt die deterministische Jahresverteilung (src/lib/planning.py). Gibt die
+    berechneten Blöcke (index-gleich zu src_blocks, ggf. kürzer) zurück oder None,
+    wenn kein Zielschuljahr auflösbar ist.
+    """
+    from ..lib.planning import distribute_lernbereiche
+    sy = conn.execute("SELECT * FROM school_years WHERE id = ? AND user_id = ?",
+                      (school_year_id, user_id)).fetchone()
+    if sy is None:
+        return None
+    ferien = [(r["start_date"], r["end_date"]) for r in conn.execute(
+        "SELECT start_date, end_date FROM school_dates WHERE school_year_id = ? AND user_id = ?",
+        (school_year_id, user_id))]
+    fixed = [r["entry_date"] for r in conn.execute(
+        "SELECT entry_date FROM calendar_entries WHERE user_id = ? AND class_id = ? AND is_fixed = 1",
+        (user_id, target_cls["id"]))]
+    lbs = [{"id": None, "code": b["lb_code"], "title": b["title"],
+            "richtwert_ustd": b["ustd"] or 0} for b in src_blocks]
+    return distribute_lernbereiche(
+        sy["start_date"], sy["end_date"], target_cls["weekly_hours"], lbs, ferien, fixed
+    )["blocks"]
+
+
+def _deterministic_blocks(conn, user_id, target_cls, school_year_id, src_blocks):
+    """Blöcke des Quellplans übernehmen, Zeiträume fürs Ziel neu berechnen."""
+    computed = _recompute_dates(conn, user_id, target_cls, school_year_id, src_blocks) if school_year_id else None
+    out = []
+    for i, b in enumerate(src_blocks):
+        if computed is not None and i < len(computed):
+            c = computed[i]
+            out.append({
+                "lb_code": b["lb_code"], "title": b["title"], "ustd": b["ustd"],
+                "start_date": c["start_date"], "end_date": c["end_date"],
+                "conflict_note": ("Überschneidet einen fixen Termin"
+                                  if c.get("conflict_with_fixed") else None),
+            })
+        elif computed is not None:
+            # Kein Zeitfenster mehr im Zielschuljahr → Datum offen lassen.
+            out.append({
+                "lb_code": b["lb_code"], "title": b["title"], "ustd": b["ustd"],
+                "start_date": None, "end_date": None,
+                "conflict_note": "Kein Zeitfenster mehr im Schuljahr",
+            })
+        else:
+            # Kein Zielschuljahr auflösbar → Datumsangaben des Quellblocks unverändert.
+            out.append({
+                "lb_code": b["lb_code"], "title": b["title"], "ustd": b["ustd"],
+                "start_date": b["start_date"], "end_date": b["end_date"],
+                "conflict_note": b["conflict_note"],
+            })
+    return out
+
+
+def _ki_blocks(conn, user_id, src_blocks, target_cls, school_year_id):
+    """KI-gestützte Übernahme. Wirft (NoApiKey/Netz/JSON) → Aufrufer fällt auf det. zurück."""
+    import json as _json
+    from ..lib import ai
+    sy = None
+    ferien = []
+    if school_year_id:
+        sy = conn.execute("SELECT * FROM school_years WHERE id = ? AND user_id = ?",
+                          (school_year_id, user_id)).fetchone()
+        ferien = [(r["start_date"], r["end_date"]) for r in conn.execute(
+            "SELECT start_date, end_date FROM school_dates WHERE school_year_id = ? AND user_id = ?",
+            (school_year_id, user_id))]
+    lb_lines = "\n".join(
+        f"- {b['lb_code'] or '?'}: {b['title'] or ''} ({b['ustd'] or 0} Ustd.)" for b in src_blocks)
+    parts = [(f"Zielklasse {target_cls['name']}: Fach {target_cls['subject']}, "
+              f"Klassenstufe {target_cls['grade']}, Bildungsgang {target_cls['track'] or '-'}, "
+              f"{target_cls['weekly_hours']} Wochenstunden.")]
+    if sy:
+        parts.append(f"Zielschuljahr {sy['label']} ({sy['start_date']} bis {sy['end_date']}).")
+    if ferien:
+        parts.append("Ferien/unterrichtsfreie Zeiträume:\n"
+                     + "\n".join(f"- {s} bis {e}" for s, e in ferien))
+    parts.append("Zu übertragende Blöcke (Reihenfolge beibehalten, Zeiträume neu setzen):\n" + lb_lines)
+    result = ai.run(conn, user_id, "stoffplan_uebernahme", _UEBERNAHME_SYSTEM,
+                    "\n\n".join(parts), _UEBERNAHME_SCHEMA, max_tokens=2500)
+    ki_blocks = (_json.loads(result["text"]).get("blocks") or [])
+    if not ki_blocks:
+        raise ValueError("KI lieferte keine Blöcke")
+    return [{
+        "lb_code": b.get("code"), "title": b.get("title"), "ustd": b.get("ustd"),
+        "start_date": (b.get("startDate") or None), "end_date": (b.get("endDate") or None),
+        "conflict_note": (b.get("note") or None),
+    } for b in ki_blocks]
+
+
+@router.post("/{plan_id}/duplicate", response_model=StoffPlanDetail, status_code=201)
+def duplicate(plan_id: int, body: StoffPlanDuplicateIn,
+              conn: sqlite3.Connection = Depends(get_db),
+              user_id: int = Depends(get_user_id)):
+    """Dupliziert einen Plan für eine Zielklasse (Parallelklasse) bzw. ein neues Schuljahr.
+
+    mode='kopie'          → Blöcke 1:1 (inkl. Datum).
+    mode='deterministisch'→ Blöcke übernehmen, Zeiträume fürs Ziel neu berechnen.
+    mode='ki'             → KI-gestützte Anpassung; ohne API-Key/Fehler → deterministisch.
+    Der neue Plan ist immer 'entwurf'; Nachbearbeitung via PUT /stoff-plans/{id}.
+    """
+    src = row_or_404(_load_plan(conn, user_id, plan_id), "Stoffplan")
+    src_blocks = conn.execute(
+        "SELECT * FROM stoff_plan_blocks WHERE plan_id = ? ORDER BY sort_order, id", (plan_id,)
+    ).fetchall()
+    target_cls = row_or_404(
+        conn.execute("SELECT * FROM classes WHERE id = ? AND user_id = ?",
+                     (body.target_class_id, user_id)).fetchone(), "Zielklasse")
+    if body.target_school_year_id is not None:
+        row_or_404(conn.execute("SELECT id FROM school_years WHERE id = ? AND user_id = ?",
+                                (body.target_school_year_id, user_id)).fetchone(), "Zielschuljahr")
+    new_syid = body.target_school_year_id if body.target_school_year_id is not None else src["school_year_id"]
+
+    if body.mode == "kopie":
+        new_blocks = [{
+            "lb_code": b["lb_code"], "title": b["title"], "ustd": b["ustd"],
+            "start_date": b["start_date"], "end_date": b["end_date"],
+            "conflict_note": b["conflict_note"],
+        } for b in src_blocks]
+    elif body.mode == "ki":
+        try:
+            new_blocks = _ki_blocks(conn, user_id, src_blocks, target_cls, new_syid)
+        except Exception:
+            # Kein API-Key hinterlegt oder KI-Fehler → sauber deterministisch übernehmen.
+            new_blocks = _deterministic_blocks(conn, user_id, target_cls, new_syid, src_blocks)
+    else:  # deterministisch
+        new_blocks = _deterministic_blocks(conn, user_id, target_cls, new_syid, src_blocks)
+
+    title = f"{src['title']} (Übernahme {target_cls['name']})"
+    cur = conn.execute(
+        "INSERT INTO stoff_plans (user_id, class_id, school_year_id, title, status) "
+        "VALUES (?,?,?,?, 'entwurf')",
+        (user_id, target_cls["id"], new_syid, title))
+    new_id = cur.lastrowid
+    _insert_block_dicts(conn, new_id, new_blocks)
+    conn.commit()
+    return _detail(conn, user_id, new_id)

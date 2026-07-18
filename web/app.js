@@ -434,6 +434,63 @@ function renderClassDetail() {
     });
   }
   renderClassStudents();
+  renderClassDupControl();
+}
+
+/* ---------- U16: Plan für Parallelklasse duplizieren (Klassen-Detail) ---------- */
+async function renderClassDupControl() {
+  const wrap = $("cdDupBody");
+  if (!wrap) return;
+  wrap.innerHTML = '<p class="muted small">Wird geladen …</p>';
+  let plans = [];
+  try { plans = await API.get(`/stoff-plans?classId=${detailClassId}`); }
+  catch (e) { wrap.innerHTML = `<p class="muted small">${esc(e.message)}</p>`; return; }
+  if (!plans.length) {
+    wrap.innerHTML = '<p class="muted small">Noch keine gespeicherten Pläne für diese Klasse.</p>';
+    return;
+  }
+  const targets = state.classes.filter((c) => !c.archivedAt && String(c.id) !== String(detailClassId));
+  const planOpts = plans.map((p) =>
+    `<option value="${p.id}">${esc(p.title)} (${esc(p.status)})</option>`).join("");
+  const classOpts = targets.length
+    ? targets.map((c) => `<option value="${c.id}">${esc(c.name)} (${esc(c.subject)})</option>`).join("")
+    : "";
+  const yearOpts = ['<option value="">(Schuljahr des Quellplans)</option>']
+    .concat(state.schoolYears.map((y) => `<option value="${y.id}">${esc(y.label)}</option>`)).join("");
+  if (!targets.length) {
+    wrap.innerHTML = '<p class="muted small">Keine weitere Klasse vorhanden – lege zuerst eine Zielklasse an.</p>';
+    return;
+  }
+  wrap.innerHTML = `
+    <div class="dup-grid">
+      <div><label class="small">Plan</label><select id="cdDupPlan">${planOpts}</select></div>
+      <div><label class="small">Zielklasse</label><select id="cdDupClass">${classOpts}</select></div>
+      <div><label class="small">Zielschuljahr</label><select id="cdDupYear">${yearOpts}</select></div>
+      <div><label class="small">Modus</label><select id="cdDupMode">
+        <option value="deterministisch">Zeiträume neu berechnen</option>
+        <option value="kopie">1:1 kopieren</option>
+        <option value="ki">KI-Anpassung</option>
+      </select></div>
+    </div>
+    <div style="margin-top:10px;">
+      <button class="btn small" id="cdDupBtn">Duplizieren</button>
+    </div>`;
+  $("cdDupBtn").onclick = async () => {
+    const body = {
+      targetClassId: Number($("cdDupClass").value),
+      mode: $("cdDupMode").value,
+    };
+    const y = $("cdDupYear").value;
+    if (y) body.targetSchoolYearId = Number(y);
+    const planId = Number($("cdDupPlan").value);
+    $("cdDupBtn").disabled = true;
+    try {
+      await API.post(`/stoff-plans/${planId}/duplicate`, body);
+      await refresh();
+      toast("Plan dupliziert (als Entwurf für die Zielklasse).");
+    } catch (e) { toast(e.message, false); }
+    finally { const b = $("cdDupBtn"); if (b) b.disabled = false; }
+  };
 }
 
 let detailStudents = [];
@@ -684,9 +741,60 @@ function setArchivTab(name) {
 async function renderArchivPanel(name) {
   if (name === "klassen") return renderArchivKlassen();
   if (name === "todos") return renderArchivTodos();
-  // Planungen / Notizen: Struktur steht, Inhalt folgt in späteren Wellen.
+  if (name === "planungen") return renderArchivPlanungen();
+  // Notizen: Struktur steht, Inhalt folgt in späteren Wellen.
   const panel = $("archiv" + name.charAt(0).toUpperCase() + name.slice(1));
   if (panel) panel.innerHTML = '<p class="muted small">Noch keine archivierten Einträge.</p>';
+}
+
+/* ---------- U16: Archiv „Planungen" – Plan auf neues Schuljahr übernehmen ---------- */
+async function renderArchivPlanungen() {
+  const wrap = $("archivPlanungen");
+  if (!wrap) return;
+  wrap.innerHTML = '<p class="muted small">Wird geladen …</p>';
+  let plans = [];
+  try { plans = await API.get("/stoff-plans"); }
+  catch (e) { wrap.innerHTML = `<p class="muted small">${esc(e.message)}</p>`; return; }
+  if (!plans.length) { wrap.innerHTML = '<p class="muted small">Noch keine gespeicherten Pläne.</p>'; return; }
+  const clsName = (id) => {
+    const c = state.classes.find((x) => String(x.id) === String(id));
+    return c ? `${c.name} (${c.subject})` : "unbekannte Klasse";
+  };
+  const yearLbl = (id) => {
+    const y = state.schoolYears.find((x) => String(x.id) === String(id));
+    return y ? y.label : "–";
+  };
+  const yearOpts = state.schoolYears.map((y) => `<option value="${y.id}">${esc(y.label)}</option>`).join("");
+  wrap.innerHTML = plans.map((p) => `
+    <div class="archiv-row dup-plan-row" data-dup-plan="${p.id}">
+      <span class="archiv-main">${esc(p.title)}</span>
+      <span class="muted small">${esc(clsName(p.classId))} · ${esc(yearLbl(p.schoolYearId))} · ${esc(p.blockCount ?? 0)} Blöcke</span>
+      <span class="archiv-actions dup-take">
+        <select data-dup-year="${p.id}">${yearOpts || '<option value="">(kein Schuljahr)</option>'}</select>
+        <select data-dup-mode="${p.id}">
+          <option value="deterministisch">neu berechnen</option>
+          <option value="ki">KI-Anpassung</option>
+        </select>
+        <button class="btn small" data-dup-take="${p.id}">Auf neues Schuljahr übernehmen</button>
+      </span>
+    </div>`).join("");
+  wrap.querySelectorAll("[data-dup-take]").forEach((b) => {
+    b.onclick = async () => {
+      const id = b.dataset.dupTake;
+      const p = plans.find((x) => String(x.id) === String(id));
+      const yearSel = wrap.querySelector(`[data-dup-year="${id}"]`);
+      const modeSel = wrap.querySelector(`[data-dup-mode="${id}"]`);
+      const body = { targetClassId: p.classId, mode: modeSel.value };
+      if (yearSel && yearSel.value) body.targetSchoolYearId = Number(yearSel.value);
+      b.disabled = true;
+      try {
+        await API.post(`/stoff-plans/${id}/duplicate`, body);
+        await refresh();
+        renderArchivPlanungen();
+        toast("Plan auf neues Schuljahr übernommen (als Entwurf).");
+      } catch (e) { toast(e.message, false); b.disabled = false; }
+    };
+  });
 }
 
 async function renderArchivKlassen() {
