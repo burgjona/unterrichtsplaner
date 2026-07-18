@@ -16,7 +16,7 @@ const ZIEL_BADGE = "display:inline-block;padding:1px 7px;border-radius:8px;backg
 const $ = (id) => document.getElementById(id);
 const state = {
   user: null, classes: [], lessons: [], reflections: [], open: [], materials: [], todos: [],
-  schoolYears: [], schoolDates: [], calendar: [],
+  schoolYears: [], schoolDates: [], calendar: [], calendarCategories: [],
   appearance: { theme: "fruehling", darkMode: false, font: "verspielt" },
 };
 const lbCache = {};                 // Lernbereiche je Fach|Stufe|Bildungsgang
@@ -273,17 +273,17 @@ function loadLessonIntoForm(l) {
 
 /* ---------- Laden & Rendern ---------- */
 async function loadAll() {
-  const [classes, lessons, reflections, open, materials, todos, schoolYears, calendar] = await Promise.all([
+  const [classes, lessons, reflections, open, materials, todos, schoolYears, calendar, calendarCategories] = await Promise.all([
     API.get("/classes"), API.get("/lessons"), API.get("/reflections"),
     API.get("/reflections/open"), API.get("/materials"), API.get("/todos"),
-    API.get("/school-years"), API.get("/calendar"),
+    API.get("/school-years"), API.get("/calendar"), API.get("/calendar-categories"),
   ]);
   let schoolDates = [];
   for (const sy of schoolYears) {
     try { schoolDates = schoolDates.concat(await API.get(`/school-years/${sy.id}/dates`)); }
     catch (e) { /* best effort */ }
   }
-  Object.assign(state, { classes, lessons, reflections, open, materials, todos, schoolYears, calendar, schoolDates });
+  Object.assign(state, { classes, lessons, reflections, open, materials, todos, schoolYears, calendar, calendarCategories, schoolDates });
 }
 
 async function getLernbereiche(c) {
@@ -315,7 +315,10 @@ function renderAll() {
   renderClassSelects();
   renderClassToggles();
   renderSchoolYears();
+  renderCategoryManager();
+  renderCategorySelect();
   renderCalendar();
+  renderCalendarLegend();
   renderTimeline();
   renderMaterialList();
   renderAsuvLessonSelect();
@@ -619,9 +622,16 @@ function isoDate(d) {
   return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
 }
 function visibleClassIds() { return state.classes.filter((c) => c.visibleInCalendar !== false).map((c) => c.id); }
+function catById(id) { return id == null ? null : state.calendarCategories.find((c) => c.id === id); }
 function entriesForDate(dStr) {
   const vis = visibleClassIds();
-  return state.calendar.filter((e) => e.entryDate === dStr && (e.classId == null || vis.includes(e.classId)));
+  // Klassenlose Termine (classId == null) sind immer sichtbar; mehrtägige Termine
+  // erscheinen an jedem Tag zwischen entryDate und endDate (inklusive).
+  return state.calendar.filter((e) => {
+    const end = e.endDate || e.entryDate;
+    const inRange = e.entryDate <= dStr && dStr <= end;
+    return inRange && (e.classId == null || vis.includes(e.classId));
+  });
 }
 function schoolDateFor(dStr) {
   return state.schoolDates.find((s) => s.startDate <= dStr && dStr <= s.endDate);
@@ -641,8 +651,12 @@ function renderCalendar() {
     const sd = schoolDateFor(dStr);
     if (sd) { cell.style.background = cssVar(sd.kind === "feiertag" ? "--cal-holiday" : "--cal-vacation", sd.kind === "feiertag" ? "#fde68a" : "#e5e7eb"); cell.title = sd.name; }
     cell.innerHTML = `<div class="cal-daynum">${d.getDate()}</div>` +
-      entriesForDate(dStr).map((e) =>
-        `<div class="cal-entry ${esc(e.entryType)}" data-lesson="${e.lessonId == null ? "" : e.lessonId}">${esc(e.title)}</div>`).join("");
+      entriesForDate(dStr).map((e) => {
+        const cat = catById(e.categoryId);
+        const style = cat ? ` style="border-left:4px solid ${esc(cat.color)}"` : "";
+        const time = (!e.allDay && e.startTime) ? esc(e.startTime) + " " : "";
+        return `<div class="cal-entry ${esc(e.entryType)}" data-lesson="${e.lessonId == null ? "" : e.lessonId}"${style}>${time}${esc(e.title)}</div>`;
+      }).join("");
     return cell;
   };
   if (calMode === "month") {
@@ -665,14 +679,93 @@ function renderCalendar() {
 async function saveCalendarEntry() {
   const title = $("calEntryTitle").value.trim(), date = $("calEntryDate").value;
   if (!title || !date) { toast("Bitte Titel und Datum angeben.", false); return; }
+  const endDate = $("calEntryEndDate").value || null;
+  if (endDate && endDate < date) { toast("Enddatum darf nicht vor dem Startdatum liegen.", false); return; }
+  const allDay = $("calEntryAllDay").checked;
   try {
     await API.post("/calendar", {
-      title, entryDate: date, entryType: $("calEntryType").value,
+      title, entryDate: date, endDate,
+      allDay,
+      startTime: allDay ? null : ($("calEntryStartTime").value || null),
+      endTime: allDay ? null : ($("calEntryEndTime").value || null),
+      entryType: $("calEntryType").value,
+      categoryId: $("calEntryCategory").value ? Number($("calEntryCategory").value) : null,
       classId: $("calEntryClass").value ? Number($("calEntryClass").value) : null,
       isFixed: $("calEntryFixed").checked,
     });
-    $("calEntryTitle").value = ""; $("calEntryFixed").checked = false;
+    $("calEntryTitle").value = ""; $("calEntryEndDate").value = "";
+    $("calEntryStartTime").value = ""; $("calEntryEndTime").value = "";
+    $("calEntryAllDay").checked = true; $("calEntryTimeRow").style.display = "none";
+    $("calEntryFixed").checked = false;
     await refresh(); toast("Termin gespeichert.");
+  } catch (e) { toast(e.message, false); }
+}
+
+/* ---------- Kalender-Kategorien (U11) ---------- */
+function renderCategorySelect() {
+  const sel = $("calEntryCategory");
+  if (!sel) return;
+  const prev = sel.value;
+  sel.innerHTML = `<option value="">— keine —</option>` +
+    state.calendarCategories.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
+  sel.value = prev;
+}
+
+function renderCalendarLegend() {
+  const wrap = $("calLegend");
+  if (!wrap) return;
+  const typeItems = [
+    { color: cssVar("--bad", "#dc2626"), label: "Lernerfolgskontrolle" },
+    { color: cssVar("--orange", "#f97316"), label: "Klassenarbeit/Präsentation" },
+  ];
+  const catItems = state.calendarCategories.map((c) => ({ color: c.color, label: c.name }));
+  wrap.innerHTML = typeItems.concat(catItems).map((it) =>
+    `<span class="cal-legend-item"><span class="cal-legend-dot" style="background:${esc(it.color)}"></span>${esc(it.label)}</span>`).join("");
+}
+
+function renderCategoryManager() {
+  const wrap = $("calCategoryList");
+  if (!wrap) return;
+  wrap.innerHTML = "";
+  if (!state.calendarCategories.length) {
+    wrap.innerHTML = '<p class="muted small">Noch keine Kategorien.</p>';
+    return;
+  }
+  state.calendarCategories.forEach((c) => {
+    const div = document.createElement("div");
+    div.className = "cal-cat-row";
+    div.innerHTML =
+      `<input type="color" value="${esc(c.color)}" data-cat-color="${c.id}" />` +
+      `<input type="text" value="${esc(c.name)}" data-cat-name="${c.id}" />` +
+      `<button class="btn small secondary" data-cat-save="${c.id}">Speichern</button>` +
+      `<button class="btn small danger" data-cat-del="${c.id}">Löschen</button>`;
+    wrap.appendChild(div);
+  });
+  wrap.querySelectorAll("[data-cat-save]").forEach((b) => {
+    b.onclick = async () => {
+      const id = b.dataset.catSave;
+      const name = wrap.querySelector(`[data-cat-name="${id}"]`).value.trim();
+      const color = wrap.querySelector(`[data-cat-color="${id}"]`).value;
+      if (!name) { toast("Bitte einen Namen angeben.", false); return; }
+      try { await API.put("/calendar-categories/" + id, { name, color }); await refresh(); toast("Kategorie gespeichert."); }
+      catch (e) { toast(e.message, false); }
+    };
+  });
+  wrap.querySelectorAll("[data-cat-del]").forEach((b) => {
+    b.onclick = async () => {
+      try { await API.del("/calendar-categories/" + b.dataset.catDel); await refresh(); toast("Kategorie gelöscht."); }
+      catch (e) { toast(e.message, false); }
+    };
+  });
+}
+
+async function addCategory() {
+  const name = $("newCatName").value.trim(), color = $("newCatColor").value;
+  if (!name) { toast("Bitte einen Namen angeben.", false); return; }
+  try {
+    await API.post("/calendar-categories", { name, color });
+    $("newCatName").value = "";
+    await refresh(); toast("Kategorie angelegt.");
   } catch (e) { toast(e.message, false); }
 }
 
@@ -1004,8 +1097,6 @@ function applyAppearance(theme, darkMode, font) {
   root.setAttribute("data-theme", t);
   root.setAttribute("data-dark", dark ? "1" : "0");
   root.setAttribute("data-font", f);
-  const hero = $("heroTag");
-  if (hero) hero.textContent = SEASONS.find((s) => s.key === t).label;
   syncAppearanceControls();
 }
 
@@ -1653,6 +1744,10 @@ function wireEvents() {
   $("calMonthBtn").onclick = () => { calMode = "month"; $("calMonthBtn").classList.add("active"); $("calWeekBtn").classList.remove("active"); renderCalendar(); };
   $("calWeekBtn").onclick = () => { calMode = "week"; $("calWeekBtn").classList.add("active"); $("calMonthBtn").classList.remove("active"); renderCalendar(); };
   $("calSaveEntryBtn").onclick = saveCalendarEntry;
+  $("calEntryAllDay").onchange = () => {
+    $("calEntryTimeRow").style.display = $("calEntryAllDay").checked ? "none" : "flex";
+  };
+  $("addCatBtn").onclick = addCategory;
   $("saveSchoolYear").onclick = saveSchoolYear;
   $("planPreviewBtn").onclick = runPlanning;
   $("stoffUpload").onclick = stoffUpload;

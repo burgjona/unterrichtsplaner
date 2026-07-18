@@ -61,7 +61,6 @@
           <div class="page-sub" id="pageSub">Dein Tag auf einen Blick.</div>
         </div>
       </div>
-      <div class="hero-tag" id="heroTag">Frühling</div>
     </div>
 
     <!-- HEUTE -->
@@ -142,16 +141,36 @@
         </div>
         <div class="cal-grid" id="calGrid"></div>
         <p class="small muted" style="margin-top:8px;">Grau hinterlegt = Ferien/Feiertag. Klick auf einen Stundentermin öffnet die Detailansicht.</p>
+        <div class="cal-legend" id="calLegend"></div>
         <div class="row" style="margin-top:14px;">
           <div><label>Neuer Termin: Titel</label><input id="calEntryTitle" placeholder="z. B. LUE Rechtschreibung" /></div>
-          <div><label>Datum</label><input id="calEntryDate" type="date" /></div>
+          <div><label>Datum (von)</label><input id="calEntryDate" type="date" /></div>
         </div>
         <div class="row">
+          <div><label>Enddatum (optional, mehrtägig)</label><input id="calEntryEndDate" type="date" /></div>
+          <div><label>Kategorie</label><select id="calEntryCategory"></select></div>
+        </div>
+        <label style="display:flex; align-items:center; gap:8px; margin-top:8px;"><input type="checkbox" id="calEntryAllDay" style="width:auto;" checked /> Ganztägig</label>
+        <div class="row" id="calEntryTimeRow" style="margin-top:8px; display:none;">
+          <div><label>Uhrzeit von</label><input id="calEntryStartTime" type="time" /></div>
+          <div><label>Uhrzeit bis</label><input id="calEntryEndTime" type="time" /></div>
+        </div>
+        <div class="row" style="margin-top:8px;">
           <div><label>Klasse</label><select id="calEntryClass"></select></div>
           <div><label>Typ</label><select id="calEntryType"><option value="lu">Lernerfolgskontrolle</option><option value="exam">Klassenarbeit/Präsentation</option><option value="normal">Sonstiges</option></select></div>
         </div>
         <label style="display:flex; align-items:center; gap:8px; margin-top:8px;"><input type="checkbox" id="calEntryFixed" style="width:auto;" /> Fixer Termin (nicht durch die Verplanung verschiebbar)</label>
         <div style="margin-top:10px;"><button class="btn" id="calSaveEntryBtn">Termin speichern</button></div>
+      </div>
+      <div class="card" style="margin-top:14px;">
+        <h3 style="margin-bottom:8px;">Kategorien verwalten</h3>
+        <p class="muted small">Farbige Kennzeichnung der Termine im Kalender.</p>
+        <div id="calCategoryList"></div>
+        <div class="row" style="margin-top:10px;">
+          <div><label>Neue Kategorie: Name</label><input id="newCatName" placeholder="z. B. Elternabend" /></div>
+          <div><label>Farbe</label><input id="newCatColor" type="color" value="#2563eb" /></div>
+        </div>
+        <div style="margin-top:10px;"><button class="btn secondary" id="addCatBtn">Kategorie anlegen</button></div>
       </div>
     </section>
 

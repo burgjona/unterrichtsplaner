@@ -258,7 +258,12 @@ class LessonOut(Base):
 class CalendarCreate(Base):
     title: str
     entry_date: str
+    end_date: Optional[str] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    all_day: bool = True
     entry_type: str = "normal"
+    category_id: Optional[int] = None
     class_id: Optional[int] = None
     lesson_id: Optional[int] = None
     school_year_id: Optional[int] = None
@@ -268,7 +273,12 @@ class CalendarCreate(Base):
 class CalendarUpdate(Base):
     title: Optional[str] = None
     entry_date: Optional[str] = None
+    end_date: Optional[str] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    all_day: Optional[bool] = None
     entry_type: Optional[str] = None
+    category_id: Optional[int] = None
     class_id: Optional[int] = None
     lesson_id: Optional[int] = None
     school_year_id: Optional[int] = None
@@ -279,12 +289,38 @@ class CalendarOut(Base):
     id: int
     title: str
     entry_date: str
+    end_date: Optional[str] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    all_day: bool = True
     entry_type: str
+    category_id: Optional[int] = None
     class_id: Optional[int] = None
     lesson_id: Optional[int] = None
     school_year_id: Optional[int] = None
     is_fixed: bool
     auto_generated: bool = False
+    created_at: str
+
+
+# ---------- Kalender-Kategorien (U11) ----------
+class CalendarCategoryCreate(Base):
+    name: str
+    color: str
+    sort_order: int = 0
+
+
+class CalendarCategoryUpdate(Base):
+    name: Optional[str] = None
+    color: Optional[str] = None
+    sort_order: Optional[int] = None
+
+
+class CalendarCategoryOut(Base):
+    id: int
+    name: str
+    color: str
+    sort_order: int
     created_at: str
 
 
