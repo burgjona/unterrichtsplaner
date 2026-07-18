@@ -220,6 +220,17 @@
         <h3>Planvorschlag</h3>
         <div id="planSummary" class="small muted" style="margin-bottom:8px;"></div>
         <div class="table-scroll"><table id="planTable"><thead><tr><th>LB</th><th>Thema</th><th>Ustd.</th><th>Wochen</th><th>Zeitraum</th><th>Hinweis</th></tr></thead><tbody></tbody></table></div>
+        <div style="margin-top:12px;">
+          <button class="btn" id="planSaveBtn">Plan speichern</button>
+          <span class="small muted" style="margin-left:8px;">Speichert den aktuell angezeigten Vorschlag als Stoffverteilungsplan.</span>
+        </div>
+      </div>
+
+      <!-- Gespeicherte Stoffverteilungspläne (U12) -->
+      <div class="card" id="stoffPlansCard" style="margin-top:14px;">
+        <h3>Gespeicherte Pläne</h3>
+        <p class="muted small">Pläne der gewählten Klasse: laden (füllt die Tabelle oben), Zeiträume bearbeiten, aktiv schalten oder löschen. Je Klasse + Schuljahr kann nur ein Plan aktiv sein.</p>
+        <div id="stoffPlansList" class="stoff-plans"></div>
       </div>
       <div class="card" id="stoffUploadCard" style="margin-top:14px; display:none;">
         <h3>Material zu einem Lernbereich hochladen</h3>
