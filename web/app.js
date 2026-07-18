@@ -19,6 +19,7 @@ const state = {
   schoolYears: [], schoolDates: [], calendar: [], calendarCategories: [],
   appearance: { theme: "fruehling", darkMode: false, font: "verspielt" },
   stoffPreview: [], stoffPlans: [],   // aktuell angezeigter Vorschlag + gespeicherte Pläne (U12)
+  activePlans: {},                    // U15: classId → { planId, title, blocks[] } des aktiven Stoffplans
 };
 let editingStoffPlanId = null;        // gerade im Inline-Editor geöffneter Plan (U12)
 const lbCache = {};                 // Lernbereiche je Fach|Stufe|Bildungsgang
@@ -286,6 +287,23 @@ async function loadAll() {
     catch (e) { /* best effort */ }
   }
   Object.assign(state, { classes, lessons, reflections, open, materials, todos, schoolYears, calendar, calendarCategories, schoolDates });
+  await loadActivePlans();
+}
+
+// U15: aktive Stoffpläne aller Klassen laden (nur Lesezugriff auf bestehende Endpunkte).
+// Ergebnis: state.activePlans[classId] = { planId, title, blocks:[{lbCode,title,ustd,startDate,endDate}] }
+async function loadActivePlans() {
+  const activePlans = {};
+  await Promise.all(state.classes.map(async (c) => {
+    try {
+      const plans = await API.get(`/stoff-plans?classId=${c.id}`);
+      const active = plans.find((p) => p.status === "aktiv");
+      if (!active) return;
+      const detail = await API.get(`/stoff-plans/${active.id}`);
+      activePlans[c.id] = { planId: active.id, title: detail.title, blocks: detail.blocks || [] };
+    } catch (e) { /* best effort – ohne aktiven Plan bleibt das bisherige Verhalten */ }
+  }));
+  state.activePlans = activePlans;
 }
 
 async function getLernbereiche(c) {
@@ -839,13 +857,36 @@ async function renderTimeline() {
     let lbs = [];
     try { lbs = await getLernbereiche({ subject: c.subject, grade: c.grade, track: resolveTrack(c.subject, c.grade, c.track) }); } catch (e) { /* ignore */ }
     const eff = effectiveBlocks(c.subject, lbs);
-    const blocks = eff.map((e, j) =>
-      `<div class="timeline-block" style="background:${colors[j % colors.length]}">${esc(e.code)} ${esc(e.title)} (${e.richtwertUstd == null ? "?" : e.richtwertUstd} Std.)</div>`).join("");
+    // U15: geplante Datumsspanne aus dem aktiven Stoffplan der Klasse (lbCode → Block).
+    const planMap = activePlanBlocksByCode(c.id);
+    const blocks = eff.map((e, j) => {
+      const pb = planMap[e.code];
+      const hasDate = pb && (pb.startDate || pb.endDate);
+      const dateLine = hasDate
+        ? `<span class="tl-date">${esc(pb.startDate || "?")}${pb.endDate ? " – " + esc(pb.endDate) : ""}</span>`
+        : "";
+      const clickable = pb && pb.startDate;
+      const attrs = clickable ? ` data-tl-jump="${esc(pb.startDate)}"` : "";
+      const cls = "timeline-block" + (clickable ? " clickable" : "");
+      return `<div class="${cls}" style="background:${colors[j % colors.length]}"${attrs}>${esc(e.code)} ${esc(e.title)} (${e.richtwertUstd == null ? "?" : e.richtwertUstd} Std.)${dateLine}</div>`;
+    }).join("");
     const rowEl = document.createElement("div");
     rowEl.className = "timeline-row";
     rowEl.innerHTML = `<div class="timeline-label">${esc(c.name)} (${esc(c.subject)})</div><div class="timeline-track">${blocks || '<span class="muted small">Kein Plan</span>'}</div>`;
     wrap.appendChild(rowEl);
   }
+  // U15: Klick auf einen datierten LB-Block springt im Kalender an dessen Startdatum.
+  wrap.querySelectorAll("[data-tl-jump]").forEach((el) => {
+    el.onclick = () => jumpCalendarToDate(el.dataset.tlJump);
+  });
+}
+
+// U15: lbCode → Block-Objekt des aktiven Stoffplans einer Klasse (leeres Objekt ohne Plan).
+function activePlanBlocksByCode(classId) {
+  const ap = state.activePlans[classId];
+  const map = {};
+  if (ap) ap.blocks.forEach((b) => { if (b.lbCode) map[b.lbCode] = b; });
+  return map;
 }
 
 function renderSchoolYears() {
@@ -872,6 +913,26 @@ function renderSchoolYears() {
 function isoDate(d) {
   return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
 }
+// U15: "YYYY-MM-DD" → lokales Date (ohne Zeitzonen-Verschiebung).
+function parseIso(s) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s || "");
+  return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
+}
+// U15: Kalender auf ein Datum springen lassen und den Tag kurz farblich hervorheben.
+function jumpCalendarToDate(dStr) {
+  const d = parseIso(dStr);
+  if (!d) return;
+  calCursor = d;
+  renderCalendar();
+  const grid = $("calGrid");
+  if (grid) grid.scrollIntoView({ behavior: "smooth", block: "center" });
+  requestAnimationFrame(() => {
+    const cell = document.querySelector(`#calGrid .cal-cell[data-date="${dStr}"]`);
+    if (!cell) return;
+    cell.classList.add("cal-flash");
+    setTimeout(() => cell.classList.remove("cal-flash"), 1500);
+  });
+}
 function visibleClassIds() { return state.classes.filter((c) => c.visibleInCalendar !== false).map((c) => c.id); }
 function catById(id) { return id == null ? null : state.calendarCategories.find((c) => c.id === id); }
 function entriesForDate(dStr) {
@@ -895,13 +956,33 @@ function renderCalendar() {
     const h = document.createElement("div"); h.className = "cal-head"; h.textContent = d; grid.appendChild(h);
   });
   const todayStr = isoDate(new Date());
+  // U15: Segmente des aktiven Stoffplans (nur sichtbare Klassen) als Kalender-Ebene vorbereiten.
+  const tlColors = timelineColors();
+  const planSegs = [];
+  visibleClassIds().forEach((cid) => {
+    const ap = state.activePlans[cid];
+    if (!ap) return;
+    const cls = state.classes.find((c) => c.id === cid);
+    ap.blocks.forEach((b, i) => {
+      if (!b.startDate) return;
+      const end = b.endDate || b.startDate;
+      const tip = `${cls ? esc(cls.name) + ": " : ""}${esc(b.lbCode || "")} ${esc(b.title || "")} (${esc(b.startDate)}${b.endDate ? " – " + esc(b.endDate) : ""})`.trim();
+      planSegs.push({ start: b.startDate, end, code: b.lbCode || "", color: tlColors[i % tlColors.length], tip });
+    });
+  });
   const makeCell = (d, other) => {
     const dStr = isoDate(d);
     const cell = document.createElement("div");
     cell.className = "cal-cell" + (other ? " otherMonth" : "") + (dStr === todayStr ? " today" : "");
+    cell.dataset.date = dStr;
     const sd = schoolDateFor(dStr);
     if (sd) { cell.style.background = cssVar(sd.kind === "feiertag" ? "--cal-holiday" : "--cal-vacation", sd.kind === "feiertag" ? "#fde68a" : "#e5e7eb"); cell.title = sd.name; }
-    cell.innerHTML = `<div class="cal-daynum">${d.getDate()}</div>` +
+    const strips = planSegs.filter((s) => s.start <= dStr && dStr <= s.end);
+    const stripHtml = strips.length
+      ? `<div class="cal-plan-strips">` + strips.map((s) =>
+          `<span class="cal-plan-strip" style="background:${s.color}" title="${s.tip}">${esc(s.code)}</span>`).join("") + `</div>`
+      : "";
+    cell.innerHTML = `<div class="cal-daynum">${d.getDate()}</div>` + stripHtml +
       entriesForDate(dStr).map((e) => {
         const cat = catById(e.categoryId);
         const style = cat ? ` style="border-left:4px solid ${esc(cat.color)}"` : "";
