@@ -3015,6 +3015,7 @@ async function renderArchivNotizen() {
 
 async function init() {
   wireEvents();
+  initOfflineSupport();  // U23: Service Worker + Offline-Banner
   try {
     await startApp();  // vorhandene Session?
   } catch (e) {
@@ -3023,3 +3024,25 @@ async function init() {
   }
 }
 document.addEventListener("DOMContentLoaded", init);
+
+/* ===== U23: Offline (nur lesen) — additiver Block ===================================
+   - Registriert den Service Worker (Shell-Precache + API-GET-Cache).
+   - Zeigt ein dezentes Banner, solange keine Internetverbindung besteht.
+   - Meldet fehlgeschlagene Schreibversuche offline als klare Toast-Meldung. */
+function updateOfflineBanner() {
+  const banner = $("offlineBanner");
+  if (!banner) return;
+  banner.classList.toggle("hidden", navigator.onLine !== false);
+}
+function initOfflineSupport() {
+  // Service Worker registrieren (nur über HTTPS/localhost verfügbar; robust gekapselt).
+  if ("serviceWorker" in navigator) {
+    try {
+      navigator.serviceWorker.register("/sw.js").catch(() => { /* SW optional — kein Absturz */ });
+    } catch (_) { /* nicht unterstützt — ignorieren */ }
+  }
+  window.addEventListener("online", updateOfflineBanner);
+  window.addEventListener("offline", updateOfflineBanner);
+  updateOfflineBanner();
+}
+/* ===== Ende U23-Block =============================================================== */

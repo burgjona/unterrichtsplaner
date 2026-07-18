@@ -17,7 +17,25 @@ const API = (() => {
       opts.headers["Content-Type"] = "application/json";
       opts.body = JSON.stringify(body);
     }
-    const res = await fetch(BASE + path, opts);
+    let res;
+    try {
+      res = await fetch(BASE + path, opts);
+    } catch (netErr) {
+      // U23: Netzwerkfehler (offline) klar melden statt kryptischem TypeError.
+      // Schreibvorgänge offline schlagen bewusst fehl (nur-lesen-Modus).
+      const offline = (typeof navigator !== "undefined" && navigator.onLine === false);
+      let msg;
+      if (offline) {
+        msg = method === "GET"
+          ? "Keine Internetverbindung – Daten evtl. nicht aktuell."
+          : "Keine Internetverbindung – Änderung nicht gespeichert.";
+      } else if (method !== "GET") {
+        msg = "Server nicht erreichbar – Änderung nicht gespeichert.";
+      } else {
+        msg = "Server nicht erreichbar – Daten evtl. nicht aktuell.";
+      }
+      const err = new Error(msg); err.offline = offline; throw err;
+    }
     if (res.status === 204) return null;
     const text = await res.text();
     const data = parseJson(text, res.status);
@@ -33,7 +51,14 @@ const API = (() => {
     return data;
   }
   async function upload(path, formData) {
-    const res = await fetch(BASE + path, { method: "POST", credentials: "include", body: formData });
+    let res;
+    try {
+      res = await fetch(BASE + path, { method: "POST", credentials: "include", body: formData });
+    } catch (netErr) {
+      // U23: Upload offline schlägt bewusst fehl (nur-lesen-Modus).
+      const err = new Error("Keine Internetverbindung – Änderung nicht gespeichert.");
+      err.offline = true; throw err;
+    }
     const text = await res.text();
     const data = parseJson(text, res.status);
     if (!res.ok) {
