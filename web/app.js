@@ -16,6 +16,7 @@ const ZIEL_BADGE = "display:inline-block;padding:1px 7px;border-radius:8px;backg
 const $ = (id) => document.getElementById(id);
 const state = {
   user: null, classes: [], lessons: [], reflections: [], open: [], materials: [], todos: [],
+  notes: [],   // U17: Notizen ("Gedanken sammeln")
   schoolYears: [], schoolDates: [], calendar: [], calendarCategories: [],
   appearance: { theme: "fruehling", darkMode: false, font: "verspielt" },
   stoffPreview: [], stoffPlans: [],   // aktuell angezeigter Vorschlag + gespeicherte Pläne (U12)
@@ -275,17 +276,17 @@ function loadLessonIntoForm(l) {
 
 /* ---------- Laden & Rendern ---------- */
 async function loadAll() {
-  const [classes, lessons, reflections, open, materials, todos, schoolYears, calendar, calendarCategories] = await Promise.all([
+  const [classes, lessons, reflections, open, materials, todos, notes, schoolYears, calendar, calendarCategories] = await Promise.all([
     API.get("/classes"), API.get("/lessons"), API.get("/reflections"),
     API.get("/reflections/open"), API.get("/materials"), API.get("/todos"),
-    API.get("/school-years"), API.get("/calendar"), API.get("/calendar-categories"),
+    API.get("/notes"), API.get("/school-years"), API.get("/calendar"), API.get("/calendar-categories"),
   ]);
   let schoolDates = [];
   for (const sy of schoolYears) {
     try { schoolDates = schoolDates.concat(await API.get(`/school-years/${sy.id}/dates`)); }
     catch (e) { /* best effort */ }
   }
-  Object.assign(state, { classes, lessons, reflections, open, materials, todos, schoolYears, calendar, calendarCategories, schoolDates });
+  Object.assign(state, { classes, lessons, reflections, open, materials, todos, notes, schoolYears, calendar, calendarCategories, schoolDates });
 }
 
 async function getLernbereiche(c) {
@@ -666,7 +667,8 @@ function setArchivTab(name) {
 async function renderArchivPanel(name) {
   if (name === "klassen") return renderArchivKlassen();
   if (name === "todos") return renderArchivTodos();
-  // Planungen / Notizen: Struktur steht, Inhalt folgt in späteren Wellen.
+  if (name === "notizen") return renderArchivNotizen();
+  // Planungen: Struktur steht, Inhalt folgt in späteren Wellen.
   const panel = $("archiv" + name.charAt(0).toUpperCase() + name.slice(1));
   if (panel) panel.innerHTML = '<p class="muted small">Noch keine archivierten Einträge.</p>';
 }
@@ -2078,6 +2080,7 @@ const titles = {
   stoff: ["Stoffverteilungsplan", "Lehrplanbasierte Jahresplanung (folgt in M4)."],
   stunde: ["Unterrichtsplanung", "Ideenfeld, Phasentabelle und abschließende Klafki-/Meyer-Reflexion."],
   reflexion: ["Reflexion", "Offene Reflexionen ansehen, überspringen oder erfassen."],
+  notizen: ["Notizen", "Gedanken sammeln – allgemein oder je Klasse, mit Autosave."],
   asuv: ["ASUV-Entwürfe", "Ausführlicher schriftlicher Unterrichtsentwurf je Stunde (folgt in M6)."],
   material: ["Materialbibliothek", "Material hochladen, taggen und wiederfinden (folgt in M5)."],
   settings: ["Einstellungen", "API-Key und Konto."],
@@ -2095,6 +2098,7 @@ function showView(view) {
   if (view === "asuv" && state.lessons.length) loadAsuv(asuvLessonId || state.lessons[0].id);
   if (view === "stoff") loadStoffPlans();
   if (view === "praesentation") renderPraesentation();
+  if (view === "notizen") renderNotizen();
   if (view === "material") renderArchivPanel(archivTab);
   closeMobileNav();
 }
@@ -2304,6 +2308,159 @@ function wireEvents() {
   $("authSubmit").onclick = submitAuth;
   $("authToggle").onclick = () => setAuthMode(authMode === "login" ? "register" : "login");
   $("authPassword").addEventListener("keydown", (e) => { if (e.key === "Enter") submitAuth(); });
+}
+
+/* =========================================================================
+   U17: Notizen ("Gedanken sammeln") – additiver Block.
+   Unterreiter "Allgemein" + je aktiver Klasse einer; großes Textfeld mit
+   Autosave (Debounce → PUT; erster Schreibvorgang POST). Archivieren pro Notiz;
+   Archiv-Liste in der Materialbibliothek (renderArchivNotizen).
+   ========================================================================= */
+let notizenTab = "allgemein";   // "allgemein" oder String(class.id)
+let notizenSaveId = null;       // id der aktuell bearbeiteten Notiz (null = noch keine)
+let notizenTimer = null;
+let notizenSaving = false;
+
+function renderNotizen() {
+  const tabsWrap = $("notizenTabs");
+  if (!tabsWrap) return;
+  const tabs = [{ key: "allgemein", label: "Allgemein" }];
+  state.classes.forEach((c) => {
+    const sy = state.schoolYears.find((s) => s.id === c.schoolYearId);
+    const label = sy ? `${c.name} (${sy.label})` : c.name;
+    tabs.push({ key: String(c.id), label });
+  });
+  if (!tabs.some((t) => t.key === notizenTab)) notizenTab = "allgemein";
+  tabsWrap.innerHTML = tabs.map((t) =>
+    `<button class="notizen-tab${t.key === notizenTab ? " active" : ""}" data-notiz-tab="${esc(t.key)}">${esc(t.label)}</button>`
+  ).join("");
+  tabsWrap.querySelectorAll("[data-notiz-tab]").forEach((b) => {
+    b.onclick = async () => {
+      await flushNotizenSave();     // ausstehende Eingabe des alten Reiters sichern
+      notizenTab = b.dataset.notizTab;
+      renderNotizen();
+    };
+  });
+  renderNotizenPanel();
+}
+
+function renderNotizenPanel() {
+  const panel = $("notizenPanel");
+  if (!panel) return;
+  if (notizenTimer) { clearTimeout(notizenTimer); notizenTimer = null; }
+  const isAllg = notizenTab === "allgemein";
+  const classId = isAllg ? null : Number(notizenTab);
+  const note = state.notes.find((n) =>
+    n.archivedAt == null &&
+    (isAllg ? n.scope === "allgemein" : (n.scope === "klasse" && n.classId === classId)));
+  notizenSaveId = note ? note.id : null;
+  const hint = isAllg
+    ? "Allgemeine Gedanken, klassenübergreifend."
+    : "Gedanken zu dieser Klasse.";
+  panel.innerHTML =
+    `<p class="muted small">${esc(hint)}</p>` +
+    `<textarea id="notizenText" class="notizen-text" placeholder="Gedanken sammeln …"></textarea>` +
+    `<div class="notizen-foot">` +
+    `<span class="small muted" id="notizenStatus"></span>` +
+    `<button class="btn small secondary" id="notizenArchiveBtn"${note ? "" : " disabled"}>Notiz archivieren</button>` +
+    `</div>`;
+  const ta = $("notizenText");
+  ta.value = note ? (note.bodyMd || "") : "";
+  ta.oninput = scheduleNotizenSave;
+  $("notizenArchiveBtn").onclick = archiveCurrentNote;
+}
+
+function scheduleNotizenSave() {
+  const status = $("notizenStatus");
+  if (status) status.textContent = "…";
+  if (notizenTimer) clearTimeout(notizenTimer);
+  notizenTimer = setTimeout(saveNotizen, 900);
+}
+
+async function flushNotizenSave() {
+  if (notizenTimer) { clearTimeout(notizenTimer); notizenTimer = null; await saveNotizen(); }
+}
+
+async function saveNotizen() {
+  const ta = $("notizenText");
+  if (!ta) return;
+  if (notizenSaving) { scheduleNotizenSave(); return; }  // Überlappung vermeiden (kein Doppel-POST)
+  const status = $("notizenStatus");
+  const body = ta.value;
+  const isAllg = notizenTab === "allgemein";
+  notizenSaving = true;
+  try {
+    if (notizenSaveId == null) {
+      const created = await API.post("/notes", {
+        scope: isAllg ? "allgemein" : "klasse",
+        classId: isAllg ? null : Number(notizenTab),
+        bodyMd: body,
+      });
+      notizenSaveId = created.id;
+      state.notes.push(created);
+      const ab = $("notizenArchiveBtn"); if (ab) ab.disabled = false;
+    } else {
+      const updated = await API.put(`/notes/${notizenSaveId}`, { bodyMd: body });
+      const idx = state.notes.findIndex((n) => n.id === notizenSaveId);
+      if (idx >= 0) state.notes[idx] = updated;
+    }
+    if (status) status.textContent = "Gespeichert.";
+  } catch (e) {
+    if (status) status.textContent = "";
+    toast(e.message, false);
+  } finally {
+    notizenSaving = false;
+  }
+}
+
+async function archiveCurrentNote() {
+  if (notizenSaveId == null) return;
+  if (!confirm("Diese Notiz archivieren? Sie wandert ins Archiv der Materialbibliothek.")) return;
+  try {
+    await flushNotizenSave();
+    await API.post(`/notes/${notizenSaveId}/archive`);
+    await refresh();
+    renderNotizen();
+    toast("Notiz archiviert.");
+  } catch (e) { toast(e.message, false); }
+}
+
+async function renderArchivNotizen() {
+  const wrap = $("archivNotizen");
+  if (!wrap) return;
+  wrap.innerHTML = '<p class="muted small">Wird geladen …</p>';
+  let rows = [];
+  try { rows = await API.get("/notes?archived=true"); }
+  catch (e) { wrap.innerHTML = `<p class="muted small">${esc(e.message)}</p>`; return; }
+  wrap.innerHTML = "";
+  if (!rows.length) { wrap.innerHTML = '<p class="muted small">Keine archivierten Notizen.</p>'; return; }
+  rows.forEach((n) => {
+    const cls = n.classId ? state.classes.find((c) => c.id === n.classId) : null;
+    const label = n.scope === "allgemein" ? "Allgemein" : (cls ? cls.name : "Klasse (archiviert)");
+    const preview = (n.bodyMd || "").trim().replace(/\s+/g, " ").slice(0, 80) || "(leer)";
+    const div = document.createElement("div");
+    div.className = "archiv-row";
+    div.innerHTML =
+      `<span class="archiv-main">${esc(label)}</span>` +
+      `<span class="muted small">${esc(preview)}</span>` +
+      `<span class="archiv-actions">` +
+      `<button class="btn small secondary" data-restore-note="${n.id}">Wiederherstellen</button>` +
+      `<button class="btn small danger" data-hard-note="${n.id}">Endgültig löschen</button></span>`;
+    wrap.appendChild(div);
+  });
+  wrap.querySelectorAll("[data-restore-note]").forEach((b) => {
+    b.onclick = async () => {
+      try { await API.post("/notes/" + b.dataset.restoreNote + "/restore"); await refresh(); renderArchivNotizen(); toast("Notiz wiederhergestellt."); }
+      catch (e) { toast(e.message, false); }
+    };
+  });
+  wrap.querySelectorAll("[data-hard-note]").forEach((b) => {
+    b.onclick = async () => {
+      if (!confirm("Notiz endgültig löschen? Das kann nicht rückgängig gemacht werden.")) return;
+      try { await API.del("/notes/" + b.dataset.hardNote); await refresh(); renderArchivNotizen(); toast("Notiz endgültig gelöscht."); }
+      catch (e) { toast(e.message, false); }
+    };
+  });
 }
 
 async function init() {

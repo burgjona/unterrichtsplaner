@@ -38,6 +38,7 @@
     <button class="nav-btn" data-view="stoff">Stoffverteilungsplan</button>
     <button class="nav-btn" data-view="stunde">Unterrichtsplanung</button>
     <button class="nav-btn" data-view="reflexion">Reflexion</button>
+    <button class="nav-btn" data-view="notizen">Notizen</button>
 
     <div class="section-label">Referendariat</div>
     <button class="nav-btn" data-view="asuv">ASUV-Entwürfe</button>
@@ -396,6 +397,16 @@
       <div class="card" style="margin-top:14px;">
         <h3>Reflexionsjournal</h3>
         <div class="table-scroll"><table id="reflectTable"><thead><tr><th>Stunde</th><th>Ampel-Übersicht</th><th>Notiz</th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </section>
+
+    <!-- NOTIZEN (U17): freies Gedanken-Sammeln, allgemein oder je Klasse, mit Autosave -->
+    <section id="notizen" class="view hidden">
+      <div class="card">
+        <h3>Gedanken sammeln</h3>
+        <p class="muted small">Freies Notizfeld – „Allgemein" klassenübergreifend oder je aktiver Klasse ein eigener Reiter. Wird beim Tippen automatisch gespeichert.</p>
+        <div class="notizen-tabs" id="notizenTabs"></div>
+        <div id="notizenPanel"></div>
       </div>
     </section>
 
