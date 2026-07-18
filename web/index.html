@@ -206,74 +206,85 @@
 
     <!-- KALENDER -->
     <section id="kalender" class="view hidden">
-      <div class="card">
-        <h3>Klassenfilter</h3>
-        <p class="muted small">Klassen an- und abwählen, um ihre Termine und Lernbereiche ein- oder auszublenden.</p>
-        <div class="class-toggle-row" id="classToggleRow"></div>
-      </div>
-      <div class="card" style="margin-top:14px;">
-        <h3 style="margin-bottom:8px;">Lernbereiche im Überblick</h3>
-        <div id="classTimeline"></div>
-      </div>
-      <div class="card" style="margin-top:14px;">
-        <div class="cal-nav">
-          <button id="calPrevBtn">&larr;</button>
-          <strong id="calLabel" style="color:var(--primary-dark);">Monat</strong>
-          <button id="calNextBtn">&rarr;</button>
-          <div class="view-toggle">
-            <button id="calMonthBtn" class="active">Monat</button>
-            <button id="calWeekBtn">Woche</button>
+      <!-- U22: Kalender-Redesign — Gitter im Fokus (cal-main), Werkzeuge in einklappbarer Seitenleiste (cal-side) -->
+      <div class="cal-layout" id="calLayout">
+        <div class="cal-main">
+          <!-- Neuer Termin: Popover-Panel, standardmäßig versteckt; öffnet per Button oder Klick auf einen Tag -->
+          <div class="card cal-entry-panel hidden" id="calEntryPanel">
+            <h3 style="margin-bottom:8px;">Neuer Termin</h3>
+            <div class="row">
+              <div><label>Titel</label><input id="calEntryTitle" placeholder="z. B. LUE Rechtschreibung" /></div>
+              <div><label>Datum (von)</label><input id="calEntryDate" type="date" /></div>
+            </div>
+            <div class="row">
+              <div><label>Enddatum (optional, mehrtägig)</label><input id="calEntryEndDate" type="date" /></div>
+              <div><label>Kategorie</label><select id="calEntryCategory"></select></div>
+            </div>
+            <label style="display:flex; align-items:center; gap:8px; margin-top:8px;"><input type="checkbox" id="calEntryAllDay" style="width:auto;" checked /> Ganztägig</label>
+            <div class="row" id="calEntryTimeRow" style="margin-top:8px; display:none;">
+              <div><label>Uhrzeit von</label><input id="calEntryStartTime" type="time" /></div>
+              <div><label>Uhrzeit bis</label><input id="calEntryEndTime" type="time" /></div>
+            </div>
+            <div class="row" style="margin-top:8px;">
+              <div><label>Klasse</label><select id="calEntryClass"></select></div>
+              <div><label>Typ</label><select id="calEntryType"><option value="lu">Lernerfolgskontrolle</option><option value="exam">Klassenarbeit/Präsentation</option><option value="normal">Sonstiges</option></select></div>
+            </div>
+            <label style="display:flex; align-items:center; gap:8px; margin-top:8px;"><input type="checkbox" id="calEntryFixed" style="width:auto;" /> Fixer Termin (nicht durch die Verplanung verschiebbar)</label>
+            <div style="margin-top:10px; display:flex; gap:8px;"><button class="btn" id="calSaveEntryBtn">Termin speichern</button><button class="btn secondary" id="calEntryCancel">Abbrechen</button></div>
+          </div>
+          <div class="card">
+            <div class="cal-nav">
+              <button id="calPrevBtn">&larr;</button>
+              <strong id="calLabel" style="color:var(--primary-dark);">Monat</strong>
+              <button id="calNextBtn">&rarr;</button>
+              <div class="view-toggle">
+                <button id="calMonthBtn" class="active">Monat</button>
+                <button id="calWeekBtn">Woche</button>
+              </div>
+              <button class="btn small" id="calNewEntryBtn" style="margin-left:auto;">+ Neuer Termin</button>
+              <button class="btn small secondary" id="calSideToggle" title="Werkzeuge ein-/ausblenden">Werkzeuge</button>
+            </div>
+            <div class="cal-grid" id="calGrid"></div>
+            <p class="small muted" style="margin-top:8px;">Grau hinterlegt = Ferien/Feiertag. Klick auf einen Tag legt einen Termin an; Klick auf einen Stundentermin öffnet die Detailansicht.</p>
+            <div class="cal-legend" id="calLegend"></div>
+          </div>
+          <!-- U22: Terminübersicht je Klasse — Lernbereiche als klickbare Datums-Abfolge -->
+          <div class="card" style="margin-top:14px;">
+            <h3 style="margin-bottom:8px;">Terminübersicht je Klasse</h3>
+            <p class="muted small">Klick auf einen Lernbereich zeigt seinen Zeitraum und die Leistungsüberprüfungen. Klick auf ein Datum springt in den Kalender.</p>
+            <div id="classTimeline"></div>
           </div>
         </div>
-        <div class="cal-grid" id="calGrid"></div>
-        <p class="small muted" style="margin-top:8px;">Grau hinterlegt = Ferien/Feiertag. Klick auf einen Stundentermin öffnet die Detailansicht.</p>
-        <div class="cal-legend" id="calLegend"></div>
-        <div class="row" style="margin-top:14px;">
-          <div><label>Neuer Termin: Titel</label><input id="calEntryTitle" placeholder="z. B. LUE Rechtschreibung" /></div>
-          <div><label>Datum (von)</label><input id="calEntryDate" type="date" /></div>
-        </div>
-        <div class="row">
-          <div><label>Enddatum (optional, mehrtägig)</label><input id="calEntryEndDate" type="date" /></div>
-          <div><label>Kategorie</label><select id="calEntryCategory"></select></div>
-        </div>
-        <label style="display:flex; align-items:center; gap:8px; margin-top:8px;"><input type="checkbox" id="calEntryAllDay" style="width:auto;" checked /> Ganztägig</label>
-        <div class="row" id="calEntryTimeRow" style="margin-top:8px; display:none;">
-          <div><label>Uhrzeit von</label><input id="calEntryStartTime" type="time" /></div>
-          <div><label>Uhrzeit bis</label><input id="calEntryEndTime" type="time" /></div>
-        </div>
-        <div class="row" style="margin-top:8px;">
-          <div><label>Klasse</label><select id="calEntryClass"></select></div>
-          <div><label>Typ</label><select id="calEntryType"><option value="lu">Lernerfolgskontrolle</option><option value="exam">Klassenarbeit/Präsentation</option><option value="normal">Sonstiges</option></select></div>
-        </div>
-        <label style="display:flex; align-items:center; gap:8px; margin-top:8px;"><input type="checkbox" id="calEntryFixed" style="width:auto;" /> Fixer Termin (nicht durch die Verplanung verschiebbar)</label>
-        <div style="margin-top:10px;"><button class="btn" id="calSaveEntryBtn">Termin speichern</button></div>
-      </div>
-      <!-- U21: Google-Kalender-Sync (Button + Status; Einrichtung in den Einstellungen) -->
-      <div class="card" style="margin-top:14px;" id="googleSyncCard">
-        <h3 style="margin-bottom:8px;">Google-Kalender</h3>
-        <p class="muted small">Gleicht deinen Planungskalender in beide Richtungen mit Google ab. Einrichtung (Schlüssel + Kalender-ID) unter <em>Einstellungen</em>.</p>
-        <div style="margin:8px 0 12px;"><span id="calGoogleStatus" class="badge bad">Nicht verbunden</span></div>
-        <button class="btn" id="calGoogleSyncBtn" disabled>Mit Google synchronisieren</button>
-      </div>
-      <div class="card" style="margin-top:14px;">
-        <h3 style="margin-bottom:8px;">Kategorien verwalten</h3>
-        <p class="muted small">Farbige Kennzeichnung der Termine im Kalender.</p>
-        <div id="calCategoryList"></div>
-        <div class="row" style="margin-top:10px;">
-          <div><label>Neue Kategorie: Name</label><input id="newCatName" placeholder="z. B. Elternabend" /></div>
-          <div><label>Farbe</label><input id="newCatColor" type="color" value="#2563eb" /></div>
-        </div>
-        <div style="margin-top:10px;"><button class="btn secondary" id="addCatBtn">Kategorie anlegen</button></div>
-      </div>
-      <!-- U20: Jahresplan importieren (PDF → KI-Terminerkennung → Auswahl → Übernahme) -->
-      <div class="card" style="margin-top:14px;">
-        <h3 style="margin-bottom:8px;">Jahresplan importieren</h3>
-        <p class="muted small">Schul-Jahresplan als PDF hochladen. Die KI erkennt Termine; du wählst per Häkchen, welche in deinen Kalender übernommen werden.</p>
-        <div class="row">
-          <div><label>Jahresplan (PDF)</label><input type="file" id="importFile" accept="application/pdf,.pdf" /></div>
-          <div style="display:flex; align-items:flex-end;"><button class="btn" id="importAnalyzeBtn">PDF analysieren</button></div>
-        </div>
-        <div id="importResult" style="margin-top:12px;"></div>
+        <aside class="cal-side" id="calSide">
+          <div class="card">
+            <h3>Klassenfilter</h3>
+            <p class="muted small">Klassen an- und abwählen, um ihre Termine und Lernbereiche ein- oder auszublenden.</p>
+            <div class="class-toggle-row" id="classToggleRow"></div>
+          </div>
+          <div class="card">
+            <h3 style="margin-bottom:8px;">Kategorien verwalten</h3>
+            <p class="muted small">Farbige Kennzeichnung der Termine im Kalender.</p>
+            <div id="calCategoryList"></div>
+            <div style="margin-top:10px;"><label>Neue Kategorie: Name</label><input id="newCatName" placeholder="z. B. Elternabend" /></div>
+            <div style="margin-top:8px;"><label>Farbe</label><input id="newCatColor" type="color" value="#2563eb" /></div>
+            <div style="margin-top:10px;"><button class="btn secondary" id="addCatBtn">Kategorie anlegen</button></div>
+          </div>
+          <!-- U21: Google-Kalender-Sync (Button + Status; Einrichtung in den Einstellungen) -->
+          <div class="card" id="googleSyncCard">
+            <h3 style="margin-bottom:8px;">Google-Kalender</h3>
+            <p class="muted small">Gleicht deinen Planungskalender in beide Richtungen mit Google ab. Einrichtung (Schlüssel + Kalender-ID) unter <em>Einstellungen</em>.</p>
+            <div style="margin:8px 0 12px;"><span id="calGoogleStatus" class="badge bad">Nicht verbunden</span></div>
+            <button class="btn" id="calGoogleSyncBtn" disabled>Mit Google synchronisieren</button>
+          </div>
+          <!-- U20: Jahresplan importieren (PDF → KI-Terminerkennung → Auswahl → Übernahme) -->
+          <div class="card">
+            <h3 style="margin-bottom:8px;">Jahresplan importieren</h3>
+            <p class="muted small">Schul-Jahresplan als PDF hochladen. Die KI erkennt Termine; du wählst per Häkchen, welche übernommen werden.</p>
+            <div><label>Jahresplan (PDF)</label><input type="file" id="importFile" accept="application/pdf,.pdf" /></div>
+            <div style="margin-top:10px;"><button class="btn" id="importAnalyzeBtn">PDF analysieren</button></div>
+            <div id="importResult" style="margin-top:12px;"></div>
+          </div>
+        </aside>
       </div>
     </section>
 

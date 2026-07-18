@@ -1233,39 +1233,83 @@ function effectiveBlocks(subject, lbs) {
   return keep;
 }
 
+// U22: Terminübersicht je Klasse — Lernbereiche als aufklappbare Datums-Abfolge.
+// Klick auf einen LB klappt Zeitraum + Leistungsüberprüfungen auf; Klick auf ein Datum
+// springt (via U15-Logik) in den Kalender und hebt den Tag kurz hervor.
 async function renderTimeline() {
   const wrap = $("classTimeline");
   if (!wrap) return;
   wrap.innerHTML = "";
-  const colors = timelineColors();
+  let any = false;
   for (const c of state.classes) {
-    if (c.visibleInCalendar === false) continue;
+    if (c.visibleInCalendar === false || c.archivedAt) continue;
     let lbs = [];
     try { lbs = await getLernbereiche({ subject: c.subject, grade: c.grade, track: resolveTrack(c.subject, c.grade, c.track) }); } catch (e) { /* ignore */ }
     const eff = effectiveBlocks(c.subject, lbs);
-    // U15: geplante Datumsspanne aus dem aktiven Stoffplan der Klasse (lbCode → Block).
     const planMap = activePlanBlocksByCode(c.id);
-    const blocks = eff.map((e, j) => {
+    const rows = eff.map((e) => {
       const pb = planMap[e.code];
-      const hasDate = pb && (pb.startDate || pb.endDate);
-      const dateLine = hasDate
-        ? `<span class="tl-date">${esc(pb.startDate || "?")}${pb.endDate ? " – " + esc(pb.endDate) : ""}</span>`
-        : "";
-      const clickable = pb && pb.startDate;
-      const attrs = clickable ? ` data-tl-jump="${esc(pb.startDate)}"` : "";
-      const cls = "timeline-block" + (clickable ? " clickable" : "");
-      return `<div class="${cls}" style="background:${colors[j % colors.length]}"${attrs}>${esc(e.code)} ${esc(e.title)} (${e.richtwertUstd == null ? "?" : e.richtwertUstd} Std.)${dateLine}</div>`;
+      const dateLabel = pb && pb.startDate
+        ? `${esc(pb.startDate)}${pb.endDate ? " – " + esc(pb.endDate) : ""}`
+        : "kein Datum";
+      return `<div class="cal-lb-row" data-lb-code="${esc(e.code)}" data-cls="${c.id}">` +
+        `<span class="cal-lb-title">${esc(e.code)} · ${esc(e.title)}</span>` +
+        `<span class="cal-lb-date">${dateLabel} <span class="cal-lb-caret">&#9656;</span></span></div>` +
+        `<div class="cal-lb-detail hidden"></div>`;
     }).join("");
-    const rowEl = document.createElement("div");
-    rowEl.className = "timeline-row";
-    rowEl.innerHTML = `<div class="timeline-label">${esc(c.name)} (${esc(c.subject)})</div><div class="timeline-track">${blocks || '<span class="muted small">Kein Plan</span>'}</div>`;
-    wrap.appendChild(rowEl);
+    const classDiv = document.createElement("div");
+    classDiv.className = "cal-lb-class";
+    classDiv.innerHTML = `<div class="cal-lb-class-head">${esc(c.name)} (${esc(c.subject)})</div>` +
+      (rows || '<p class="muted small">Kein aktiver Stoffplan.</p>');
+    wrap.appendChild(classDiv);
+    any = true;
   }
-  // U15: Klick auf einen datierten LB-Block springt im Kalender an dessen Startdatum.
-  wrap.querySelectorAll("[data-tl-jump]").forEach((el) => {
-    el.onclick = () => jumpCalendarToDate(el.dataset.tlJump);
+  if (!any) { wrap.innerHTML = '<p class="muted small">Keine sichtbare Klasse. Klassen im Klassenfilter aktivieren.</p>'; return; }
+  wrap.querySelectorAll(".cal-lb-row").forEach((row) => { row.onclick = () => toggleLbDetail(row); });
+}
+
+// U22: Detailbereich eines LB auf-/zuklappen und beim ersten Öffnen befüllen.
+function toggleLbDetail(row) {
+  const detail = row.nextElementSibling;
+  if (!detail || !detail.classList.contains("cal-lb-detail")) return;
+  const caret = row.querySelector(".cal-lb-caret");
+  const nowHidden = detail.classList.toggle("hidden");
+  if (caret) caret.classList.toggle("open", !nowHidden);
+  if (nowHidden || detail.dataset.filled === "1") return;
+  const code = row.dataset.lbCode, cid = Number(row.dataset.cls);
+  const pb = activePlanBlocksByCode(cid)[code];
+  let html;
+  if (pb && pb.startDate) {
+    const end = pb.endDate || pb.startDate;
+    html = `<div><span class="muted small">Zeitraum:</span> ` +
+      `<span class="date-chip" data-jump="${esc(pb.startDate)}">${esc(pb.startDate)} – ${esc(end)}</span></div>`;
+    const lues = state.calendar.filter((e) =>
+      e.classId === cid && (e.entryType === "lu" || e.entryType === "exam") &&
+      (e.endDate || e.entryDate) >= pb.startDate && e.entryDate <= end);
+    html += lues.length
+      ? `<div style="margin-top:6px;"><span class="muted small">Leistungsüberprüfungen:</span> ` +
+          lues.map((e) => `<span class="date-chip lue" data-jump="${esc(e.entryDate)}">${esc(e.entryDate)} · ${esc(e.title)}</span>`).join("") + `</div>`
+      : `<div style="margin-top:6px;"><span class="muted small">Keine Leistungsüberprüfung in diesem Zeitraum.</span></div>`;
+  } else {
+    html = `<span class="muted small">Für diesen Lernbereich ist noch kein Datum geplant (im Stoffverteilungsplan festlegen).</span>`;
+  }
+  detail.innerHTML = html;
+  detail.dataset.filled = "1";
+  detail.querySelectorAll("[data-jump]").forEach((el) => {
+    el.onclick = (ev) => { ev.stopPropagation(); jumpCalendarToDate(el.dataset.jump); };
   });
 }
+
+// U22: Termin-Popover öffnen (optional mit vorbefülltem Datum) bzw. schließen.
+function openCalEntryPanel(dateStr) {
+  const panel = $("calEntryPanel");
+  if (!panel) return;
+  panel.classList.remove("hidden");
+  if (dateStr && $("calEntryDate")) $("calEntryDate").value = dateStr;
+  panel.scrollIntoView({ behavior: "smooth", block: "center" });
+  if ($("calEntryTitle")) $("calEntryTitle").focus();
+}
+function closeCalEntryPanel() { const p = $("calEntryPanel"); if (p) p.classList.add("hidden"); }
 
 // U15: lbCode → Block-Objekt des aktiven Stoffplans einer Klasse (leeres Objekt ohne Plan).
 function activePlanBlocksByCode(classId) {
@@ -1392,6 +1436,13 @@ function renderCalendar() {
     const lid = el.dataset.lesson;
     if (lid) el.onclick = () => { const l = state.lessons.find((x) => String(x.id) === lid); if (l) openLessonModal(l); };
   });
+  // U22: Klick auf die freie Fläche eines Tages öffnet das Termin-Popover (vorbefülltes Datum).
+  grid.querySelectorAll(".cal-cell").forEach((cell) => {
+    cell.addEventListener("click", (ev) => {
+      if (ev.target.closest(".cal-entry")) return;
+      openCalEntryPanel(cell.dataset.date);
+    });
+  });
 }
 
 async function saveCalendarEntry() {
@@ -1415,6 +1466,7 @@ async function saveCalendarEntry() {
     $("calEntryStartTime").value = ""; $("calEntryEndTime").value = "";
     $("calEntryAllDay").checked = true; $("calEntryTimeRow").style.display = "none";
     $("calEntryFixed").checked = false;
+    closeCalEntryPanel();
     await refresh(); toast("Termin gespeichert.");
   } catch (e) { toast(e.message, false); }
 }
@@ -2842,6 +2894,10 @@ function wireEvents() {
   $("calEntryAllDay").onchange = () => {
     $("calEntryTimeRow").style.display = $("calEntryAllDay").checked ? "none" : "flex";
   };
+  // U22: Termin-Popover öffnen/schließen; Werkzeug-Seitenleiste ein-/ausklappen.
+  $("calNewEntryBtn").onclick = () => openCalEntryPanel(isoDate(new Date()));
+  $("calEntryCancel").onclick = closeCalEntryPanel;
+  $("calSideToggle").onclick = () => $("calLayout").classList.toggle("side-collapsed");
   $("addCatBtn").onclick = addCategory;
   $("importAnalyzeBtn").onclick = analyzeJahresplan;  // U20: Jahresplan-Import
   $("saveSchoolYear").onclick = saveSchoolYear;
