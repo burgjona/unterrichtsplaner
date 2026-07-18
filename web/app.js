@@ -1020,6 +1020,85 @@ async function addCategory() {
   } catch (e) { toast(e.message, false); }
 }
 
+/* ---------- Jahresplan-Import (U20) ---------- */
+let importSuggestions = [];  // zuletzt von der KI erkannte Terminvorschläge
+
+function importCategoryOptions(selectedId) {
+  const opts = ['<option value="">— keine —</option>'].concat(
+    state.calendarCategories.map((c) =>
+      `<option value="${c.id}"${String(c.id) === String(selectedId) ? " selected" : ""}>${esc(c.name)}</option>`));
+  return opts.join("");
+}
+
+function matchCategoryId(name) {
+  if (!name) return "";
+  const hit = state.calendarCategories.find(
+    (c) => c.name.trim().toLowerCase() === String(name).trim().toLowerCase());
+  return hit ? hit.id : "";
+}
+
+function renderImportSuggestions() {
+  const wrap = $("importResult");
+  if (!wrap) return;
+  if (!importSuggestions.length) {
+    wrap.innerHTML = '<p class="muted small">Keine Termine erkannt.</p>';
+    return;
+  }
+  const rows = importSuggestions.map((s, i) => {
+    const range = s.endDatum ? `${esc(s.datum)} – ${esc(s.endDatum)}` : esc(s.datum);
+    return `<div class="import-row">
+      <input type="checkbox" data-import-cb="${i}" checked />
+      <span class="import-date">${range}</span>
+      <span class="import-title">${esc(s.titel)}</span>
+      <select data-import-cat="${i}">${importCategoryOptions(matchCategoryId(s.kategorieVorschlag))}</select>
+    </div>`;
+  }).join("");
+  wrap.innerHTML =
+    `<p class="small muted">${importSuggestions.length} Termin(e) erkannt – Auswahl prüfen und übernehmen.</p>` +
+    rows +
+    `<div style="margin-top:10px;"><button class="btn" id="importCommitBtn">Ausgewählte übernehmen</button></div>`;
+  $("importCommitBtn").onclick = commitJahresplanImport;
+}
+
+async function analyzeJahresplan() {
+  const f = $("importFile").files[0];
+  if (!f) { toast("Bitte eine PDF-Datei wählen.", false); return; }
+  const btn = $("importAnalyzeBtn");
+  btn.disabled = true; btn.textContent = "Analysiere …";
+  try {
+    const fd = new FormData();
+    fd.append("file", f);
+    importSuggestions = await API.upload("/calendar/import/analyze", fd);
+    renderImportSuggestions();
+    toast(`${importSuggestions.length} Termin(e) erkannt.`);
+  } catch (e) {
+    toast(e.message, false);
+  } finally {
+    btn.disabled = false; btn.textContent = "PDF analysieren";
+  }
+}
+
+async function commitJahresplanImport() {
+  const wrap = $("importResult");
+  const entries = [];
+  wrap.querySelectorAll("[data-import-cb]").forEach((cb) => {
+    if (!cb.checked) return;
+    const i = cb.dataset.importCb;
+    const s = importSuggestions[i];
+    const catVal = wrap.querySelector(`[data-import-cat="${i}"]`).value;
+    entries.push({
+      datum: s.datum, endDatum: s.endDatum || null, titel: s.titel,
+      categoryId: catVal ? Number(catVal) : null,
+    });
+  });
+  if (!entries.length) { toast("Keine Termine ausgewählt.", false); return; }
+  try {
+    const created = await API.post("/calendar/import/commit", { entries });
+    importSuggestions = []; $("importFile").value = ""; $("importResult").innerHTML = "";
+    await refresh(); toast(`${created.length} Termin(e) übernommen.`);
+  } catch (e) { toast(e.message, false); }
+}
+
 async function saveSchoolYear() {
   const label = $("syLabel").value.trim(), start = $("syStart").value, end = $("syEnd").value;
   if (!label || !start || !end) { toast("Bitte Bezeichnung, Beginn und Ende angeben.", false); return; }
@@ -2213,6 +2292,7 @@ function wireEvents() {
     $("calEntryTimeRow").style.display = $("calEntryAllDay").checked ? "none" : "flex";
   };
   $("addCatBtn").onclick = addCategory;
+  $("importAnalyzeBtn").onclick = analyzeJahresplan;  // U20: Jahresplan-Import
   $("saveSchoolYear").onclick = saveSchoolYear;
   $("planPreviewBtn").onclick = runPlanning;
   $("stoffUpload").onclick = stoffUpload;

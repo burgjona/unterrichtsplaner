@@ -324,6 +324,27 @@ class CalendarCategoryOut(Base):
     created_at: str
 
 
+# ---------- Jahresplan-Import (U20) ----------
+class ImportSuggestion(Base):
+    """Ein von der KI erkannter Terminvorschlag aus dem Jahresplan-PDF (nichts gespeichert)."""
+    datum: str
+    end_datum: Optional[str] = None
+    titel: str
+    kategorie_vorschlag: Optional[str] = None
+
+
+class ImportEntry(Base):
+    """Ein vom Nutzer bestätigter Termin, der übernommen werden soll."""
+    datum: str
+    end_datum: Optional[str] = None
+    titel: str
+    category_id: Optional[int] = None
+
+
+class ImportCommitIn(Base):
+    entries: List[ImportEntry]
+
+
 # ---------- Materialien ----------
 class MaterialCreate(Base):
     filename: str

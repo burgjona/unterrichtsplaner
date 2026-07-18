@@ -29,6 +29,7 @@ ROUTING = {
     "asuv": "sonnet",                # ASUV-Ausformulierung
     "lernziele": "sonnet",           # SMARTe Lernziele nach Bloom-Taxonomie
     "einordnung": "haiku",           # kurze Lernbereichs-/Lernziel-Verortung freier Stunden
+    "jahresplan_import": "sonnet",   # Termin-Erkennung aus dem Schul-Jahresplan (PDF) — U20
 }
 
 _prompt_cache = {}  # sha256(prompt) -> Antworttext (lokal, prozessweit)
