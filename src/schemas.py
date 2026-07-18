@@ -530,6 +530,67 @@ class AppearanceIn(Base):
         return v
 
 
+# ---------- Stoffplan-Persistenz (U12) — ans Dateiende (Konfliktvermeidung) ----------
+_STOFF_STATUS = {"entwurf", "aktiv"}
+
+
+class StoffPlanBlockIn(Base):
+    lb_code: Optional[str] = None
+    title: Optional[str] = None
+    ustd: Optional[int] = None
+    start_date: Optional[str] = None            # ISO oder None
+    end_date: Optional[str] = None              # ISO oder None
+    sort_order: int = 0
+    conflict_note: Optional[str] = None
+
+
+class StoffPlanBlockOut(StoffPlanBlockIn):
+    id: int
+
+
+class StoffPlanCreate(Base):
+    class_id: int
+    school_year_id: Optional[int] = None
+    title: str
+    status: str = "entwurf"
+    blocks: List[StoffPlanBlockIn] = []
+
+    @field_validator("status")
+    @classmethod
+    def _valid_status(cls, v: str) -> str:
+        if v not in _STOFF_STATUS:
+            raise ValueError("status muss 'entwurf' oder 'aktiv' sein.")
+        return v
+
+
+class StoffPlanUpdate(Base):
+    title: Optional[str] = None
+    status: Optional[str] = None
+    blocks: Optional[List[StoffPlanBlockIn]] = None
+
+    @field_validator("status")
+    @classmethod
+    def _valid_status(cls, v):
+        if v is not None and v not in _STOFF_STATUS:
+            raise ValueError("status muss 'entwurf' oder 'aktiv' sein.")
+        return v
+
+
+class StoffPlanOut(Base):
+    id: int
+    class_id: int
+    school_year_id: Optional[int] = None
+    title: str
+    status: str
+    block_count: Optional[int] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class StoffPlanDetail(StoffPlanOut):
+    blocks: List[StoffPlanBlockOut] = []
+
+
 # Forward-Refs der Lesson-Modelle auf Lernziel-Modelle auflösen (Definition folgt erst hier).
 LessonCreate.model_rebuild()
 LessonUpdate.model_rebuild()

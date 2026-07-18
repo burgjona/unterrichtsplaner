@@ -18,7 +18,9 @@ const state = {
   user: null, classes: [], lessons: [], reflections: [], open: [], materials: [], todos: [],
   schoolYears: [], schoolDates: [], calendar: [],
   appearance: { theme: "fruehling", darkMode: false, font: "verspielt" },
+  stoffPreview: [], stoffPlans: [],   // aktuell angezeigter Vorschlag + gespeicherte Pläne (U12)
 };
+let editingStoffPlanId = null;        // gerade im Inline-Editor geöffneter Plan (U12)
 const lbCache = {};                 // Lernbereiche je Fach|Stufe|Bildungsgang
 let calMode = "month";
 let calCursor = new Date();
@@ -703,6 +705,12 @@ async function runPlanning() {
         `<td>${x.conflictWithFixed ? '<span class="badge bad">Konflikt fixer Termin</span>' : "—"}</td>`;
       b.appendChild(tr);
     });
+    // Vorschau für „Plan speichern" merken (U12).
+    state.stoffPreview = res.blocks.map((x) => ({
+      code: x.code, title: x.title, ustd: x.ustd,
+      startDate: x.startDate, endDate: x.endDate,
+      conflictNote: x.conflictWithFixed ? "Konflikt fixer Termin" : null,
+    }));
     // Direkt-Upload zu einem Lernbereich freischalten
     const card = $("stoffUploadCard");
     $("stoffLb").innerHTML = res.blocks.filter((x) => x.lernbereichId)
@@ -765,6 +773,188 @@ function schedulePlanNotesSave() {
   if (status) status.textContent = "…";
   if (planNotesTimer) clearTimeout(planNotesTimer);
   planNotesTimer = setTimeout(() => savePlanNotes(true), 900);
+}
+
+/* ---------- Stoffverteilungspläne speichern/laden (U12) ---------- */
+function selectedText(id) {
+  const sel = $(id), opt = sel && sel.options[sel.selectedIndex];
+  return opt ? opt.textContent : "";
+}
+
+// Wandelt die interne Vorschau (state.stoffPreview) in API-Blöcke (camelCase, lbCode) um.
+function previewToBlocks(preview) {
+  return (preview || []).map((b) => ({
+    lbCode: b.code || null, title: b.title || null, ustd: b.ustd ?? null,
+    startDate: b.startDate || null, endDate: b.endDate || null,
+    conflictNote: b.conflictNote || null,
+  }));
+}
+
+async function saveStoffPlan() {
+  const clsId = Number($("planClass").value), syId = Number($("planYear").value);
+  if (!clsId) { toast("Bitte eine Klasse wählen.", false); return; }
+  if (!state.stoffPreview.length) {
+    toast("Kein Vorschlag vorhanden – erst „Jahresplan vorschlagen" oder „KI-Vorschlag".", false);
+    return;
+  }
+  const def = `Stoffverteilungsplan ${selectedText("planClass")} ${selectedText("planYear")}`.trim();
+  const title = window.prompt("Titel des Plans:", def);
+  if (title === null) return;                       // Abbruch
+  try {
+    await API.post("/stoff-plans", {
+      classId: clsId, schoolYearId: syId || null,
+      title: title.trim() || def, status: "entwurf",
+      blocks: previewToBlocks(state.stoffPreview),
+    });
+    toast("Stoffplan gespeichert.");
+    await loadStoffPlans();
+  } catch (e) { toast(e.message, false); }
+}
+
+async function loadStoffPlans() {
+  const wrap = $("stoffPlansList");
+  if (!wrap) return;
+  const clsId = Number($("planClass").value);
+  if (!clsId) { state.stoffPlans = []; renderStoffPlans(); return; }
+  try {
+    state.stoffPlans = await API.get(`/stoff-plans?classId=${clsId}`);
+  } catch (e) { state.stoffPlans = []; }
+  renderStoffPlans();
+}
+
+function renderStoffPlans() {
+  const wrap = $("stoffPlansList");
+  if (!wrap) return;
+  if (!Number($("planClass").value)) {
+    wrap.innerHTML = '<p class="muted small">Bitte eine Klasse wählen.</p>';
+    return;
+  }
+  if (!state.stoffPlans.length) {
+    wrap.innerHTML = '<p class="muted small">Noch keine gespeicherten Pläne für diese Klasse.</p>';
+    return;
+  }
+  wrap.innerHTML = state.stoffPlans.map((p) => {
+    const badge = p.status === "aktiv"
+      ? '<span class="badge ok">aktiv</span>' : '<span class="badge warn">Entwurf</span>';
+    const meta = `${esc(p.blockCount ?? 0)} Blöcke · zuletzt geändert ${esc((p.updatedAt || "").slice(0, 10))}`;
+    const toggleLbl = p.status === "aktiv" ? "Auf Entwurf" : "Aktiv setzen";
+    return `<div class="stoff-plan-row" data-plan="${p.id}">
+      <div class="stoff-plan-head">
+        <div><strong>${esc(p.title)}</strong> ${badge}<br><span class="small muted">${meta}</span></div>
+        <div class="stoff-plan-actions">
+          <button class="btn small" data-sp-load="${p.id}">Laden</button>
+          <button class="btn small secondary" data-sp-edit="${p.id}">Bearbeiten</button>
+          <button class="btn small secondary" data-sp-toggle="${p.id}">${toggleLbl}</button>
+          <button class="btn small danger" data-sp-del="${p.id}">Löschen</button>
+        </div>
+      </div>
+      <div class="stoff-plan-editor" data-editor="${p.id}"></div>
+    </div>`;
+  }).join("");
+  wrap.querySelectorAll("[data-sp-load]").forEach((b) => b.onclick = () => loadStoffPlanIntoTable(Number(b.dataset.spLoad)));
+  wrap.querySelectorAll("[data-sp-edit]").forEach((b) => b.onclick = () => toggleStoffPlanEditor(Number(b.dataset.spEdit)));
+  wrap.querySelectorAll("[data-sp-toggle]").forEach((b) => b.onclick = () => toggleStoffPlanStatus(Number(b.dataset.spToggle)));
+  wrap.querySelectorAll("[data-sp-del]").forEach((b) => b.onclick = () => deleteStoffPlan(Number(b.dataset.spDel)));
+  if (editingStoffPlanId != null) renderStoffPlanEditor(editingStoffPlanId);
+}
+
+async function loadStoffPlanIntoTable(id) {
+  try {
+    const p = await API.get(`/stoff-plans/${id}`);
+    state.stoffPreview = (p.blocks || []).map((b) => ({
+      code: b.lbCode, title: b.title, ustd: b.ustd,
+      startDate: b.startDate, endDate: b.endDate, conflictNote: b.conflictNote,
+    }));
+    $("planSummary").textContent = `Geladener Plan „${p.title}" · ${(p.blocks || []).length} Blöcke`;
+    const body = document.querySelector("#planTable tbody");
+    body.innerHTML = "";
+    (p.blocks || []).forEach((b) => {
+      const tr = document.createElement("tr");
+      const zeit = (b.startDate || b.endDate) ? `${esc(b.startDate || "?")} – ${esc(b.endDate || "?")}` : "—";
+      tr.innerHTML = `<td>${esc(b.lbCode || "")}</td><td>${esc(b.title || "")}</td><td>${esc(b.ustd ?? "")}</td>` +
+        `<td>—</td><td>${zeit}</td><td>${esc(b.conflictNote || "—")}</td>`;
+      body.appendChild(tr);
+    });
+    toast("Plan in die Tabelle geladen.");
+  } catch (e) { toast(e.message, false); }
+}
+
+function toggleStoffPlanEditor(id) {
+  editingStoffPlanId = (editingStoffPlanId === id) ? null : id;
+  renderStoffPlans();
+}
+
+async function renderStoffPlanEditor(id) {
+  const box = document.querySelector(`[data-editor="${id}"]`);
+  if (!box) return;
+  let p;
+  try { p = await API.get(`/stoff-plans/${id}`); }
+  catch (e) { toast(e.message, false); return; }
+  const rows = (p.blocks || []).map((b, i) =>
+    `<tr data-i="${i}">
+      <td>${esc(b.lbCode || "")}</td>
+      <td><input type="text" data-f="title" value="${esc(b.title || "")}" /></td>
+      <td><input type="number" data-f="ustd" min="0" value="${esc(b.ustd ?? "")}" style="width:70px;" /></td>
+      <td><input type="date" data-f="startDate" value="${esc(b.startDate || "")}" /></td>
+      <td><input type="date" data-f="endDate" value="${esc(b.endDate || "")}" /></td>
+    </tr>`).join("");
+  box.innerHTML = `
+    <div class="stoff-plan-edit-inner">
+      <label class="small">Titel</label>
+      <input type="text" data-edit-title value="${esc(p.title)}" style="width:100%; margin-bottom:8px;" />
+      <div class="table-scroll"><table class="stoff-edit-table">
+        <thead><tr><th>LB</th><th>Thema</th><th>Ustd.</th><th>Beginn</th><th>Ende</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="5" class="muted small">Keine Blöcke.</td></tr>'}</tbody>
+      </table></div>
+      <div style="margin-top:10px;">
+        <button class="btn small" data-sp-save="${id}">Änderungen speichern</button>
+        <button class="btn small secondary" data-sp-cancel="${id}">Schließen</button>
+      </div>
+    </div>`;
+  box.querySelector(`[data-sp-save="${id}"]`).onclick = () => saveStoffPlanEdits(id);
+  box.querySelector(`[data-sp-cancel="${id}"]`).onclick = () => { editingStoffPlanId = null; renderStoffPlans(); };
+}
+
+async function saveStoffPlanEdits(id) {
+  const box = document.querySelector(`[data-editor="${id}"]`);
+  if (!box) return;
+  const title = box.querySelector("[data-edit-title]").value;
+  const blocks = [...box.querySelectorAll("tbody tr[data-i]")].map((tr) => {
+    const get = (f) => { const el = tr.querySelector(`[data-f="${f}"]`); return el ? el.value : ""; };
+    return {
+      lbCode: tr.children[0].textContent || null,
+      title: get("title") || null,
+      ustd: get("ustd") === "" ? null : Number(get("ustd")),
+      startDate: get("startDate") || null,
+      endDate: get("endDate") || null,
+    };
+  });
+  try {
+    await API.put(`/stoff-plans/${id}`, { title, blocks });
+    toast("Plan aktualisiert.");
+    editingStoffPlanId = null;
+    await loadStoffPlans();
+  } catch (e) { toast(e.message, false); }
+}
+
+async function toggleStoffPlanStatus(id) {
+  const p = state.stoffPlans.find((x) => x.id === id);
+  const next = (p && p.status === "aktiv") ? "entwurf" : "aktiv";
+  try {
+    await API.put(`/stoff-plans/${id}`, { status: next });
+    toast(next === "aktiv" ? "Plan aktiv gesetzt." : "Plan auf Entwurf gesetzt.");
+    await loadStoffPlans();
+  } catch (e) { toast(e.message, false); }
+}
+
+async function deleteStoffPlan(id) {
+  if (!window.confirm("Diesen Stoffplan wirklich löschen?")) return;
+  try {
+    await API.del(`/stoff-plans/${id}`);
+    if (editingStoffPlanId === id) editingStoffPlanId = null;
+    toast("Plan gelöscht.");
+    await loadStoffPlans();
+  } catch (e) { toast(e.message, false); }
 }
 
 /* ---------- Stunden-Detail-Modal ---------- */
@@ -1255,6 +1445,11 @@ async function aiStoffplan() {
         `<td>${esc(x.weeks)}</td><td>—</td><td>${esc(x.note || "")}</td>`;
       b.appendChild(tr);
     });
+    // Vorschau für „Plan speichern" merken (U12) – KI liefert keine Zeiträume.
+    state.stoffPreview = blocks.map((x) => ({
+      code: x.code, title: x.title, ustd: x.ustd,
+      startDate: null, endDate: null, conflictNote: x.note || null,
+    }));
     toast(res.cached ? "KI-Stoffplan (aus Cache)." : "KI-Stoffplan-Vorschlag erzeugt.");
   } catch (e) { toast(e.message, false); }
   finally { btn.disabled = false; btn.textContent = label; }
@@ -1549,6 +1744,7 @@ function showView(view) {
   $("pageSub").textContent = titles[view][1];
   if (view === "settings") loadSettings();
   if (view === "asuv" && state.lessons.length) loadAsuv(asuvLessonId || state.lessons[0].id);
+  if (view === "stoff") loadStoffPlans();
   if (view === "praesentation") renderPraesentation();
   closeMobileNav();
 }
@@ -1656,7 +1852,8 @@ function wireEvents() {
   $("saveSchoolYear").onclick = saveSchoolYear;
   $("planPreviewBtn").onclick = runPlanning;
   $("stoffUpload").onclick = stoffUpload;
-  $("planClass").addEventListener("change", loadPlanNotes);
+  $("planSaveBtn").onclick = saveStoffPlan;
+  $("planClass").addEventListener("change", () => { loadPlanNotes(); editingStoffPlanId = null; loadStoffPlans(); });
   $("planYear").addEventListener("change", loadPlanNotes);
   $("planNotes").addEventListener("input", schedulePlanNotesSave);
   $("planNotesSave").onclick = () => savePlanNotes(false);
