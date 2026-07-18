@@ -333,10 +333,22 @@ function renderClassTable() {
   state.classes.forEach((c) => {
     const tr = document.createElement("tr");
     tr.innerHTML =
-      `<td>${esc(c.name)}</td><td>${esc(c.subject)}</td><td>${esc(c.grade)}</td>` +
+      `<td><a href="#" class="class-name-link" data-open-class="${c.id}">${esc(c.name)}</a></td>` +
+      `<td>${esc(c.subject)}</td><td>${esc(c.grade)}</td>` +
       `<td>${esc(c.track || "")}</td><td>${esc(c.weeklyHours)}</td><td>${esc(c.parallelGroup || "")}</td>` +
-      `<td><button class="btn small danger" data-del-class="${c.id}">entfernen</button></td>`;
+      `<td class="cd-row-actions">` +
+      `<button class="btn small secondary" data-edit-class="${c.id}">bearbeiten</button> ` +
+      `<button class="btn small danger" data-del-class="${c.id}">entfernen</button></td>`;
     b.appendChild(tr);
+  });
+  b.querySelectorAll("[data-open-class]").forEach((a) => {
+    a.onclick = (e) => { e.preventDefault(); openClassDetail(Number(a.dataset.openClass)); };
+  });
+  b.querySelectorAll("[data-edit-class]").forEach((btn) => {
+    btn.onclick = () => {
+      const c = state.classes.find((x) => String(x.id) === btn.dataset.editClass);
+      if (c) editClass(c);
+    };
   });
   b.querySelectorAll("[data-del-class]").forEach((btn) => {
     btn.onclick = async () => {
@@ -345,6 +357,149 @@ function renderClassTable() {
       catch (e) { toast(e.message, false); }
     };
   });
+}
+
+/* ---------- Klasse anlegen/bearbeiten ---------- */
+let editingClassId = null;
+function resetClassForm() {
+  editingClassId = null;
+  $("className").value = ""; $("classGroup").value = "";
+  $("saveClass").textContent = "Klasse speichern";
+}
+function editClass(c) {
+  editingClassId = c.id;
+  showView("klassen");
+  $("className").value = c.name || "";
+  $("classSubject").value = c.subject || "Deutsch";
+  $("classGrade").value = String(c.grade);
+  if (c.track) $("classTrack").value = c.track;
+  $("classHours").value = String(c.weeklyHours || 2);
+  $("classGroup").value = c.parallelGroup || "";
+  $("saveClass").textContent = "Klasse aktualisieren";
+  $("className").scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+/* ---------- Klassen-Detailseite (U14) ---------- */
+let detailClassId = null;
+function openClassDetail(cid) {
+  detailClassId = cid;
+  showView("klasse-detail");
+  renderClassDetail();
+}
+function renderClassDetail() {
+  const c = state.classes.find((x) => String(x.id) === String(detailClassId));
+  if (!c) { toast("Klasse nicht gefunden.", false); showView("klassen"); return; }
+  $("cdTitle").textContent = `${c.name} (${c.subject})`;
+  const meta = [
+    ["Fach", c.subject], ["Klassenstufe", c.grade], ["Bildungsgang", c.track || "–"],
+    ["Wochenstunden", c.weeklyHours], ["Parallelgruppe", c.parallelGroup || "–"],
+  ];
+  $("cdMeta").innerHTML = meta
+    .map(([k, v]) => `<div class="cd-meta-item"><span class="cd-meta-k">${esc(k)}</span><span>${esc(v)}</span></div>`)
+    .join("");
+
+  const lessons = state.lessons.filter((l) => String(l.classId) === String(c.id));
+  const wrap = $("cdLessons");
+  wrap.innerHTML = "";
+  if (!lessons.length) {
+    wrap.innerHTML = '<p class="muted small">Noch keine Stunden für diese Klasse geplant.</p>';
+  } else {
+    lessons.forEach((l) => {
+      const div = document.createElement("div");
+      div.className = "mini-item";
+      div.style.cursor = "pointer";
+      div.innerHTML =
+        `<span class="time">${esc(l.date || "–")}</span>` +
+        `<span>${esc(l.title)} <span class="muted small">(${esc(l.lessonType || "Stunde")})</span></span>`;
+      div.onclick = () => openLessonModal(l);
+      wrap.appendChild(div);
+    });
+  }
+  renderClassStudents();
+}
+
+let detailStudents = [];
+async function renderClassStudents() {
+  const wrap = $("cdStudentList");
+  if (!wrap) return;
+  try {
+    detailStudents = await API.get(`/classes/${detailClassId}/students`);
+  } catch (e) { toast(e.message, false); return; }
+  wrap.innerHTML = "";
+  if (!detailStudents.length) {
+    wrap.innerHTML = '<p class="muted small">Noch keine Schüler erfasst.</p>';
+    return;
+  }
+  detailStudents.forEach((s, idx) => {
+    const row = document.createElement("div");
+    row.className = "cd-student-row";
+    row.innerHTML =
+      `<span class="cd-student-no">${idx + 1}.</span>` +
+      `<input class="cd-student-input" value="${esc(s.name)}" data-student-name="${s.id}" />` +
+      `<button class="btn small secondary" data-student-up="${s.id}" ${idx === 0 ? "disabled" : ""}>↑</button>` +
+      `<button class="btn small secondary" data-student-down="${s.id}" ${idx === detailStudents.length - 1 ? "disabled" : ""}>↓</button>` +
+      `<button class="btn small danger" data-student-del="${s.id}">✕</button>`;
+    wrap.appendChild(row);
+  });
+  wrap.querySelectorAll("[data-student-name]").forEach((inp) => {
+    inp.onchange = async () => {
+      const name = inp.value.trim();
+      if (!name) { renderClassStudents(); return; }
+      try { await API.put("/students/" + inp.dataset.studentName, { name }); toast("Name gespeichert."); }
+      catch (e) { toast(e.message, false); }
+    };
+  });
+  wrap.querySelectorAll("[data-student-del]").forEach((btn) => {
+    btn.onclick = async () => {
+      try { await API.del("/students/" + btn.dataset.studentDel); await renderClassStudents(); toast("Schüler entfernt."); }
+      catch (e) { toast(e.message, false); }
+    };
+  });
+  wrap.querySelectorAll("[data-student-up]").forEach((btn) =>
+    (btn.onclick = () => moveStudent(Number(btn.dataset.studentUp), -1)));
+  wrap.querySelectorAll("[data-student-down]").forEach((btn) =>
+    (btn.onclick = () => moveStudent(Number(btn.dataset.studentDown), 1)));
+}
+
+async function moveStudent(sid, dir) {
+  const idx = detailStudents.findIndex((s) => s.id === sid);
+  const other = idx + dir;
+  if (idx < 0 || other < 0 || other >= detailStudents.length) return;
+  const a = detailStudents[idx], b = detailStudents[other];
+  try {
+    await API.put("/students/" + a.id, { sortOrder: b.sortOrder });
+    await API.put("/students/" + b.id, { sortOrder: a.sortOrder });
+    await renderClassStudents();
+  } catch (e) { toast(e.message, false); }
+}
+
+async function addStudent() {
+  const name = $("cdStudentName").value.trim();
+  if (!name) return;
+  try {
+    await API.post(`/classes/${detailClassId}/students`, { name });
+    $("cdStudentName").value = "";
+    await renderClassStudents(); toast("Schüler hinzugefügt.");
+  } catch (e) { toast(e.message, false); }
+}
+
+async function addStudentsBulk() {
+  const names = $("cdStudentBulk").value.split("\n").map((n) => n.trim()).filter(Boolean);
+  if (!names.length) { toast("Keine Namen eingegeben.", false); return; }
+  try {
+    await API.post(`/classes/${detailClassId}/students/bulk`, { names });
+    $("cdStudentBulk").value = "";
+    await renderClassStudents(); toast(`${names.length} Namen hinzugefügt.`);
+  } catch (e) { toast(e.message, false); }
+}
+
+function showClassInPraesent() {
+  praesent.mode = "jahresplan";
+  praesent.classId = String(detailClassId);
+  showView("praesentation");
+  const sel = $("praesentClass");
+  if (sel) sel.value = String(detailClassId);
+  renderPraesentation();
 }
 
 function renderLessonTable() {
@@ -1226,13 +1381,18 @@ function closeModal() { $("modalRoot").innerHTML = ""; }
 async function saveClass() {
   const name = $("className").value.trim();
   if (!name) { toast("Bitte einen Klassennamen angeben.", false); return; }
+  const body = {
+    name, subject: $("classSubject").value, grade: Number($("classGrade").value),
+    track: $("classTrack").value, weeklyHours: Number($("classHours").value) || 2,
+    parallelGroup: $("classGroup").value.trim() || null,
+  };
   try {
-    await API.post("/classes", {
-      name, subject: $("classSubject").value, grade: Number($("classGrade").value),
-      track: $("classTrack").value, weeklyHours: Number($("classHours").value) || 2,
-      parallelGroup: $("classGroup").value.trim() || null,
-    });
-    $("className").value = ""; $("classGroup").value = "";
+    if (editingClassId) {
+      await API.put("/classes/" + editingClassId, body);
+    } else {
+      await API.post("/classes", body);
+    }
+    resetClassForm();
     await refresh(); toast("Klasse gespeichert.");
   } catch (e) { toast(e.message, false); }
 }
@@ -1912,6 +2072,7 @@ function praesentFullscreen() {
 const titles = {
   heute: ["Schulalltag heute", "Dein Tag auf einen Blick."],
   klassen: ["Klassen", "Klassen und Parallelgruppen anlegen und verwalten."],
+  "klasse-detail": ["Klassendetails", "Stammdaten, Stunden und Schülerliste einer Klasse."],
   kalender: ["Planungskalender", "Monat, Woche und Lernbereichs-Zeitleiste (folgt in M4)."],
   praesentation: ["Schüleransicht", "Präsentationsmodus für Beamer/Tafel – Jahresplan, Lernbereich, heutiger Ablauf."],
   stoff: ["Stoffverteilungsplan", "Lehrplanbasierte Jahresplanung (folgt in M4)."],
@@ -1927,6 +2088,9 @@ function showView(view) {
   $(view).classList.remove("hidden");
   $("pageTitle").textContent = titles[view][0];
   $("pageSub").textContent = titles[view][1];
+  // Verlässt man die Klassen-Ansicht mit offenem Bearbeiten-Modus, den Update-Modus
+  // zurücksetzen – sonst würde ein späteres "Klasse speichern" versehentlich updaten.
+  if (view !== "klassen" && editingClassId) resetClassForm();
   if (view === "settings") loadSettings();
   if (view === "asuv" && state.lessons.length) loadAsuv(asuvLessonId || state.lessons[0].id);
   if (view === "stoff") loadStoffPlans();
@@ -2025,6 +2189,16 @@ function wireEvents() {
   } catch (e) { /* egal */ }
 
   $("saveClass").onclick = saveClass;
+
+  // Klassen-Detail (U14)
+  $("cdBackBtn").onclick = () => showView("klassen");
+  $("cdEditBtn").onclick = () => {
+    const c = state.classes.find((x) => String(x.id) === String(detailClassId));
+    if (c) editClass(c);
+  };
+  $("cdPraesentBtn").onclick = showClassInPraesent;
+  $("cdStudentName").addEventListener("keydown", (e) => { if (e.key === "Enter") addStudent(); });
+  $("cdStudentBulkBtn").onclick = addStudentsBulk;
   $("saveLesson").onclick = saveLesson;
   $("cancelEditBtn").onclick = () => { resetLessonEditState(); clearLessonForm(); toast("Formular geleert – neue Stunde."); };
   $("saveReflect").onclick = saveReflect;

@@ -9,7 +9,7 @@ from .db import init_db
 from .routers import (
     ai, asuv, auth, branding, calendar, calendar_categories, classes, lernbereiche,
     lessons, materials, planning, reflections, school_years,
-    settings as settings_router, stoffplan, todos, users,
+    settings as settings_router, stoffplan, students, todos, users,
 )
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
@@ -29,7 +29,7 @@ def create_app(db_path: str = None, storage_root: str = None) -> FastAPI:
 
     for module in (auth, settings_router, users, school_years, classes, lernbereiche,
                    lessons, calendar, calendar_categories, materials, reflections, todos,
-                   planning, stoffplan, asuv, ai):
+                   planning, stoffplan, students, asuv, ai):
         app.include_router(module.router, prefix="/api")
 
     # Branding-Routen (Favicon/Manifest, teils Root-Level) VOR dem StaticFiles-Mount.
