@@ -505,6 +505,28 @@ class LernzielOut(LernzielIn):
     id: int
 
 
+# ---------- Schüler (U14) — Namensliste je Klasse ----------
+class StudentCreate(Base):
+    name: str
+
+
+class StudentBulkCreate(Base):
+    names: List[str]
+
+
+class StudentUpdate(Base):
+    name: Optional[str] = None
+    sort_order: Optional[int] = None
+
+
+class StudentOut(Base):
+    id: int
+    class_id: int
+    name: str
+    sort_order: int
+    created_at: str
+
+
 # ---------- Darstellung / Appearance (Meilenstein 12, U9) — ans Dateiende (Konfliktvermeidung) ----------
 _THEMES = {"fruehling", "sommer", "herbst", "winter"}
 _FONTS = {"verspielt", "standard"}

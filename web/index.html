@@ -115,7 +115,47 @@
       </div>
       <div class="card" style="margin-top:14px;">
         <h3>Klassenübersicht</h3>
+        <p class="muted small">Klick auf den Klassennamen öffnet die Detailseite mit Stunden und Schülerliste.</p>
         <div class="table-scroll"><table id="classTable"><thead><tr><th>Klasse</th><th>Fach</th><th>Stufe</th><th>Bildungsgang</th><th>Std.</th><th>Parallelgruppe</th><th></th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </section>
+
+    <!-- KLASSEN-DETAIL (U14) -->
+    <section id="klasse-detail" class="view hidden">
+      <div class="card">
+        <div class="cd-head">
+          <h3 id="cdTitle" style="margin:0;">Klasse</h3>
+          <div class="cd-actions">
+            <button class="btn small secondary" id="cdBackBtn">← Zur Übersicht</button>
+            <button class="btn small" id="cdEditBtn">Stammdaten bearbeiten</button>
+            <button class="btn small" id="cdPraesentBtn">In Schüleransicht zeigen</button>
+          </div>
+        </div>
+        <div id="cdMeta" class="cd-meta"></div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Stunden dieser Klasse</h3>
+        <div id="cdLessons"></div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Gespeicherte Stoffverteilungspläne</h3>
+        <p class="muted small">Gespeicherte Stoffverteilungspläne erscheinen hier.</p>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Schülerliste</h3>
+        <p class="muted small">Namen der Klasse pflegen – Grundlage für den späteren Sitzplan.</p>
+        <div id="cdStudentList"></div>
+        <div class="row" style="margin-top:10px;">
+          <div style="grid-column: span 2;"><input id="cdStudentName" placeholder="Name eingeben und Enter drücken …" /></div>
+        </div>
+        <div style="margin-top:12px;">
+          <label class="small muted" for="cdStudentBulk">Mehrere Namen einfügen (eine Zeile = ein Name)</label>
+          <textarea id="cdStudentBulk" rows="3" placeholder="Anna Muster&#10;Ben Beispiel&#10;…"></textarea>
+          <div style="margin-top:8px;"><button class="btn small secondary" id="cdStudentBulkBtn">Alle hinzufügen</button></div>
+        </div>
       </div>
     </section>
 
