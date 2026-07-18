@@ -2003,12 +2003,88 @@ async function loadSettings() {
     }
     $("apiKeyWarn").classList.toggle("hidden", s.secretConfigured);
     $("saveApiKey").disabled = !s.secretConfigured;
+    // U21: Google-Kalender-Status übernehmen.
+    state.google = { keySet: s.googleKeySet, calendarId: s.googleCalendarId, lastSync: s.googleLastSync };
+    $("googleKeyWarn").classList.toggle("hidden", s.secretConfigured);
+    $("saveGoogleKey").disabled = !s.secretConfigured;
+    if (s.googleCalendarId && !$("googleCalendarIdInput").value) $("googleCalendarIdInput").value = s.googleCalendarId;
+    applyGoogleStatus();
     state.aiActive = s.apiKeyStatus === "aktiv";
     applyAiGating(state.aiActive);
     applyAppearance(s.theme, s.darkMode, s.font);
     renderAiUsage();
     refreshLogoPreview();
   } catch (e) { toast(e.message, false); }
+}
+
+/* ---------- Google-Kalender-Sync (U21) ---------- */
+// Status auf beide Karten anwenden (Einstellungen + Planungskalender). Nutzt state.google.
+function applyGoogleStatus() {
+  const g = state.google || {};
+  const badge = $("googleKeyStatus");
+  if (badge) {
+    badge.className = g.keySet ? "badge ok" : "badge bad";
+    badge.textContent = g.keySet ? "Verbunden" : "Nicht verbunden";
+    const meta = $("googleKeyMeta");
+    if (meta) meta.textContent = g.keySet && g.lastSync ? `zuletzt synchronisiert: ${g.lastSync}` : "";
+  }
+  const cBadge = $("calGoogleStatus");
+  if (cBadge) {
+    cBadge.className = g.keySet ? "badge ok" : "badge bad";
+    if (!g.keySet) cBadge.textContent = "Nicht verbunden";
+    else cBadge.textContent = g.lastSync ? `verbunden – zuletzt ${g.lastSync}` : "verbunden";
+  }
+  const cBtn = $("calGoogleSyncBtn");
+  if (cBtn) cBtn.disabled = !g.keySet;
+}
+
+// Status sicherstellen, wenn der Kalender geöffnet wird, ohne dass zuvor die Einstellungen liefen.
+async function ensureGoogleStatus() {
+  if (state.google) { applyGoogleStatus(); return; }
+  try {
+    const s = await API.get("/settings");
+    state.google = { keySet: s.googleKeySet, calendarId: s.googleCalendarId, lastSync: s.googleLastSync };
+  } catch (_) { /* Status bleibt „nicht verbunden" */ }
+  applyGoogleStatus();
+}
+
+async function saveGoogleKey() {
+  const keyJson = $("googleKeyInput").value.trim();
+  const calendarId = $("googleCalendarIdInput").value.trim();
+  if (!keyJson) { toast("Bitte den JSON-Schlüssel einfügen.", false); return; }
+  if (!calendarId) { toast("Bitte die Kalender-ID eintragen.", false); return; }
+  try {
+    await API.put("/settings/google-key", { keyJson, calendarId });
+    $("googleKeyInput").value = "";  // Schlüssel nicht im Formular stehen lassen
+    await loadSettings();
+    toast("Google-Kalender verbunden.");
+  } catch (e) { toast(e.message, false); }
+}
+
+async function removeGoogleKey() {
+  try {
+    await API.del("/settings/google-key");
+    $("googleCalendarIdInput").value = "";
+    await loadSettings();
+    toast("Google-Verbindung entfernt.");
+  } catch (e) { toast(e.message, false); }
+}
+
+async function syncGoogle() {
+  const btn = $("calGoogleSyncBtn");
+  if (btn) { btn.disabled = true; btn.textContent = "Synchronisiere …"; }
+  try {
+    const r = await API.post("/calendar/google/sync");
+    state.google = null;            // Status inkl. neuem last_sync frisch laden
+    await ensureGoogleStatus();
+    await refresh();                // Kalender mit übernommenen Terminen neu zeichnen
+    toast(`Sync fertig: ${r.pushed} hoch, ${r.pulled} runter, ${r.deleted} gelöscht.`);
+  } catch (e) {
+    toast(e.message, false);
+  } finally {
+    if (btn) btn.textContent = "Mit Google synchronisieren";
+    applyGoogleStatus();
+  }
 }
 
 /* ---------- Branding: Profilbild & Logo (M12/U10) ---------- */
@@ -2639,6 +2715,7 @@ function showView(view) {
   // zurücksetzen – sonst würde ein späteres "Klasse speichern" versehentlich updaten.
   if (view !== "klassen" && editingClassId) resetClassForm();
   if (view === "settings") loadSettings();
+  if (view === "kalender") ensureGoogleStatus();  // U21: Sync-Status/Button aktualisieren
   if (view === "asuv" && state.lessons.length) loadAsuv(asuvLessonId || state.lessons[0].id);
   if (view === "stoff") loadStoffPlans();
   if (view === "praesentation") renderPraesentation();
@@ -2839,6 +2916,10 @@ function wireEvents() {
     try { await API.del("/settings/api-key"); await loadSettings(); toast("API-Key entfernt."); }
     catch (e) { toast(e.message, false); }
   };
+  // U21: Google-Kalender-Sync
+  $("saveGoogleKey").onclick = saveGoogleKey;
+  $("removeGoogleKey").onclick = removeGoogleKey;
+  $("calGoogleSyncBtn").onclick = syncGoogle;
   $("logoutBtn").onclick = async () => {
     try { await API.post("/auth/logout"); } catch (e) { /* egal */ }
     location.reload();

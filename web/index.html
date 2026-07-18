@@ -248,6 +248,13 @@
         <label style="display:flex; align-items:center; gap:8px; margin-top:8px;"><input type="checkbox" id="calEntryFixed" style="width:auto;" /> Fixer Termin (nicht durch die Verplanung verschiebbar)</label>
         <div style="margin-top:10px;"><button class="btn" id="calSaveEntryBtn">Termin speichern</button></div>
       </div>
+      <!-- U21: Google-Kalender-Sync (Button + Status; Einrichtung in den Einstellungen) -->
+      <div class="card" style="margin-top:14px;" id="googleSyncCard">
+        <h3 style="margin-bottom:8px;">Google-Kalender</h3>
+        <p class="muted small">Gleicht deinen Planungskalender in beide Richtungen mit Google ab. Einrichtung (Schlüssel + Kalender-ID) unter <em>Einstellungen</em>.</p>
+        <div style="margin:8px 0 12px;"><span id="calGoogleStatus" class="badge bad">Nicht verbunden</span></div>
+        <button class="btn" id="calGoogleSyncBtn" disabled>Mit Google synchronisieren</button>
+      </div>
       <div class="card" style="margin-top:14px;">
         <h3 style="margin-bottom:8px;">Kategorien verwalten</h3>
         <p class="muted small">Farbige Kennzeichnung der Termine im Kalender.</p>
@@ -580,6 +587,31 @@
         <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap;">
           <button class="btn" id="saveApiKey">API-Key speichern</button>
           <button class="btn danger" id="removeApiKey">Entfernen</button>
+        </div>
+      </div>
+      <!-- U21: Google-Kalender-Sync einrichten (Service-Account) -->
+      <div class="card" style="margin-top:14px;" id="googleKeyCard">
+        <h3>Google-Kalender</h3>
+        <p class="muted small">Synchronisiert deinen Planungskalender in beide Richtungen mit einem Google-Kalender. Der Zugang läuft über einen Google-<em>Service-Account</em> (kein Login-Fenster) – der JSON-Schlüssel wird verschlüsselt gespeichert.</p>
+        <div style="margin:8px 0 12px;"><span id="googleKeyStatus" class="badge bad">Nicht verbunden</span> <span class="small muted" id="googleKeyMeta"></span></div>
+        <details style="margin-bottom:12px;">
+          <summary style="cursor:pointer; font-weight:600; color:var(--primary-dark);">Einrichtung in 5 Schritten</summary>
+          <ol class="small muted" style="margin:8px 0 0; padding-left:20px; line-height:1.6;">
+            <li>In der <strong>Google-Cloud-Konsole</strong> (console.cloud.google.com) ein Projekt anlegen.</li>
+            <li>Unter <em>APIs &amp; Dienste → Bibliothek</em> die <strong>Google Calendar API</strong> aktivieren.</li>
+            <li>Unter <em>APIs &amp; Dienste → Anmeldedaten</em> einen <strong>Service-Account</strong> erstellen und dafür einen <strong>JSON-Schlüssel</strong> erzeugen (herunterladen).</li>
+            <li>Im <strong>Google-Kalender</strong> (calendar.google.com) den gewünschten Kalender <em>für bestimmte Personen freigeben</em> und die <strong>Service-Account-E-Mail</strong> (Feld <code>client_email</code> aus dem JSON) mit Recht <em>„Termine ändern"</em> hinzufügen.</li>
+            <li>Den kompletten JSON-Schlüssel unten einfügen und die <strong>Kalender-ID</strong> (aus den Kalender-Einstellungen, oft die Kalender-E-Mail-Adresse) eintragen.</li>
+          </ol>
+        </details>
+        <label>Service-Account-JSON-Schlüssel</label>
+        <textarea id="googleKeyInput" rows="6" placeholder='{ "type": "service_account", "project_id": "...", ... }' style="width:100%; font-family:monospace; font-size:12px;"></textarea>
+        <label style="margin-top:10px;">Kalender-ID</label>
+        <input id="googleCalendarIdInput" placeholder="z. B. deine-adresse@gmail.com" />
+        <div id="googleKeyWarn" class="note-box hidden">Serverseitig ist kein <code>APP_SECRET_KEY</code> gesetzt – der Schlüssel kann nicht verschlüsselt gespeichert werden.</div>
+        <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap;">
+          <button class="btn" id="saveGoogleKey">Verbinden</button>
+          <button class="btn danger" id="removeGoogleKey">Entfernen</button>
         </div>
       </div>
       <div class="card" style="margin-top:14px;">

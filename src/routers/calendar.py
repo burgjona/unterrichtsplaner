@@ -13,7 +13,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
 from ..deps import get_db, get_storage_root, get_user_id, row_or_404
-from ..lib import ai
+from ..lib import ai, google_cal
 from ..lib.extract import pdf_pages_text
 from ..schemas import (CalendarCreate, CalendarOut, CalendarUpdate, ImportCommitIn,
                        ImportSuggestion)
@@ -46,8 +46,8 @@ def create(body: CalendarCreate, conn=Depends(get_db), user_id: int = Depends(ge
         cur = conn.execute(
             """INSERT INTO calendar_entries
                (user_id, class_id, lesson_id, school_year_id, title, entry_date, end_date,
-                start_time, end_time, all_day, entry_type, category_id, is_fixed)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                start_time, end_time, all_day, entry_type, category_id, is_fixed, updated_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))""",
             (user_id, body.class_id, body.lesson_id, body.school_year_id, body.title,
              body.entry_date, body.end_date, body.start_time, body.end_time,
              int(body.all_day), body.entry_type, body.category_id, int(body.is_fixed)),
@@ -98,6 +98,7 @@ def update(cid: int, body: CalendarUpdate, conn=Depends(get_db), user_id: int = 
         fields["all_day"] = int(fields["all_day"])
     if fields:
         cols = ", ".join(f"{k} = :{k}" for k in fields)
+        cols += ", updated_at = datetime('now')"  # Last-write-wins für Google-Sync (U21)
         fields.update(id=cid, uid=user_id)
         conn.execute(
             f"UPDATE calendar_entries SET {cols} WHERE id = :id AND user_id = :uid", fields
@@ -112,6 +113,23 @@ def delete(cid: int, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
     conn.commit()
     if cur.rowcount == 0:
         raise HTTPException(status_code=404, detail="Kalendereintrag nicht gefunden.")
+
+
+# ---------- Google-Kalender-Sync (U21) ----------
+@router.post("/google/sync")
+def google_sync(conn: sqlite3.Connection = Depends(get_db), user_id: int = Depends(get_user_id)):
+    """Push + Pull mit Google. Ohne hinterlegten Schlüssel sauberer 4xx (kein 500)."""
+    try:
+        return google_cal.sync(conn, user_id)
+    except google_cal.NoGoogleKey:
+        raise HTTPException(
+            status_code=400,
+            detail="Kein Google-Schlüssel hinterlegt – bitte in den Einstellungen eintragen.",
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:  # Auth-/Netz-/API-Fehler sauber weiterreichen (nie 500-Traceback)
+        raise HTTPException(status_code=502, detail=f"Google-Sync fehlgeschlagen: {exc}")
 
 
 # ---------- Jahresplan-Import (U20) ----------
