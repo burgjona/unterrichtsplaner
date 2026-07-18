@@ -3,11 +3,13 @@
    Oberfläche ohne Netz einsehbar bleibt. Schreibvorgänge (POST/PUT/DELETE) werden
    NIE abgefangen — sie gehen direkt ans Netz und schlagen offline bewusst fehl.
 
-   Deploy-Invalidierung: bei jedem neuen Deploy die VERSION erhöhen. Der activate-Schritt
-   löscht dann alle Caches mit abweichendem Namen; skipWaiting + clients.claim sorgen
-   dafür, dass der neue SW sofort übernimmt (keine veraltete Shell). */
+   Deploy-Frische: Die App-Shell (index.html, app.js, CSS, …) wird NETZ-FIRST ausgeliefert –
+   online kommt also nach jedem Deploy sofort der neue Code, offline greift der Cache-Fallback.
+   Damit ist kein manuelles VERSION-Hochzählen mehr nötig, um neuen Code zu sehen; die VERSION
+   dient nur noch dem einmaligen Verwerfen alter Caches beim activate-Schritt (skipWaiting +
+   clients.claim übernehmen den neuen SW sofort). */
 
-const VERSION = "v1";
+const VERSION = "v2";
 const SHELL_CACHE = "ldb-shell-" + VERSION;
 const DATA_CACHE = "ldb-data-" + VERSION;
 
@@ -118,18 +120,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Statische Shell-Assets: Cache-First mit Netz-Fallback.
-  event.respondWith(
-    caches.match(req).then((cached) => {
-      if (cached) return cached;
-      return fetch(req)
-        .then((res) => {
-          if (res && res.ok && (url.pathname === "/" || SHELL_ASSETS.includes(url.pathname))) {
-            const copy = res.clone();
-            caches.open(SHELL_CACHE).then((c) => c.put(req, copy));
-          }
-          return res;
-        });
-    })
-  );
+  // Statische Shell-Assets (app.js, CSS, Manifest, …): Netz-First mit Cache-Fallback.
+  // So wird nach jedem Deploy online sofort der neue Code geladen; offline greift der Cache.
+  event.respondWith(networkFirst(req, SHELL_CACHE));
 });
