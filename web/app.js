@@ -1136,7 +1136,7 @@ async function saveStoffPlan() {
   const clsId = Number($("planClass").value), syId = Number($("planYear").value);
   if (!clsId) { toast("Bitte eine Klasse wählen.", false); return; }
   if (!state.stoffPreview.length) {
-    toast("Kein Vorschlag vorhanden – erst „Jahresplan vorschlagen" oder „KI-Vorschlag".", false);
+    toast("Kein Vorschlag vorhanden – erst „Jahresplan vorschlagen“ oder „KI-Vorschlag“.", false);
     return;
   }
   const def = `Stoffverteilungsplan ${selectedText("planClass")} ${selectedText("planYear")}`.trim();
