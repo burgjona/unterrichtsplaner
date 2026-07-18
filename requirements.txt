@@ -15,3 +15,8 @@ python-docx==1.2.0
 reportlab==5.0.0
 # Claude-API (M7)
 anthropic==0.116.0
+# Google-Kalender-Sync (U21): Service-Account-Auth + REST via httpx.
+# httpx wurde von den Dev-Deps hierher hochgezogen (Laufzeit-Nutzung im google_cal-Client).
+google-auth==2.38.0
+requests==2.32.5          # Transport für google-auth Credentials.refresh(Request())
+httpx==0.28.1

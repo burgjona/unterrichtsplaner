@@ -1,4 +1,4 @@
 # Test-Abhängigkeiten (zusätzlich zu requirements.txt)
+# httpx ist ab U21 Laufzeit-Abhängigkeit (siehe requirements.txt) – hier daher nicht mehr gepinnt.
 -r requirements.txt
 pytest==8.4.2
-httpx==0.28.1

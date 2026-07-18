@@ -34,6 +34,12 @@ class ApiKeyIn(Base):
     api_key: str
 
 
+class GoogleKeyIn(Base):
+    """Service-Account-JSON-Schlüssel + Ziel-Kalender-ID (U21)."""
+    key_json: str
+    calendar_id: str
+
+
 class SettingsOut(Base):
     api_key_status: str            # "aktiv" | "kein Key"
     api_key_last4: Optional[str] = None
@@ -42,6 +48,10 @@ class SettingsOut(Base):
     theme: str = "fruehling"       # fruehling | sommer | herbst | winter
     dark_mode: bool = False
     font: str = "verspielt"        # verspielt | standard
+    # Google-Kalender-Sync (U21)
+    google_key_set: bool = False
+    google_calendar_id: Optional[str] = None
+    google_last_sync: Optional[str] = None
 
 
 # ---------- Nutzer (Profil) ----------

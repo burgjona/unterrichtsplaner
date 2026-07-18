@@ -4,6 +4,7 @@ Der Key wird AES-256-GCM-verschlüsselt gespeichert; nur die letzten 4 Zeichen
 liegen im Klartext für die Anzeige vor. Die eigentliche Nutzung des Keys (Calls)
 kommt in Meilenstein 7.
 """
+import json
 import os
 import sqlite3
 
@@ -13,18 +14,20 @@ from fastapi.responses import FileResponse
 from ..deps import get_db, get_storage_root, get_user_id
 from ..lib.branding import media_type_for, resolve_relpath, save_image_upload
 from ..lib.security import encrypt_secret, secret_available
-from ..schemas import ApiKeyIn, AppearanceIn, SettingsOut
+from ..schemas import ApiKeyIn, AppearanceIn, GoogleKeyIn, SettingsOut
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
 
 def _settings_out(conn, user_id) -> SettingsOut:
     row = conn.execute(
-        "SELECT anthropic_key_last4, anthropic_key_set_at, theme, dark_mode, font "
+        "SELECT anthropic_key_last4, anthropic_key_set_at, theme, dark_mode, font, "
+        "       google_key_cipher, google_calendar_id, google_last_sync "
         "FROM user_settings WHERE user_id = ?",
         (user_id,),
     ).fetchone()
     has_key = row is not None and row["anthropic_key_last4"] is not None
+    google_set = row is not None and row["google_key_cipher"] is not None
     return SettingsOut(
         api_key_status="aktiv" if has_key else "kein Key",
         api_key_last4=row["anthropic_key_last4"] if has_key else None,
@@ -33,6 +36,9 @@ def _settings_out(conn, user_id) -> SettingsOut:
         theme=row["theme"] if row is not None else "fruehling",
         dark_mode=bool(row["dark_mode"]) if row is not None else False,
         font=row["font"] if row is not None else "verspielt",
+        google_key_set=google_set,
+        google_calendar_id=row["google_calendar_id"] if google_set else None,
+        google_last_sync=row["google_last_sync"] if row is not None else None,
     )
 
 
@@ -75,6 +81,63 @@ def delete_api_key(conn: sqlite3.Connection = Depends(get_db), user_id: int = De
     conn.execute(
         """UPDATE user_settings SET anthropic_key_cipher = NULL, anthropic_key_nonce = NULL,
              anthropic_key_last4 = NULL, anthropic_key_set_at = NULL, updated_at = datetime('now')
+           WHERE user_id = ?""",
+        (user_id,),
+    )
+    conn.commit()
+    return _settings_out(conn, user_id)
+
+
+# ---------- Google-Kalender-Sync (U21) ----------
+@router.put("/google-key", response_model=SettingsOut)
+def set_google_key(body: GoogleKeyIn, conn: sqlite3.Connection = Depends(get_db),
+                   user_id: int = Depends(get_user_id)):
+    """Service-Account-JSON-Schlüssel + Kalender-ID verschlüsselt speichern (Muster api-key)."""
+    if not secret_available():
+        raise HTTPException(
+            status_code=503,
+            detail="APP_SECRET_KEY ist nicht konfiguriert – der Schlüssel kann nicht verschlüsselt gespeichert werden.",
+        )
+    key_json = body.key_json.strip()
+    calendar_id = body.calendar_id.strip()
+    if not key_json:
+        raise HTTPException(status_code=400, detail="Leerer Google-Schlüssel.")
+    if not calendar_id:
+        raise HTTPException(status_code=400, detail="Kalender-ID fehlt.")
+    # Frühe, freundliche Validierung: muss wenigstens gültiges JSON eines Service-Accounts sein.
+    try:
+        info = json.loads(key_json)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="Der Schlüssel ist kein gültiges JSON.")
+    if not isinstance(info, dict) or info.get("type") != "service_account":
+        raise HTTPException(status_code=400,
+                            detail="Kein Service-Account-Schlüssel (Feld \"type\": \"service_account\" fehlt).")
+    cipher, nonce = encrypt_secret(key_json)
+    conn.execute(
+        """INSERT INTO user_settings
+             (user_id, google_key_cipher, google_key_nonce, google_calendar_id,
+              google_key_set_at, updated_at)
+           VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
+           ON CONFLICT(user_id) DO UPDATE SET
+             google_key_cipher  = excluded.google_key_cipher,
+             google_key_nonce   = excluded.google_key_nonce,
+             google_calendar_id = excluded.google_calendar_id,
+             google_key_set_at  = excluded.google_key_set_at,
+             updated_at         = datetime('now')""",
+        (user_id, cipher, nonce, calendar_id),
+    )
+    conn.commit()
+    return _settings_out(conn, user_id)
+
+
+@router.delete("/google-key", response_model=SettingsOut)
+def delete_google_key(conn: sqlite3.Connection = Depends(get_db),
+                      user_id: int = Depends(get_user_id)):
+    """Google-Schlüssel + Sync-Status entfernen (Mapping der Einträge bleibt bestehen)."""
+    conn.execute(
+        """UPDATE user_settings SET google_key_cipher = NULL, google_key_nonce = NULL,
+             google_calendar_id = NULL, google_key_set_at = NULL, google_sync_token = NULL,
+             google_last_sync = NULL, updated_at = datetime('now')
            WHERE user_id = ?""",
         (user_id,),
     )
