@@ -17,15 +17,26 @@ def _get(conn, user_id, cid):
     return CalendarOut(**dict(row)) if row else None
 
 
+def _category_owned(conn, user_id, category_id) -> bool:
+    return conn.execute(
+        "SELECT 1 FROM calendar_categories WHERE id = ? AND user_id = ?", (category_id, user_id)
+    ).fetchone() is not None
+
+
 @router.post("", response_model=CalendarOut, status_code=201)
 def create(body: CalendarCreate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+    # Kategorie (falls gesetzt) muss dem Nutzer gehören.
+    if body.category_id is not None and not _category_owned(conn, user_id, body.category_id):
+        raise HTTPException(status_code=400, detail="Unbekannte Kategorie.")
     try:
         cur = conn.execute(
             """INSERT INTO calendar_entries
-               (user_id, class_id, lesson_id, school_year_id, title, entry_date, entry_type, is_fixed)
-               VALUES (?,?,?,?,?,?,?,?)""",
+               (user_id, class_id, lesson_id, school_year_id, title, entry_date, end_date,
+                start_time, end_time, all_day, entry_type, category_id, is_fixed)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (user_id, body.class_id, body.lesson_id, body.school_year_id, body.title,
-             body.entry_date, body.entry_type, int(body.is_fixed)),
+             body.entry_date, body.end_date, body.start_time, body.end_time,
+             int(body.all_day), body.entry_type, body.category_id, int(body.is_fixed)),
         )
         conn.commit()
     except sqlite3.IntegrityError as exc:
@@ -65,8 +76,12 @@ def get_(cid: int, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
 def update(cid: int, body: CalendarUpdate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
     row_or_404(_get(conn, user_id, cid), "Kalendereintrag")
     fields = body.model_dump(exclude_unset=True)
+    if fields.get("category_id") is not None and not _category_owned(conn, user_id, fields["category_id"]):
+        raise HTTPException(status_code=400, detail="Unbekannte Kategorie.")
     if "is_fixed" in fields:
         fields["is_fixed"] = int(fields["is_fixed"])
+    if "all_day" in fields:
+        fields["all_day"] = int(fields["all_day"])
     if fields:
         cols = ", ".join(f"{k} = :{k}" for k in fields)
         fields.update(id=cid, uid=user_id)
