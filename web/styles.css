@@ -214,3 +214,19 @@ tbody tr td:first-child { border-radius:10px 0 0 10px; } tbody tr td:last-child 
   .stoff-plan-head { flex-direction:column; }
   .stoff-plan-actions { width:100%; }
 }
+/* U13: Archiv-Bereich in der Materialbibliothek (Reiter nach .praesent-tab-Muster) */
+.archiv-tabs { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0 14px; }
+.archiv-tab {
+  border:1px solid var(--line); background:var(--surface); color:var(--primary-dark);
+  padding:9px 16px; border-radius:999px; cursor:pointer;
+  font-family:inherit; font-weight:800; font-size:14px;
+}
+.archiv-tab:hover { background:var(--surface-2); }
+.archiv-tab.active { background:var(--primary); color:#fff; border-color:var(--primary); }
+.archiv-panel:not(.hidden) { display:flex; flex-direction:column; gap:7px; }
+.archiv-row {
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  padding:9px 12px; border:1px solid var(--line); border-radius:12px; background:var(--surface);
+}
+.archiv-row .archiv-main { flex:1; min-width:140px; font-weight:700; }
+.archiv-row .archiv-actions { display:flex; gap:8px; flex-wrap:wrap; }

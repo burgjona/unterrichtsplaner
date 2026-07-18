@@ -71,6 +71,17 @@ def update(cid: int, body: ClassUpdate, conn=Depends(get_db), user_id: int = Dep
     return _get(conn, user_id, cid)
 
 
+@router.post("/{cid}/restore", response_model=ClassOut)
+def restore(cid: int, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+    row_or_404(_get(conn, user_id, cid), "Klasse")
+    conn.execute(
+        "UPDATE classes SET archived_at = NULL, updated_at = datetime('now') WHERE id = ? AND user_id = ?",
+        (cid, user_id),
+    )
+    conn.commit()
+    return _get(conn, user_id, cid)
+
+
 @router.delete("/{cid}", status_code=204)
 def delete(cid: int, hard: bool = False, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
     row_or_404(_get(conn, user_id, cid), "Klasse")

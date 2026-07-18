@@ -449,7 +449,7 @@ function renderTodos() {
   });
   list.querySelectorAll("[data-del-todo]").forEach((btn) => {
     btn.onclick = async () => {
-      try { await API.del("/todos/" + btn.dataset.delTodo); await refresh(); }
+      try { await API.post("/todos/" + btn.dataset.delTodo + "/archive"); await refresh(); toast("To-Do archiviert."); }
       catch (e) { toast(e.message, false); }
     };
   });
@@ -489,6 +489,100 @@ function renderMaterialList() {
     b.onclick = async () => {
       if (!confirm("Material löschen?")) return;
       try { await API.del("/materials/" + b.dataset.delMat); await refresh(); toast("Material gelöscht."); }
+      catch (e) { toast(e.message, false); }
+    };
+  });
+}
+
+/* ---------- Archiv (U13): Klassen | Planungen | To-Dos | Notizen ---------- */
+let archivTab = "klassen";
+
+function setArchivTab(name) {
+  archivTab = name;
+  document.querySelectorAll(".archiv-tab").forEach((b) =>
+    b.classList.toggle("active", b.dataset.archiv === name));
+  ["klassen", "planungen", "todos", "notizen"].forEach((n) => {
+    const panel = $("archiv" + n.charAt(0).toUpperCase() + n.slice(1));
+    if (panel) panel.classList.toggle("hidden", n !== name);
+  });
+  renderArchivPanel(name);
+}
+
+async function renderArchivPanel(name) {
+  if (name === "klassen") return renderArchivKlassen();
+  if (name === "todos") return renderArchivTodos();
+  // Planungen / Notizen: Struktur steht, Inhalt folgt in späteren Wellen.
+  const panel = $("archiv" + name.charAt(0).toUpperCase() + name.slice(1));
+  if (panel) panel.innerHTML = '<p class="muted small">Noch keine archivierten Einträge.</p>';
+}
+
+async function renderArchivKlassen() {
+  const wrap = $("archivKlassen");
+  if (!wrap) return;
+  wrap.innerHTML = '<p class="muted small">Wird geladen …</p>';
+  let all = [];
+  try { all = await API.get("/classes?includeArchived=true"); }
+  catch (e) { wrap.innerHTML = `<p class="muted small">${esc(e.message)}</p>`; return; }
+  const rows = all.filter((c) => c.archivedAt);
+  wrap.innerHTML = "";
+  if (!rows.length) { wrap.innerHTML = '<p class="muted small">Keine archivierten Klassen.</p>'; return; }
+  rows.forEach((c) => {
+    const meta = [c.subject, c.grade ? "Kl. " + c.grade : null, c.track].filter(Boolean).join(" · ");
+    const div = document.createElement("div");
+    div.className = "archiv-row";
+    div.innerHTML =
+      `<span class="archiv-main">${esc(c.name)}</span>` +
+      `<span class="muted small">${esc(meta)}</span>` +
+      `<span class="archiv-actions">` +
+      `<button class="btn small secondary" data-restore-class="${c.id}">Wiederherstellen</button>` +
+      `<button class="btn small danger" data-hard-class="${c.id}">Endgültig löschen</button></span>`;
+    wrap.appendChild(div);
+  });
+  wrap.querySelectorAll("[data-restore-class]").forEach((b) => {
+    b.onclick = async () => {
+      try { await API.post("/classes/" + b.dataset.restoreClass + "/restore"); await refresh(); renderArchivKlassen(); toast("Klasse wiederhergestellt."); }
+      catch (e) { toast(e.message, false); }
+    };
+  });
+  wrap.querySelectorAll("[data-hard-class]").forEach((b) => {
+    b.onclick = async () => {
+      if (!confirm("Klasse endgültig löschen? Das kann nicht rückgängig gemacht werden.")) return;
+      try { await API.del("/classes/" + b.dataset.hardClass + "?hard=true"); await refresh(); renderArchivKlassen(); toast("Klasse endgültig gelöscht."); }
+      catch (e) { toast(e.message, false); }
+    };
+  });
+}
+
+async function renderArchivTodos() {
+  const wrap = $("archivTodos");
+  if (!wrap) return;
+  wrap.innerHTML = '<p class="muted small">Wird geladen …</p>';
+  let rows = [];
+  try { rows = await API.get("/todos?archived=true"); }
+  catch (e) { wrap.innerHTML = `<p class="muted small">${esc(e.message)}</p>`; return; }
+  wrap.innerHTML = "";
+  if (!rows.length) { wrap.innerHTML = '<p class="muted small">Keine archivierten To-Dos.</p>'; return; }
+  rows.forEach((t) => {
+    const div = document.createElement("div");
+    div.className = "archiv-row";
+    div.innerHTML =
+      `<span class="archiv-main">${esc(t.text)}</span>` +
+      `<span class="todo-src ${esc(t.source)}">${esc(t.source)}</span>` +
+      `<span class="archiv-actions">` +
+      `<button class="btn small secondary" data-restore-todo="${t.id}">Wiederherstellen</button>` +
+      `<button class="btn small danger" data-hard-todo="${t.id}">Endgültig löschen</button></span>`;
+    wrap.appendChild(div);
+  });
+  wrap.querySelectorAll("[data-restore-todo]").forEach((b) => {
+    b.onclick = async () => {
+      try { await API.post("/todos/" + b.dataset.restoreTodo + "/restore"); await refresh(); renderArchivTodos(); toast("To-Do wiederhergestellt."); }
+      catch (e) { toast(e.message, false); }
+    };
+  });
+  wrap.querySelectorAll("[data-hard-todo]").forEach((b) => {
+    b.onclick = async () => {
+      if (!confirm("To-Do endgültig löschen? Das kann nicht rückgängig gemacht werden.")) return;
+      try { await API.del("/todos/" + b.dataset.hardTodo); await refresh(); renderArchivTodos(); toast("To-Do endgültig gelöscht."); }
       catch (e) { toast(e.message, false); }
     };
   });
@@ -1837,6 +1931,7 @@ function showView(view) {
   if (view === "asuv" && state.lessons.length) loadAsuv(asuvLessonId || state.lessons[0].id);
   if (view === "stoff") loadStoffPlans();
   if (view === "praesentation") renderPraesentation();
+  if (view === "material") renderArchivPanel(archivTab);
   closeMobileNav();
 }
 function closeMobileNav() { $("sidebarNav").classList.remove("open"); $("navBackdrop").classList.remove("open"); }
@@ -1994,6 +2089,10 @@ function wireEvents() {
     if (e.key === "ArrowRight" || e.key === " ") { e.preventDefault(); praesent.phaseIdx++; renderPraesentAblauf(); }
     else if (e.key === "ArrowLeft") { e.preventDefault(); if (praesent.phaseIdx > 0) { praesent.phaseIdx--; renderPraesentAblauf(); } }
   });
+
+  // Archiv-Reiter (U13)
+  document.querySelectorAll(".archiv-tab").forEach((btn) =>
+    (btn.onclick = () => setArchivTab(btn.dataset.archiv)));
 
   $("newTodoInput").addEventListener("keydown", async (e) => {
     if (e.key === "Enter" && e.target.value.trim()) {
