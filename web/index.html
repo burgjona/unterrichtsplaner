@@ -254,6 +254,16 @@
         </div>
         <div style="margin-top:10px;"><button class="btn secondary" id="addCatBtn">Kategorie anlegen</button></div>
       </div>
+      <!-- U20: Jahresplan importieren (PDF → KI-Terminerkennung → Auswahl → Übernahme) -->
+      <div class="card" style="margin-top:14px;">
+        <h3 style="margin-bottom:8px;">Jahresplan importieren</h3>
+        <p class="muted small">Schul-Jahresplan als PDF hochladen. Die KI erkennt Termine; du wählst per Häkchen, welche in deinen Kalender übernommen werden.</p>
+        <div class="row">
+          <div><label>Jahresplan (PDF)</label><input type="file" id="importFile" accept="application/pdf,.pdf" /></div>
+          <div style="display:flex; align-items:flex-end;"><button class="btn" id="importAnalyzeBtn">PDF analysieren</button></div>
+        </div>
+        <div id="importResult" style="margin-top:12px;"></div>
+      </div>
     </section>
 
     <!-- PRÄSENTATION / SCHÜLERANSICHT -->
