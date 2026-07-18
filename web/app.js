@@ -2100,6 +2100,54 @@ async function ensureGoogleStatus() {
   applyGoogleStatus();
 }
 
+/* ---------- Auto-Sync (U24): A) beim Kalender-Öffnen  B) periodisch, solange App offen ---------- */
+let googleSyncing = false;          // verhindert überlappende Syncs (manuell + automatisch)
+let googleLastAutoSync = 0;         // Zeitstempel des letzten Auto-Syncs (Drosselung bei A)
+let googleAutoTimer = null;         // Intervall-Handle (B)
+const GOOGLE_AUTO_INTERVAL_MS = 10 * 60 * 1000;  // B: alle 10 Minuten
+const GOOGLE_AUTO_THROTTLE_MS = 2 * 60 * 1000;   // A: nicht öfter als alle 2 Minuten beim Öffnen
+
+// Stiller Hintergrund-Sync: kein Erfolgs-Toast, keine Fehlermeldung (der manuelle Button
+// meldet Fehler weiterhin). Neu gezeichnet wird nur bei `rerender` UND tatsächlicher Änderung,
+// damit laufende Eingaben in anderen Ansichten nicht überschrieben werden.
+async function autoSyncGoogle(rerender) {
+  if (googleSyncing) return;
+  if (document.visibilityState === "hidden") return;  // im Hintergrund-Tab nicht syncen
+  await ensureGoogleStatus();
+  if (!state.google || !state.google.keySet) return;  // nur mit hinterlegtem Schlüssel
+  googleSyncing = true;
+  const cBadge = $("calGoogleStatus");
+  if (cBadge) cBadge.textContent = "synchronisiere …";
+  try {
+    const r = await API.post("/calendar/google/sync");
+    googleLastAutoSync = Date.now();
+    state.google = null;
+    await ensureGoogleStatus();
+    if (rerender && (r.pulled + r.deleted) > 0) await refresh();
+  } catch (_) {
+    /* still bleiben */
+  } finally {
+    googleSyncing = false;
+    applyGoogleStatus();
+  }
+}
+
+// A: beim Öffnen des Kalenders synchronisieren (gedrosselt, mit Neuzeichnen erlaubt).
+function maybeAutoSyncOnOpen() {
+  if (Date.now() - googleLastAutoSync < GOOGLE_AUTO_THROTTLE_MS) return;
+  autoSyncGoogle(true);
+}
+
+// B: periodischen Auto-Sync starten (einmalig; self-guard auf Schlüssel/Sichtbarkeit).
+function startGoogleAutoSync() {
+  if (googleAutoTimer) clearInterval(googleAutoTimer);
+  googleAutoTimer = setInterval(() => {
+    // Neu zeichnen nur, wenn der Kalender gerade sichtbar ist – sonst nur stiller DB-Abgleich.
+    const onCal = !$("kalender").classList.contains("hidden");
+    autoSyncGoogle(onCal);
+  }, GOOGLE_AUTO_INTERVAL_MS);
+}
+
 async function saveGoogleKey() {
   const keyJson = $("googleKeyInput").value.trim();
   const calendarId = $("googleCalendarIdInput").value.trim();
@@ -2123,10 +2171,13 @@ async function removeGoogleKey() {
 }
 
 async function syncGoogle() {
+  if (googleSyncing) return;        // läuft bereits ein (Auto-)Sync → nicht doppelt anstoßen
+  googleSyncing = true;
   const btn = $("calGoogleSyncBtn");
   if (btn) { btn.disabled = true; btn.textContent = "Synchronisiere …"; }
   try {
     const r = await API.post("/calendar/google/sync");
+    googleLastAutoSync = Date.now();  // zählt auch als jüngster Sync für die A-Drosselung
     state.google = null;            // Status inkl. neuem last_sync frisch laden
     await ensureGoogleStatus();
     await refresh();                // Kalender mit übernommenen Terminen neu zeichnen
@@ -2134,6 +2185,7 @@ async function syncGoogle() {
   } catch (e) {
     toast(e.message, false);
   } finally {
+    googleSyncing = false;
     if (btn) btn.textContent = "Mit Google synchronisieren";
     applyGoogleStatus();
   }
@@ -2767,7 +2819,7 @@ function showView(view) {
   // zurücksetzen – sonst würde ein späteres "Klasse speichern" versehentlich updaten.
   if (view !== "klassen" && editingClassId) resetClassForm();
   if (view === "settings") loadSettings();
-  if (view === "kalender") ensureGoogleStatus();  // U21: Sync-Status/Button aktualisieren
+  if (view === "kalender") { ensureGoogleStatus(); maybeAutoSyncOnOpen(); }  // U21/U24: Status + Auto-Sync (A)
   if (view === "asuv" && state.lessons.length) loadAsuv(asuvLessonId || state.lessons[0].id);
   if (view === "stoff") loadStoffPlans();
   if (view === "praesentation") renderPraesentation();
@@ -2840,6 +2892,7 @@ async function startApp() {
   $("sidebarKW").textContent = "Kalenderwoche " + isoWeek(now);
   await refresh();
   await refreshAiStatus();
+  startGoogleAutoSync();  // U24: periodischer Auto-Sync (B), solange die App offen ist
 }
 
 function wireEvents() {
