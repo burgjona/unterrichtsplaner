@@ -164,6 +164,39 @@
           <div style="margin-top:8px;"><button class="btn small secondary" id="cdStudentBulkBtn">Alle hinzufügen</button></div>
         </div>
       </div>
+
+      <!-- ===== U18: Sitzplan ===== -->
+      <div class="card" style="margin-top:14px;">
+        <h3>Sitzplan</h3>
+        <p class="muted small">Plätze anordnen, Namen aus der Schülerliste zuweisen, speichern und als PDF drucken.</p>
+
+        <div class="row" style="margin-top:10px;align-items:end;">
+          <div><label class="small muted" for="spName">Name des Sitzplans</label><input id="spName" placeholder="z. B. Standardplan" /></div>
+          <div><label class="small muted" for="spRows">Reihen</label><input id="spRows" type="number" min="1" max="12" value="4" /></div>
+          <div><label class="small muted" for="spCols">Spalten</label><input id="spCols" type="number" min="1" max="12" value="5" /></div>
+          <div><button class="btn small secondary" id="spBuildBtn">Raster aufbauen</button></div>
+        </div>
+
+        <div class="sp-ai" style="margin-top:12px;">
+          <label class="small muted" for="spAiDesc">KI-Anordnung (Freitext, z. B. „Lisa nach vorn, Max nicht neben Paul“)</label>
+          <textarea id="spAiDesc" rows="2" placeholder="Wünsche zur Sitzordnung …"></textarea>
+          <div style="margin-top:8px;"><button class="btn small" id="spAiBtn">Per KI anordnen</button></div>
+        </div>
+
+        <div id="spGridWrap" class="sp-grid-wrap" style="margin-top:14px;"></div>
+
+        <div class="row" style="margin-top:12px;">
+          <div><button class="btn small" id="spSaveBtn">Sitzplan speichern</button></div>
+          <div><button class="btn small secondary" id="spExportBtn" disabled>Als PDF herunterladen</button></div>
+          <div><button class="btn small secondary" id="spNewBtn">Neu / Leeren</button></div>
+        </div>
+
+        <div style="margin-top:14px;">
+          <h4 style="margin:0 0 6px;">Gespeicherte Sitzpläne</h4>
+          <div id="spList"></div>
+        </div>
+      </div>
+      <!-- ===== /U18 ===== -->
     </section>
 
     <!-- KALENDER -->

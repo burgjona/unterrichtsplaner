@@ -693,3 +693,47 @@ class StoffPlanDuplicateIn(Base):
 LessonCreate.model_rebuild()
 LessonUpdate.model_rebuild()
 LessonOut.model_rebuild()
+
+
+# ---------- Sitzplan (U18) — ans Dateiende (Konfliktvermeidung mit Parallel-Units) ----------
+class SeatIn(Base):
+    row: int
+    col: int
+    student_id: Optional[int] = None
+    name: Optional[str] = None
+
+
+class SeatPlanLayout(Base):
+    seats: List[SeatIn] = []
+
+
+class SeatPlanCreate(Base):
+    name: str
+    rows: Optional[int] = None
+    cols: Optional[int] = None
+    layout_json: SeatPlanLayout
+
+
+class SeatPlanUpdate(Base):
+    name: Optional[str] = None
+    rows: Optional[int] = None
+    cols: Optional[int] = None
+    layout_json: Optional[SeatPlanLayout] = None
+
+
+class SeatPlanOut(Base):
+    id: int
+    class_id: int
+    name: str
+    rows: Optional[int] = None
+    cols: Optional[int] = None
+    layout_json: SeatPlanLayout
+    created_at: str
+    updated_at: str
+
+
+class SeatPlanAiArrange(Base):
+    class_id: Optional[int] = None   # via Body oder Pfad; Pfad hat Vorrang
+    rows: int
+    cols: int
+    description: str

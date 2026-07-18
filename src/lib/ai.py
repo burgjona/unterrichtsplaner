@@ -30,6 +30,7 @@ ROUTING = {
     "asuv": "sonnet",                # ASUV-Ausformulierung
     "lernziele": "sonnet",           # SMARTe Lernziele nach Bloom-Taxonomie
     "einordnung": "haiku",           # kurze Lernbereichs-/Lernziel-Verortung freier Stunden
+    "sitzplan": "sonnet",            # KI-Sitzplan-Anordnung nach Freitext-Beschreibung (U18)
 }
 
 _prompt_cache = {}  # sha256(prompt) -> Antworttext (lokal, prozessweit)
