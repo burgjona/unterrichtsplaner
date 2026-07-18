@@ -650,6 +650,23 @@ class StoffPlanDetail(StoffPlanOut):
     blocks: List[StoffPlanBlockOut] = []
 
 
+# ---------- Stoffplan-Wiederverwendung (U16) — Duplizieren/Übernehmen ----------
+_STOFF_DUP_MODES = {"kopie", "deterministisch", "ki"}
+
+
+class StoffPlanDuplicateIn(Base):
+    target_class_id: int
+    target_school_year_id: Optional[int] = None
+    mode: str = "deterministisch"           # kopie | deterministisch | ki
+
+    @field_validator("mode")
+    @classmethod
+    def _valid_mode(cls, v: str) -> str:
+        if v not in _STOFF_DUP_MODES:
+            raise ValueError("mode muss 'kopie', 'deterministisch' oder 'ki' sein.")
+        return v
+
+
 # Forward-Refs der Lesson-Modelle auf Lernziel-Modelle auflösen (Definition folgt erst hier).
 LessonCreate.model_rebuild()
 LessonUpdate.model_rebuild()

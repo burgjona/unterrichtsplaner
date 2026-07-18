@@ -26,6 +26,7 @@ PRICING = {
 ROUTING = {
     "lesson_suggestion": "sonnet",   # Klafki-Erstentwurf + Meyer/Phasen
     "stoffplan": "sonnet",           # Stoffverteilungsplan-Generierung
+    "stoffplan_uebernahme": "sonnet",  # Übernahme eines Plans auf Parallelklasse/neues Schuljahr (U16)
     "asuv": "sonnet",                # ASUV-Ausformulierung
     "lernziele": "sonnet",           # SMARTe Lernziele nach Bloom-Taxonomie
     "einordnung": "haiku",           # kurze Lernbereichs-/Lernziel-Verortung freier Stunden
