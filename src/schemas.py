@@ -435,6 +435,7 @@ class TodoOut(Base):
     text: str
     source: str
     done: bool
+    archived_at: Optional[str] = None
     created_at: str
 
 

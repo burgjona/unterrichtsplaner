@@ -1,8 +1,14 @@
-"""To-dos der Heute-Ansicht (nutzer-gescoped)."""
+"""To-dos der Heute-Ansicht (nutzer-gescoped).
+
+DELETE ist endgültiges Löschen (im Archiv nutzbar). Das ✕ im Heute-View
+archiviert stattdessen soft (POST /archive → archived_at gesetzt); POST /restore
+holt einen archivierten Eintrag zurück. GET liefert standardmäßig nur
+nicht-archivierte To-dos; ?archived=true liefert die archivierten.
+"""
 import sqlite3
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..deps import get_db, get_user_id, row_or_404
 from ..schemas import TodoCreate, TodoOut, TodoUpdate
@@ -30,8 +36,15 @@ def create(body: TodoCreate, conn=Depends(get_db), user_id: int = Depends(get_us
 
 
 @router.get("", response_model=List[TodoOut])
-def list_(conn=Depends(get_db), user_id: int = Depends(get_user_id)):
-    rows = conn.execute("SELECT * FROM todos WHERE user_id = ? ORDER BY id", (user_id,)).fetchall()
+def list_(
+    archived: bool = Query(False, alias="archived"),
+    conn=Depends(get_db),
+    user_id: int = Depends(get_user_id),
+):
+    cond = "archived_at IS NOT NULL" if archived else "archived_at IS NULL"
+    rows = conn.execute(
+        f"SELECT * FROM todos WHERE user_id = ? AND {cond} ORDER BY id", (user_id,)
+    ).fetchall()
     return [TodoOut(**dict(r)) for r in rows]
 
 
@@ -46,6 +59,28 @@ def update(tid: int, body: TodoUpdate, conn=Depends(get_db), user_id: int = Depe
         fields.update(id=tid, uid=user_id)
         conn.execute(f"UPDATE todos SET {cols} WHERE id = :id AND user_id = :uid", fields)
         conn.commit()
+    return _get(conn, user_id, tid)
+
+
+@router.post("/{tid}/archive", response_model=TodoOut)
+def archive(tid: int, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+    row_or_404(_get(conn, user_id, tid), "To-do")
+    conn.execute(
+        "UPDATE todos SET archived_at = datetime('now') WHERE id = ? AND user_id = ?",
+        (tid, user_id),
+    )
+    conn.commit()
+    return _get(conn, user_id, tid)
+
+
+@router.post("/{tid}/restore", response_model=TodoOut)
+def restore(tid: int, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+    row_or_404(_get(conn, user_id, tid), "To-do")
+    conn.execute(
+        "UPDATE todos SET archived_at = NULL WHERE id = ? AND user_id = ?",
+        (tid, user_id),
+    )
+    conn.commit()
     return _get(conn, user_id, tid)
 
 

@@ -414,6 +414,22 @@
         <h3>Materialbibliothek</h3>
         <div class="file-list" id="materialList"></div>
       </div>
+
+      <!-- ARCHIV (U13): wiederherstellbare Klassen, Planungen, To-Dos, Notizen -->
+      <div class="card archiv-card" style="margin-top:14px;">
+        <h3>Archiv</h3>
+        <p class="muted small">Archivierte Einträge lassen sich wiederherstellen oder endgültig löschen.</p>
+        <div class="archiv-tabs">
+          <button class="archiv-tab active" data-archiv="klassen">Klassen</button>
+          <button class="archiv-tab" data-archiv="planungen">Planungen</button>
+          <button class="archiv-tab" data-archiv="todos">To-Dos</button>
+          <button class="archiv-tab" data-archiv="notizen">Notizen</button>
+        </div>
+        <div class="archiv-panel" id="archivKlassen"></div>
+        <div class="archiv-panel hidden" id="archivPlanungen"></div>
+        <div class="archiv-panel hidden" id="archivTodos"></div>
+        <div class="archiv-panel hidden" id="archivNotizen"></div>
+      </div>
     </section>
 
     <!-- EINSTELLUNGEN -->
