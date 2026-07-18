@@ -383,6 +383,7 @@ function editClass(c) {
 let detailClassId = null;
 function openClassDetail(cid) {
   detailClassId = cid;
+  openStoffPlanId = null;            // U19: kein Stoffplan aus einer anderen Klasse offen halten
   showView("klasse-detail");
   renderClassDetail();
 }
@@ -416,6 +417,83 @@ function renderClassDetail() {
     });
   }
   renderClassStudents();
+  renderClassDetailStoffPlans();
+}
+
+/* ---------- U19: Stoffpläne in der Klassen-Detailansicht ---------- */
+let detailStoffPlans = [];
+let openStoffPlanId = null;
+
+async function renderClassDetailStoffPlans() {
+  const wrap = $("cdStoffPlans");
+  if (!wrap) return;
+  try {
+    detailStoffPlans = await API.get(`/stoff-plans?classId=${detailClassId}`);
+  } catch (e) { detailStoffPlans = []; }
+  if (!detailStoffPlans.length) {
+    wrap.innerHTML = '<p class="muted small">Noch keine gespeicherten Stoffverteilungspläne für diese Klasse.</p>';
+    return;
+  }
+  wrap.innerHTML = detailStoffPlans.map((p) => {
+    const badge = p.status === "aktiv"
+      ? '<span class="badge ok">aktiv</span>' : '<span class="badge warn">Entwurf</span>';
+    const meta = `${esc(p.blockCount ?? 0)} Blöcke · zuletzt geändert ${esc((p.updatedAt || "").slice(0, 10))}`;
+    return `<div class="cd-stoff-row" data-cd-plan="${p.id}">
+      <div class="cd-stoff-head">
+        <div><strong>${esc(p.title)}</strong> ${badge}<br><span class="small muted">${meta}</span></div>
+        <div class="cd-stoff-actions">
+          <button class="btn small" data-cd-open="${p.id}">Öffnen</button>
+          <button class="btn small secondary" data-cd-pdf="${p.id}">Als PDF</button>
+        </div>
+      </div>
+      <div class="cd-stoff-blocks" data-cd-blocks="${p.id}"></div>
+    </div>`;
+  }).join("");
+  wrap.querySelectorAll("[data-cd-open]").forEach((b) => b.onclick = () => toggleClassDetailStoffPlan(Number(b.dataset.cdOpen)));
+  wrap.querySelectorAll("[data-cd-pdf]").forEach((b) => b.onclick = () => downloadStoffPlanPdf(Number(b.dataset.cdPdf)));
+  if (openStoffPlanId != null) showClassDetailStoffBlocks(openStoffPlanId);
+}
+
+async function toggleClassDetailStoffPlan(id) {
+  openStoffPlanId = (openStoffPlanId === id) ? null : id;
+  // andere geöffnete Blöcke einklappen
+  document.querySelectorAll("#cdStoffPlans [data-cd-blocks]").forEach((el) => { el.innerHTML = ""; });
+  if (openStoffPlanId != null) await showClassDetailStoffBlocks(openStoffPlanId);
+}
+
+async function showClassDetailStoffBlocks(id) {
+  const box = document.querySelector(`#cdStoffPlans [data-cd-blocks="${id}"]`);
+  if (!box) return;
+  let p;
+  try { p = await API.get(`/stoff-plans/${id}`); }
+  catch (e) { toast(e.message, false); return; }
+  const blocks = p.blocks || [];
+  if (!blocks.length) {
+    box.innerHTML = '<p class="muted small">Keine Blöcke in diesem Plan.</p>';
+    return;
+  }
+  const rows = blocks.map((b) => {
+    const zeit = (b.startDate || b.endDate) ? `${esc(b.startDate || "?")} – ${esc(b.endDate || "?")}` : "—";
+    return `<tr>
+      <td>${esc(b.lbCode || "")}</td>
+      <td>${esc(b.title || "")}</td>
+      <td>${esc(b.ustd ?? "")}</td>
+      <td>${zeit}</td>
+      <td>${esc(b.conflictNote || "—")}</td>
+    </tr>`;
+  }).join("");
+  box.innerHTML = `<div class="table-scroll"><table class="cd-stoff-table">
+    <thead><tr><th>LB</th><th>Thema</th><th>Ustd.</th><th>Zeitraum</th><th>Bemerkung</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table></div>`;
+}
+
+function downloadStoffPlanPdf(id) {
+  const a = document.createElement("a");
+  a.href = `/api/stoff-plans/${id}/export?format=pdf`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 }
 
 let detailStudents = [];

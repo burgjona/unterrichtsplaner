@@ -6,9 +6,10 @@ Aktivsetzen werden andere Pläne derselben Klasse+Schuljahr auf 'entwurf' zurüc
 Alle Endpunkte sind nutzer-gescoped.
 """
 import sqlite3
+import urllib.parse
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from ..deps import get_db, get_user_id, row_or_404
 from ..schemas import (
@@ -131,3 +132,46 @@ def delete(plan_id: int, conn: sqlite3.Connection = Depends(get_db),
     conn.commit()
     if cur.rowcount == 0:
         raise HTTPException(status_code=404, detail="Stoffplan nicht gefunden.")
+
+
+# ============================================================ U19: PDF-Export
+def _safe_name(text: str) -> str:
+    """Umlaut-freundlicher, aber dateisystem-tauglicher Namensbaustein (leer möglich)."""
+    cleaned = "".join(c for c in (text or "") if c.isalnum() or c in " -_/äöüÄÖÜß").strip()
+    return cleaned.replace(" ", "_").replace("/", "-")
+
+
+@router.get("/{plan_id}/export")
+def export_plan(plan_id: int, format: str = Query("pdf"),
+                conn: sqlite3.Connection = Depends(get_db), user_id: int = Depends(get_user_id)):
+    """Rendert den Stoffverteilungsplan als PDF-Tabelle (LB-Code | Thema | UStd |
+    Zeitraum | Bemerkung). Nutzer-gescoped: fremder Plan -> 404."""
+    from ..lib.stoffplan_pdf import build_stoffplan_pdf
+
+    plan = row_or_404(_load_plan(conn, user_id, plan_id), "Stoffplan")
+    if format != "pdf":
+        raise HTTPException(status_code=400, detail="Nur format=pdf wird unterstützt.")
+
+    blocks = conn.execute(
+        "SELECT * FROM stoff_plan_blocks WHERE plan_id = ? ORDER BY sort_order, id", (plan_id,)
+    ).fetchall()
+
+    crow = conn.execute("SELECT name FROM classes WHERE id = ? AND user_id = ?",
+                        (plan["class_id"], user_id)).fetchone()
+    class_name = crow["name"] if crow else "Klasse"
+    year_label = "—"
+    if plan["school_year_id"] is not None:
+        yrow = conn.execute("SELECT label FROM school_years WHERE id = ? AND user_id = ?",
+                            (plan["school_year_id"], user_id)).fetchone()
+        if yrow:
+            year_label = yrow["label"]
+
+    data = build_stoffplan_pdf(plan, blocks, class_name, year_label)
+
+    parts = [_safe_name(p) for p in ("Stoffverteilungsplan", class_name, year_label) if _safe_name(p)]
+    fname = "_".join(parts) + ".pdf"
+    ascii_fb = "".join(c if c.isascii() else "_" for c in fname)  # ASCII-Fallback für den Header
+    disposition = (f"attachment; filename=\"{ascii_fb}\"; "
+                   f"filename*=UTF-8''{urllib.parse.quote(fname)}")  # RFC 5987: Umlaute erhalten
+    return Response(content=data, media_type="application/pdf",
+                    headers={"Content-Disposition": disposition})
