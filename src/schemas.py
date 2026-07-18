@@ -475,6 +475,28 @@ class TodoOut(Base):
     created_at: str
 
 
+# ---------- Notizen (U17) ----------
+class NoteCreate(Base):
+    scope: str                          # 'allgemein' | 'klasse'
+    class_id: Optional[int] = None      # Pflicht bei scope 'klasse'
+    body_md: str = ""
+
+
+class NoteUpdate(Base):
+    body_md: str
+
+
+class NoteOut(Base):
+    id: int
+    scope: str
+    class_id: Optional[int] = None
+    school_year_id: Optional[int] = None
+    body_md: str
+    archived_at: Optional[str] = None
+    created_at: str
+    updated_at: str
+
+
 # ---------- Ferien/Feiertage & Jahresplanung (Meilenstein 4) ----------
 class SchoolDateOut(Base):
     id: int
