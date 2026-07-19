@@ -356,3 +356,31 @@ tbody tr td:first-child { border-radius:10px 0 0 10px; } tbody tr td:last-child 
   .cal-layout, .cal-layout.side-collapsed { grid-template-columns: 1fr; }
   .cal-layout.side-collapsed .cal-side { display:flex; }
 }
+
+/* U26: Google-Verknüpfung im Termin-Modal */
+.badge.google { background:#dbeafe; color:#1e40af; }
+
+/* U25: Globale Volltextsuche — Topbar-Feld, Facetten-Chips, Ergebnisliste */
+.topbar-search { display:flex; align-items:center; gap:8px; margin-left:auto; }
+.topbar-search input[type="search"] { width:min(320px, 46vw); margin:0; }
+.search-facets { margin-top:12px; display:flex; flex-direction:column; gap:8px; }
+.facet-group { display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
+.facet-label { font-size:12px; font-weight:700; color:var(--muted); min-width:52px; }
+.facet-chip { border:1px solid var(--line); background:var(--surface); color:var(--text); border-radius:999px; padding:4px 11px; font-size:13px; cursor:pointer; transition:.12s; }
+.facet-chip:hover { background:var(--surface-2); }
+.facet-chip.active { background:var(--primary); border-color:var(--primary); color:#fff; }
+.facet-count { font-weight:700; opacity:.7; margin-left:2px; }
+.facet-chip.active .facet-count { opacity:.9; }
+.search-results { margin-top:14px; display:flex; flex-direction:column; gap:10px; }
+.search-result { background:var(--surface); border:1px solid var(--line); border-radius:var(--radius-sm); padding:12px 14px; }
+.search-result.nav { cursor:pointer; transition:.12s; }
+.search-result.nav:hover { border-color:var(--primary); box-shadow:var(--shadow); }
+.search-result-head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.search-type-badge { background:var(--surface-2); color:var(--primary-dark); border-radius:999px; padding:2px 9px; font-size:11px; font-weight:700; white-space:nowrap; }
+.search-meta { color:var(--muted); font-size:12px; }
+.search-snippet { margin-top:6px; font-size:13px; color:var(--muted); line-height:1.5; }
+.search-snippet mark { background:var(--yellow, #fde68a); color:inherit; padding:0 2px; border-radius:3px; }
+@media (max-width: 920px) {
+  .topbar-search { width:100%; margin:8px 0 0; }
+  .topbar-search input[type="search"] { width:100%; flex:1; }
+}

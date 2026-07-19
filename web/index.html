@@ -66,7 +66,22 @@
           <div class="page-sub" id="pageSub">Dein Tag auf einen Blick.</div>
         </div>
       </div>
+      <!-- U25: Globale Volltextsuche über alle Inhalte -->
+      <form class="topbar-search" id="globalSearchForm" role="search">
+        <input id="globalSearchInput" type="search" placeholder="Alles durchsuchen…" aria-label="Volltextsuche" autocomplete="off" />
+        <button class="btn small" type="submit">Suchen</button>
+      </form>
     </div>
+
+    <!-- SUCHE (U25) -->
+    <section id="suche" class="view hidden">
+      <div class="card">
+        <h2 id="searchHeading" style="margin-bottom:4px;">Suche</h2>
+        <p class="muted small" id="searchSummary">Gib oben einen Suchbegriff ein.</p>
+        <div class="search-facets" id="searchFacets"></div>
+      </div>
+      <div id="searchResultsGlobal" class="search-results"></div>
+    </section>
 
     <!-- HEUTE -->
     <section id="heute" class="view">

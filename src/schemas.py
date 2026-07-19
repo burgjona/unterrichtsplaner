@@ -311,6 +311,8 @@ class CalendarOut(Base):
     is_fixed: bool
     auto_generated: bool = False
     created_at: str
+    updated_at: Optional[str] = None          # U26: Last-write-wins-Zeitstempel (Google-Sync)
+    google_event_id: Optional[str] = None     # U26: gesetzt = mit Google-Kalender verknuepft
 
 
 # ---------- Kalender-Kategorien (U11) ----------

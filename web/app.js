@@ -1417,7 +1417,7 @@ function renderCalendar() {
         const cat = catById(e.categoryId);
         const style = cat ? ` style="border-left:4px solid ${esc(cat.color)}"` : "";
         const time = (!e.allDay && e.startTime) ? esc(e.startTime) + " " : "";
-        return `<div class="cal-entry ${esc(e.entryType)}" data-lesson="${e.lessonId == null ? "" : e.lessonId}"${style}>${time}${esc(e.title)}</div>`;
+        return `<div class="cal-entry ${esc(e.entryType)}" data-lesson="${e.lessonId == null ? "" : e.lessonId}" data-entry-id="${e.id}"${style}>${time}${esc(e.title)}</div>`;
       }).join("");
     return cell;
   };
@@ -1432,9 +1432,15 @@ function renderCalendar() {
     $("calLabel").textContent = "Woche " + isoWeek(d0) + ", " + d0.toLocaleDateString("de-DE", { year: "numeric" });
     for (let i = 0; i < 7; i++) { const d = new Date(d0); d.setDate(d0.getDate() + i); grid.appendChild(makeCell(d, false)); }
   }
-  grid.querySelectorAll("[data-lesson]").forEach((el) => {
+  grid.querySelectorAll(".cal-entry").forEach((el) => {
     const lid = el.dataset.lesson;
-    if (lid) el.onclick = () => { const l = state.lessons.find((x) => String(x.id) === lid); if (l) openLessonModal(l); };
+    if (lid) {
+      // U26: Stundentermin → direkt in die Stunden-Detailansicht springen (wie bisher).
+      el.onclick = () => { const l = state.lessons.find((x) => String(x.id) === lid); if (l) openLessonModal(l); };
+    } else if (el.dataset.entryId) {
+      // U26: manueller/Google-/Import-Termin → Bearbeiten-Modal (wie Google Kalender).
+      el.onclick = () => openCalendarEventModal(Number(el.dataset.entryId));
+    }
   });
   // U22: Klick auf die freie Fläche eines Tages öffnet das Termin-Popover (vorbefülltes Datum).
   grid.querySelectorAll(".cal-cell").forEach((cell) => {
@@ -1469,6 +1475,87 @@ async function saveCalendarEntry() {
     closeCalEntryPanel();
     await refresh(); toast("Termin gespeichert.");
   } catch (e) { toast(e.message, false); }
+}
+
+// U26: Klick auf einen (nicht stundengebundenen) Termin öffnet ein Bearbeiten-Modal
+// (wie Google Kalender). Google-verknüpfte Termine sind bearbeitbar und mit Badge markiert.
+function openCalendarEventModal(entryId) {
+  const e = state.calendar.find((x) => x.id === entryId);
+  if (!e) return;
+  const catOpts = `<option value="">— keine —</option>` +
+    state.calendarCategories.map((c) => `<option value="${c.id}"${c.id === e.categoryId ? " selected" : ""}>${esc(c.name)}</option>`).join("");
+  const classOpts = `<option value="">— keine —</option>` +
+    state.classes.map((c) => `<option value="${c.id}"${c.id === e.classId ? " selected" : ""}>${esc(c.name)} (${esc(c.subject)})</option>`).join("");
+  const typeOpts = [["lu", "Lernerfolgskontrolle"], ["exam", "Klassenarbeit/Präsentation"], ["normal", "Sonstiges"]]
+    .map(([v, lab]) => `<option value="${v}"${e.entryType === v ? " selected" : ""}>${lab}</option>`).join("");
+  const gBadge = e.googleEventId ? ` <span class="badge google">Google</span>` : "";
+  $("modalRoot").innerHTML =
+    `<div class="modal-overlay" id="modalOverlay"><div class="modal-box">
+      <button class="modal-close" id="modalCloseBtn">Schließen</button>
+      <h2>Termin bearbeiten${gBadge}</h2>
+      <div class="modal-section">
+        <div class="row">
+          <div><label>Titel</label><input id="evtTitle" value="${esc(e.title)}" /></div>
+          <div><label>Datum (von)</label><input id="evtDate" type="date" value="${esc(e.entryDate)}" /></div>
+        </div>
+        <div class="row">
+          <div><label>Enddatum (optional, mehrtägig)</label><input id="evtEndDate" type="date" value="${esc(e.endDate || "")}" /></div>
+          <div><label>Kategorie</label><select id="evtCategory">${catOpts}</select></div>
+        </div>
+        <label style="display:flex; align-items:center; gap:8px; margin-top:8px;"><input type="checkbox" id="evtAllDay" style="width:auto;"${e.allDay ? " checked" : ""} /> Ganztägig</label>
+        <div class="row" id="evtTimeRow" style="margin-top:8px; display:${e.allDay ? "none" : "flex"};">
+          <div><label>Uhrzeit von</label><input id="evtStartTime" type="time" value="${esc(e.startTime || "")}" /></div>
+          <div><label>Uhrzeit bis</label><input id="evtEndTime" type="time" value="${esc(e.endTime || "")}" /></div>
+        </div>
+        <div class="row" style="margin-top:8px;">
+          <div><label>Klasse</label><select id="evtClass">${classOpts}</select></div>
+          <div><label>Typ</label><select id="evtType">${typeOpts}</select></div>
+        </div>
+        <label style="display:flex; align-items:center; gap:8px; margin-top:8px;"><input type="checkbox" id="evtFixed" style="width:auto;"${e.isFixed ? " checked" : ""} /> Fixer Termin (nicht durch die Verplanung verschiebbar)</label>
+        ${e.googleEventId ? `<p class="muted small" style="margin-top:8px;">Mit Google-Kalender verknüpft — Änderungen werden beim nächsten Sync übertragen.</p>` : ""}
+      </div>
+      <div style="margin-top:14px; display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn" id="evtSaveBtn">Speichern</button>
+        <button class="btn danger" id="evtDeleteBtn">Löschen</button>
+        <button class="btn secondary" id="evtCancelBtn">Abbrechen</button>
+      </div>
+    </div></div>`;
+  $("modalOverlay").onclick = (ev) => { if (ev.target.id === "modalOverlay") closeModal(); };
+  $("modalCloseBtn").onclick = closeModal;
+  $("evtCancelBtn").onclick = closeModal;
+  $("evtAllDay").onchange = () => { $("evtTimeRow").style.display = $("evtAllDay").checked ? "none" : "flex"; };
+  $("evtSaveBtn").onclick = () => saveCalendarEventModal(e.id);
+  $("evtDeleteBtn").onclick = () => deleteCalendarEventModal(e.id);
+}
+
+async function saveCalendarEventModal(id) {
+  const title = $("evtTitle").value.trim(), date = $("evtDate").value;
+  if (!title || !date) { toast("Bitte Titel und Datum angeben.", false); return; }
+  const endDate = $("evtEndDate").value || null;
+  if (endDate && endDate < date) { toast("Enddatum darf nicht vor dem Startdatum liegen.", false); return; }
+  const allDay = $("evtAllDay").checked;
+  try {
+    await API.put("/calendar/" + id, {
+      title, entryDate: date, endDate, allDay,
+      startTime: allDay ? null : ($("evtStartTime").value || null),
+      endTime: allDay ? null : ($("evtEndTime").value || null),
+      entryType: $("evtType").value,
+      categoryId: $("evtCategory").value ? Number($("evtCategory").value) : null,
+      classId: $("evtClass").value ? Number($("evtClass").value) : null,
+      isFixed: $("evtFixed").checked,
+    });
+    closeModal();
+    await refresh(); toast("Termin aktualisiert.");
+  } catch (err) { toast(err.message, false); }
+}
+
+async function deleteCalendarEventModal(id) {
+  if (!confirm("Diesen Termin wirklich löschen?")) return;
+  try {
+    await API.del("/calendar/" + id);
+    closeModal();
+    await refresh(); toast("Termin gelöscht.");
+  } catch (err) { toast(err.message, false); }
 }
 
 /* ---------- Kalender-Kategorien (U11) ---------- */
@@ -2808,6 +2895,7 @@ const titles = {
   asuv: ["ASUV-Entwürfe", "Ausführlicher schriftlicher Unterrichtsentwurf je Stunde (folgt in M6)."],
   material: ["Materialbibliothek", "Material hochladen, taggen und wiederfinden (folgt in M5)."],
   settings: ["Einstellungen", "API-Key und Konto."],
+  suche: ["Suche", "Volltextsuche über alle Inhalte."],
 };
 function showView(view) {
   document.querySelectorAll(".nav-btn").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
@@ -2839,6 +2927,122 @@ function setNavCollapsed(collapsed) {
   btn.title = label;
   btn.setAttribute("aria-label", label);
   try { localStorage.setItem(NAV_COLLAPSED_KEY, collapsed ? "1" : "0"); } catch (e) { /* egal */ }
+}
+
+/* ---------- Globale Volltextsuche (U25) ---------- */
+const SEARCH_TYPE_LABELS = {
+  lesson: "Stunden", material: "Material", note: "Notizen", calendar: "Termine",
+  class: "Klassen", reflection: "Reflexionen", todo: "To-dos", asuv: "ASUV-Entwürfe",
+  stoffplan: "Stoffpläne", lernbereich: "Lernbereiche",
+};
+let searchState = { q: "", type: null, subject: null, grade: null };
+
+function runGlobalSearch(q) {
+  searchState = { q: (q || "").trim(), type: null, subject: null, grade: null };
+  showView("suche");
+  renderSearchResults();
+}
+
+// Snippet-Marker [[…]] des Servers → <mark>; Inhalt vorher escapen (XSS-sicher; esc lässt [ ] unberührt).
+function highlightSnippet(s) {
+  return esc(s || "").split("[[").join("<mark>").split("]]").join("</mark>");
+}
+
+function renderSearchFacets(facets) {
+  const chip = (dim, key, label, count, active) =>
+    `<button class="facet-chip${active ? " active" : ""}" data-fdim="${dim}" data-fkey="${esc(String(key))}">` +
+    `${esc(label)} <span class="facet-count">${count}</span></button>`;
+  const groups = [];
+  if (facets.types && facets.types.length)
+    groups.push(`<div class="facet-group"><span class="facet-label">Typ</span>` +
+      facets.types.map((f) => chip("type", f.key, SEARCH_TYPE_LABELS[f.key] || f.key, f.count, searchState.type === f.key)).join("") + `</div>`);
+  if (facets.subjects && facets.subjects.length)
+    groups.push(`<div class="facet-group"><span class="facet-label">Fach</span>` +
+      facets.subjects.map((f) => chip("subject", f.key, f.key, f.count, searchState.subject === f.key)).join("") + `</div>`);
+  if (facets.grades && facets.grades.length)
+    groups.push(`<div class="facet-group"><span class="facet-label">Klasse</span>` +
+      facets.grades.map((f) => chip("grade", f.key, "Klasse " + f.key, f.count, String(searchState.grade) === f.key)).join("") + `</div>`);
+  return groups.join("");
+}
+
+function renderSearchResultCard(r) {
+  const label = SEARCH_TYPE_LABELS[r.type] || r.type;
+  const meta = [];
+  if (r.subject) meta.push(esc(r.subject));
+  if (r.grade != null) meta.push("Klasse " + esc(String(r.grade)));
+  if (r.date) meta.push(esc(r.date));
+  if (r.type === "material" && r.pageFrom != null)
+    meta.push("S. " + esc(String(r.pageFrom)) + (r.pageTo && r.pageTo !== r.pageFrom ? "–" + esc(String(r.pageTo)) : ""));
+  const metaHtml = meta.length ? ` <span class="search-meta">${meta.join(" · ")}</span>` : "";
+  const snip = r.snippet ? `<div class="search-snippet">${highlightSnippet(r.snippet)}</div>` : "";
+  const nav = r.type !== "lernbereich";   // Lernbereiche haben kein Navigationsziel (nur Anzeige)
+  return `<div class="search-result${nav ? " nav" : ""}"${nav ? ` data-type="${esc(r.type)}" data-id="${r.id}"` : ""}>` +
+    `<div class="search-result-head"><span class="search-type-badge type-${esc(r.type)}">${esc(label)}</span> ` +
+    `<strong>${esc(r.title || "(ohne Titel)")}</strong>${metaHtml}</div>${snip}</div>`;
+}
+
+async function renderSearchResults() {
+  const heading = $("searchHeading"), summary = $("searchSummary");
+  const facetsWrap = $("searchFacets"), resWrap = $("searchResultsGlobal");
+  if (!heading) return;
+  const q = searchState.q;
+  if (!q) {
+    heading.textContent = "Suche"; summary.textContent = "Gib oben einen Suchbegriff ein.";
+    facetsWrap.innerHTML = ""; resWrap.innerHTML = ""; return;
+  }
+  heading.textContent = "Suche: „" + q + "“";
+  summary.textContent = "Suche läuft …";
+  const params = new URLSearchParams({ q });
+  if (searchState.type) params.set("type", searchState.type);
+  if (searchState.subject) params.set("subject", searchState.subject);
+  if (searchState.grade != null) params.set("grade", searchState.grade);
+  let data;
+  try { data = await API.get("/search?" + params.toString()); }
+  catch (e) { facetsWrap.innerHTML = ""; resWrap.innerHTML = ""; summary.textContent = "Fehler bei der Suche: " + e.message; return; }
+  const active = searchState.type || searchState.subject || searchState.grade != null;
+  summary.textContent = data.total + " Treffer" + (active ? " (gefiltert)" : "");
+  facetsWrap.innerHTML = renderSearchFacets(data.facets);
+  resWrap.innerHTML = data.results.length
+    ? data.results.map(renderSearchResultCard).join("")
+    : '<p class="muted small">Keine Treffer.</p>';
+  facetsWrap.querySelectorAll(".facet-chip").forEach((btn) => {
+    btn.onclick = () => {
+      const dim = btn.dataset.fdim, key = btn.dataset.fkey;
+      if (dim === "grade") searchState.grade = (String(searchState.grade) === key) ? null : Number(key);
+      else searchState[dim] = (searchState[dim] === key) ? null : key;
+      renderSearchResults();
+    };
+  });
+  resWrap.querySelectorAll(".search-result.nav").forEach((el) => {
+    el.onclick = () => openSearchResult(el.dataset.type, Number(el.dataset.id));
+  });
+}
+
+// Klick auf ein Suchergebnis → passende Ansicht/Detail öffnen.
+function openSearchResult(type, id) {
+  if (type === "lesson") {
+    const l = state.lessons.find((x) => x.id === id);
+    if (l) openLessonModal(l); else toast("Stunde nicht gefunden.", false);
+  } else if (type === "asuv") {
+    showView("asuv"); loadAsuv(id);                 // id = lesson_id
+  } else if (type === "material") {
+    showView("material");
+    const inp = $("matSearch"); if (inp) { inp.value = searchState.q; runSearch(); }
+  } else if (type === "calendar") {
+    showView("kalender");
+    const e = state.calendar.find((x) => x.id === id);
+    if (e) jumpCalendarToDate(e.entryDate);
+  } else if (type === "class") {
+    openClassDetail(id);
+  } else if (type === "note") {
+    showView("notizen");
+  } else if (type === "reflection") {
+    showView("reflexion");
+  } else if (type === "todo") {
+    showView("heute");
+  } else if (type === "stoffplan") {
+    showView("stoff");
+  }
 }
 
 /* ---------- Refresh ---------- */
@@ -2901,6 +3105,13 @@ function wireEvents() {
   buildPhases();
   renderLernziele();
   wireAppearance();
+  // U25: Globale Volltextsuche aus der Topbar (Enter/Button).
+  const gsf = $("globalSearchForm");
+  if (gsf) gsf.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const q = $("globalSearchInput").value.trim();
+    if (q) runGlobalSearch(q);
+  });
 
   document.querySelectorAll(".nav-btn").forEach((btn) => (btn.onclick = () => showView(btn.dataset.view)));
   document.querySelectorAll("[data-view-target]").forEach((el) => (el.onclick = () => showView(el.dataset.viewTarget)));
