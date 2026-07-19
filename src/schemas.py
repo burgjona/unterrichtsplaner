@@ -768,3 +768,34 @@ class SeatPlanAiArrange(Base):
     rows: int
     cols: int
     description: str
+
+
+# ---------- Globale Volltextsuche (U25) — ans Dateiende (Konfliktvermeidung) ----------
+class SearchFacet(Base):
+    key: str
+    count: int
+
+
+class SearchFacets(Base):
+    types: List[SearchFacet] = Field(default_factory=list)
+    subjects: List[SearchFacet] = Field(default_factory=list)
+    grades: List[SearchFacet] = Field(default_factory=list)
+
+
+class SearchResult(Base):
+    type: str                          # lesson|material|note|calendar|class|reflection|todo|asuv|stoffplan|lernbereich
+    id: int                            # Ziel-ID fürs Frontend (asuv/reflection = lesson_id)
+    title: str
+    snippet: str = ""                  # Markierungen [[…]] → Frontend ersetzt durch <mark>
+    subject: Optional[str] = None
+    grade: Optional[int] = None
+    date: Optional[str] = None         # nur calendar/lesson (Sprung zum Tag)
+    page_from: Optional[int] = None    # nur material (PDF-Treffer)
+    page_to: Optional[int] = None
+
+
+class SearchResponse(Base):
+    query: str
+    total: int
+    facets: SearchFacets
+    results: List[SearchResult] = Field(default_factory=list)
