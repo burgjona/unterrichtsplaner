@@ -801,3 +801,167 @@ class SearchResponse(Base):
     total: int
     facets: SearchFacets
     results: List[SearchResult] = Field(default_factory=list)
+
+
+# ---------- Mein Stundenplan (U27) ----------
+# Zeit- und Datumsfelder als gemusterte Strings: so sind Vergleiche lexikographisch
+# korrekt (feste Breite) und ungültige Werte ergeben schon im Schema 422.
+from typing import Literal  # lokal am Dateiende (Konfliktvermeidung mit Parallel-Units)
+
+_TIME_RE = r"^([01]\d|2[0-3]):[0-5]\d$"      # 00:00 … 23:59
+_DATE_RE = r"^\d{4}-\d{2}-\d{2}$"            # YYYY-MM-DD
+
+
+# --- Typen (Unterricht/Aufsicht/…) ---
+class TimetableKindCreate(Base):
+    name: str
+    color: str
+    sort_order: int = 0
+
+
+class TimetableKindUpdate(Base):
+    # is_default fehlt bewusst: der Default-Typ ist per PUT NICHT umsetzbar.
+    name: Optional[str] = None
+    color: Optional[str] = None
+    sort_order: Optional[int] = None
+
+
+class TimetableKindOut(Base):
+    id: int
+    name: str
+    color: str
+    is_default: bool
+    sort_order: int
+    created_at: str
+
+
+# --- Klingelraster-Slots ---
+class TimetableSlotCreate(Base):
+    position: int
+    slot_type: Literal["lesson", "break"] = "lesson"
+    label: str
+    start_time: str = Field(pattern=_TIME_RE)
+    end_time: str = Field(pattern=_TIME_RE)
+
+
+class TimetableSlotUpdate(Base):
+    position: Optional[int] = None
+    slot_type: Optional[Literal["lesson", "break"]] = None
+    label: Optional[str] = None
+    start_time: Optional[str] = Field(default=None, pattern=_TIME_RE)
+    end_time: Optional[str] = Field(default=None, pattern=_TIME_RE)
+
+
+class TimetableSlotOut(Base):
+    id: int
+    position: int
+    slot_type: str
+    label: str
+    start_time: str
+    end_time: str
+    created_at: str
+
+
+# --- Pläne ---
+class TimetablePlanCreate(Base):
+    name: str = ""
+    valid_from: str = Field(pattern=_DATE_RE)
+    copy_from_plan_id: Optional[int] = None     # Einträge dieses Plans in den neuen kopieren
+
+
+class TimetablePlanUpdate(Base):
+    name: Optional[str] = None
+    valid_from: Optional[str] = Field(default=None, pattern=_DATE_RE)
+
+
+class TimetablePlanOut(Base):
+    id: int
+    name: str
+    valid_from: str
+    created_at: str
+
+
+# --- Einträge ---
+class TimetableEntryCreate(Base):
+    plan_id: int
+    slot_id: int
+    kind_id: int
+    class_id: Optional[int] = None
+    weekday: int = Field(ge=0, le=4)
+    week_type: Literal["both", "A", "B"] = "both"
+    span_slots: int = Field(default=1, ge=1, le=12)
+    label: Optional[str] = None
+    room: Optional[str] = None
+    color: Optional[str] = None
+
+
+class TimetableEntryUpdate(Base):
+    plan_id: Optional[int] = None
+    slot_id: Optional[int] = None
+    kind_id: Optional[int] = None
+    class_id: Optional[int] = None
+    weekday: Optional[int] = Field(default=None, ge=0, le=4)
+    week_type: Optional[Literal["both", "A", "B"]] = None
+    span_slots: Optional[int] = Field(default=None, ge=1, le=12)
+    label: Optional[str] = None
+    room: Optional[str] = None
+    color: Optional[str] = None
+
+
+class TimetableEntryOut(Base):
+    id: int
+    plan_id: int
+    slot_id: int
+    kind_id: int
+    class_id: Optional[int] = None
+    weekday: int
+    week_type: str
+    span_slots: int
+    label: Optional[str] = None
+    room: Optional[str] = None
+    color: Optional[str] = None
+    created_at: str
+    updated_at: str
+
+
+# --- Einstellungen (A/B-Wochen-Parität) ---
+class TimetableSettingsUpdate(Base):
+    week_a_parity: Literal["odd", "even"]
+
+
+class TimetableSettingsOut(Base):
+    week_a_parity: str
+    iso_week: int                # ISO-Kalenderwoche HEUTE (serverseitig)
+    current_week_type: str       # 'A' | 'B' für HEUTE
+
+
+# --- Aufgelöste Wochenansicht (A/B serverseitig aufgelöst) ---
+class TimetableResolvedItem(Base):
+    entry_id: int
+    slot_id: int
+    slot_label: str
+    time_range: str              # "07:30–09:10" (en-dash)
+    title: str
+    subtitle: str
+    color: str
+    kind_id: int
+    kind_name: str
+    class_id: Optional[int] = None
+    week_type: str
+    span_slots: int
+    source: str                  # immer "plan" (Einsteckpunkt für spätere Overrides)
+
+
+class TimetableResolvedDay(Base):
+    date: str
+    weekday: int
+    items: List[TimetableResolvedItem] = Field(default_factory=list)
+
+
+class TimetableResolved(Base):
+    week_start: str
+    iso_week: int
+    week_type: str               # 'A' | 'B'
+    plan_id: int
+    plan_name: str
+    days: List[TimetableResolvedDay] = Field(default_factory=list)
