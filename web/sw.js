@@ -9,7 +9,7 @@
    dient nur noch dem einmaligen Verwerfen alter Caches beim activate-Schritt (skipWaiting +
    clients.claim übernehmen den neuen SW sofort). */
 
-const VERSION = "v2";
+const VERSION = "v3";
 const SHELL_CACHE = "ldb-shell-" + VERSION;
 const DATA_CACHE = "ldb-data-" + VERSION;
 
