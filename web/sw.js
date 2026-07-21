@@ -21,6 +21,7 @@ const SHELL_ASSETS = [
   "/index.html",
   "/app.js",
   "/api.js",
+  "/stundenplan.js",
   "/styles.css",
   "/themes.css",
   "/praesentation.css",

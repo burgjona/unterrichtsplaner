@@ -34,6 +34,7 @@
     <button class="nav-btn active" data-view="heute">Schulalltag heute</button>
     <button class="nav-btn" data-view="klassen">Klassen</button>
     <button class="nav-btn" data-view="kalender">Planungskalender</button>
+    <button class="nav-btn" data-view="stundenplan">Mein Stundenplan</button>
 
     <div class="section-label">Präsentation</div>
     <button class="nav-btn" data-view="praesentation">Schüleransicht</button>
@@ -301,6 +302,15 @@
           </div>
         </aside>
       </div>
+    </section>
+
+    <!-- MEIN STUNDENPLAN (U27b) — Wochenraster mit A/B-Wochen, Klingelzeiten, Editoren -->
+    <section id="stundenplan" class="view hidden">
+      <div id="ttToolbar" class="tt-toolbar card"></div>
+      <div id="ttEmpty" class="tt-empty hidden"></div>
+      <div class="tt-scroll"><div id="ttGrid" class="tt-grid"></div></div>
+      <div id="ttLegend" class="tt-legend"></div>
+      <div id="ttEditors" class="tt-editors hidden"></div>
     </section>
 
     <!-- PRÄSENTATION / SCHÜLERANSICHT -->
@@ -717,5 +727,6 @@
 <div id="modalRoot"></div>
 <script src="api.js"></script>
 <script src="app.js"></script>
+<script src="stundenplan.js"></script>
 </body>
 </html>
