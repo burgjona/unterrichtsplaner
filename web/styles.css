@@ -472,3 +472,78 @@ body.cmd-open { overflow:hidden; }
   .search-filters { position:static; flex-direction:row; flex-wrap:wrap; }
   .search-fbox { flex:1; min-width:150px; }
 }
+
+/* U27b: „Mein Stundenplan" — Wochenraster, getönte Chips, Editoren (Richtung A „Evolution").
+   Nur Design-Tokens → Jahreszeiten-/Dark-Themes greifen automatisch. Chip-Tönung setzt das
+   JS per color-mix inline (kein Farbstreifen-Rand). Mobile ausschließlich in @media; das
+   Raster scrollt im .tt-scroll-Wrapper → kein horizontales Scrollen der Seite. */
+.tt-toolbar { margin-bottom:14px; }
+.tt-toolbar-row { display:flex; flex-wrap:wrap; align-items:center; gap:10px 14px; }
+.tt-weekinfo { display:flex; align-items:baseline; gap:8px; }
+.tt-kw { font-size:15px; font-weight:500; color:var(--primary-dark); }
+.tt-weektype { padding:3px 10px; border-radius:999px; font-size:12px; font-weight:700; background:var(--surface-2); color:var(--primary-dark); border:1px solid var(--line); }
+.tt-weektype-A { background:var(--badge-ok-bg, #bbf7d0); color:var(--badge-ok-text, #14532d); border-color:transparent; }
+.tt-weektype-B { background:var(--note-bg, #fff7ed); color:var(--note-text, #9a3412); border-color:transparent; }
+.tt-abtoggle { margin-left:2px; }
+.tt-toolbar-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-left:auto; }
+.tt-plan-label { display:flex; align-items:center; gap:6px; margin:0; font-size:12px; color:var(--muted); font-weight:700; }
+.tt-plan-label select { width:auto; min-width:150px; }
+.tt-empty { background:var(--note-bg, #fff7ed); border:1px solid var(--note-border, #fed7aa); color:var(--note-text, #9a3412); border-radius:12px; padding:12px 14px; font-size:13px; margin-bottom:12px; }
+.tt-scroll { overflow-x:auto; padding-bottom:4px; }
+.tt-grid { display:grid; gap:4px; min-width:760px; }
+.tt-dayhead { text-align:center; padding-bottom:2px; align-self:end; }
+.tt-day-pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:13px; font-weight:500; color:var(--primary-dark); }
+.tt-day-pill.tt-today { background:var(--primary); color:#fff; }
+.tt-time { display:flex; flex-direction:column; align-items:flex-end; justify-content:center; text-align:right; padding-right:7px; gap:1px; }
+.tt-time-num { font-size:16px; font-weight:500; color:var(--primary-dark); line-height:1; }
+.tt-time-range { font-size:10px; color:var(--muted); }
+.tt-time-break { justify-content:center; }
+.tt-break-band { display:flex; align-items:center; padding:0 10px; background:var(--surface-2); border:1px solid var(--line); border-radius:8px; }
+.tt-break-label { font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); font-weight:700; }
+.tt-cell { background:var(--surface-2); border:1px solid var(--line); border-radius:10px; cursor:pointer; transition:background .15s; }
+.tt-cell:hover { background:var(--surface); }
+.tt-cell:focus-visible { outline:2px solid var(--primary); outline-offset:1px; }
+.tt-cell-break { background:transparent; border:none; border-radius:8px; }
+.tt-chip { position:relative; display:flex; align-items:center; gap:6px; padding:5px 8px; border-radius:10px; overflow:hidden; cursor:pointer; min-width:0; transition:transform .15s, box-shadow .15s; }
+.tt-chip:hover { transform:translateY(-1px); box-shadow:0 8px 18px rgba(20,83,45,.15); }
+.tt-chip:focus-visible { outline:2px solid var(--primary); outline-offset:1px; }
+.tt-chip-dot { flex:0 0 auto; width:7px; height:7px; border-radius:50%; }
+.tt-chip-main { min-width:0; display:flex; flex-direction:column; gap:1px; }
+.tt-chip-title { font-size:12px; font-weight:500; line-height:1.15; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tt-chip-sub { font-size:10px; opacity:.75; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tt-chip-ab { position:absolute; top:3px; right:4px; font-size:9px; font-weight:700; background:rgba(255,255,255,.7); color:#14261a; border-radius:5px; padding:0 4px; }
+.tt-skel { display:block; width:100%; height:100%; min-height:16px; border-radius:8px; background:var(--surface-2); animation:tt-pulse 1.2s ease-in-out infinite; }
+.tt-skel-head { height:16px; width:60%; margin:0 auto; }
+.tt-skel-time { height:16px; width:70%; }
+@keyframes tt-pulse { 0%,100% { opacity:1; } 50% { opacity:.5; } }
+.tt-legend { display:flex; flex-wrap:wrap; gap:12px; margin-top:12px; padding-top:11px; border-top:1px solid var(--line); }
+.tt-legend-item { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); }
+.tt-legend-dot { width:11px; height:11px; border-radius:50%; flex-shrink:0; }
+.tt-editors { display:grid; gap:16px; margin-top:16px; }
+.tt-editor-card h3 { margin-top:0; }
+.tt-slot-table { width:100%; border-collapse:collapse; font-size:13px; }
+.tt-slot-table th { text-align:left; font-size:11px; color:var(--muted); text-transform:uppercase; padding:4px 6px; }
+.tt-slot-table td { padding:3px 6px; vertical-align:middle; }
+.tt-slot-table input, .tt-slot-table select { width:100%; padding:7px 8px; }
+.tt-row-actions { display:flex; gap:6px; white-space:nowrap; }
+.tt-kind-add { display:flex; align-items:center; gap:8px; margin-top:10px; }
+.tt-kind-add input[type="text"] { flex:1; min-width:0; }
+.tt-default-badge { background:var(--surface-2); color:var(--muted); border:1px solid var(--line); }
+.tt-color-row { display:flex; align-items:center; gap:10px; }
+.tt-color-row input[type="color"] { width:44px; height:38px; padding:2px; flex-shrink:0; cursor:pointer; }
+.tt-auto-color { display:inline-flex; align-items:center; gap:6px; margin:0; font-weight:400; color:var(--muted); }
+.tt-auto-color input { width:auto; }
+@media (min-width: 921px) {
+  .tt-editors { grid-template-columns: 1fr 1fr; }
+  .tt-editors .tt-editor-card:first-child { grid-column: 1 / -1; }
+}
+@media (max-width: 600px) {
+  .tt-grid { min-width:680px; }
+  .tt-chip-title { font-size:11px; }
+  .tt-toolbar-actions { margin-left:0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tt-chip { transition:none; }
+  .tt-chip:hover { transform:none; }
+  .tt-skel { animation:none; }
+}
