@@ -260,7 +260,7 @@ function ttRenderGrid() {
   // Empty-State / Hinweis.
   const emptyEl = $("ttEmpty");
   if (!slots.length) {
-    emptyEl.textContent = "Noch keine Klingelzeiten – lege sie unter „Klingelzeiten" an.";
+    emptyEl.textContent = "Noch keine Klingelzeiten – lege sie im Editor darunter an.";
     emptyEl.classList.remove("hidden");
   } else if (!ttState.entries.length) {
     emptyEl.textContent = "Noch keine Einträge – tippe auf eine Zelle.";
@@ -431,7 +431,7 @@ function ttOpenPlanModal() {
 
 async function ttSavePlan() {
   const validFrom = $("ttpFrom").value;
-  if (!validFrom) { toast("Bitte ein „Gültig ab"-Datum angeben.", false); return; }
+  if (!validFrom) { toast("Bitte ein Datum angeben, ab dem der Plan gilt.", false); return; }
   const body = {
     name: $("ttpName").value.trim(),
     validFrom,
