@@ -22,8 +22,14 @@ _MAX_LIMIT = 200
 
 
 def _fts_terms(q: str) -> str:
-    """Jedes Wort als Phrase quoten → keine FTS-Syntaxfehler, implizites UND."""
-    return " ".join(f'"{w}"' for w in q.split() if w)
+    """Jedes Wort als gequotete Präfix-Phrase → Teilwort-Treffer.
+
+    Das Quoten verhindert FTS-Syntaxfehler (Sonderzeichen/Keywords) und hält das
+    implizite UND zwischen den Wörtern. Das nachgestellte ``*`` macht jedes Wort zur
+    Präfixsuche, sodass „Tara" auch „Taras"/„Tarantel" findet (Suche-als-Tippen).
+    remove_diacritics 2 des Index bleibt wirksam („Mul" findet „Müller").
+    """
+    return " ".join(f'"{w}" *' for w in q.split() if w)
 
 
 @router.get("", response_model=SearchResponse)

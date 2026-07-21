@@ -49,6 +49,20 @@ def test_search_snippet_has_markers(client, auth):
     assert "[[" in note["snippet"] and "]]" in note["snippet"]
 
 
+def test_search_prefix_matches_partial_word(client, auth):
+    # Teilwort-Suche: „Tara" muss den längeren Namen „Taras" finden (Präfix), nicht nur exakt.
+    client.post("/api/notes", json={"scope": "allgemein", "bodyMd": "Sitzplan: Taras neben Mira"})
+    partial = client.get("/api/search?q=Tara").json()
+    exact = client.get("/api/search?q=Taras").json()
+    assert partial["total"] >= 1
+    # Präfix findet mindestens die exakte Treffermenge
+    assert {(x["type"], x["id"]) for x in exact["results"]} <= \
+           {(x["type"], x["id"]) for x in partial["results"]}
+    # Präfix wirkt auch bei Umlaut-Namen: „Mul" findet „Müller"
+    client.post("/api/notes", json={"scope": "allgemein", "bodyMd": "Elterngespräch mit Familie Müller"})
+    assert client.get("/api/search?q=Mul").json()["total"] >= 1
+
+
 def test_search_type_filter_and_facets(client, auth):
     _mk_lesson(client, "Gedichtanalyse Herbst")
     client.post("/api/notes", json={"scope": "allgemein", "bodyMd": "Herbst Gedichte sammeln"})
