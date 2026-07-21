@@ -30,6 +30,13 @@
     </div>
     <div class="sub" id="sidebarKW"></div>
 
+    <!-- U27 (Variante C): Kommando-Suche öffnen (⌘K / Strg+K / „/") -->
+    <button class="nav-search-btn" id="cmdOpenBtn" type="button" aria-label="Suche öffnen">
+      <span class="nav-search-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14Z M20 20l-3.6-3.6"/></svg></span>
+      <span>Suchen</span>
+      <span class="nav-search-kbd" id="cmdOpenBtnKbd">⌘K</span>
+    </button>
+
     <div class="section-label">Übersicht</div>
     <button class="nav-btn active" data-view="heute">Schulalltag heute</button>
     <button class="nav-btn" data-view="klassen">Klassen</button>
@@ -73,14 +80,16 @@
       </form>
     </div>
 
-    <!-- SUCHE (U25) -->
+    <!-- SUCHE (U25; U27 Variante C: zweispaltig – Filter links, Treffer rechts) -->
     <section id="suche" class="view hidden">
-      <div class="card">
+      <div class="card search-head">
         <h2 id="searchHeading" style="margin-bottom:4px;">Suche</h2>
         <p class="muted small" id="searchSummary">Gib oben einen Suchbegriff ein.</p>
-        <div class="search-facets" id="searchFacets"></div>
       </div>
-      <div id="searchResultsGlobal" class="search-results"></div>
+      <div class="search-layout">
+        <div class="search-filters" id="searchFacets"></div>
+        <div id="searchResultsGlobal" class="search-results"></div>
+      </div>
     </section>
 
     <!-- HEUTE -->
@@ -712,6 +721,22 @@
     <div style="margin-top:14px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
       <button class="btn" id="authSubmit">Anmelden</button>
       <button class="btn ghost" id="authToggle">Erstes Konto anlegen</button>
+    </div>
+  </div>
+</div>
+
+<!-- U27 (Variante C): Kommando-Palette – globale Suche & Sprünge (⌘K / Strg+K / „/") -->
+<div id="cmdPalette" class="cmd-palette hidden" role="dialog" aria-modal="true" aria-label="Kommando-Suche">
+  <div class="cmd-backdrop" data-cmd-close></div>
+  <div class="cmd-box">
+    <div class="cmd-input-row">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14Z M20 20l-3.6-3.6"/></svg>
+      <input id="cmdInput" type="search" placeholder="Suchen oder springen …" autocomplete="off" aria-label="Suche" role="combobox" aria-expanded="true" aria-controls="cmdResults" />
+      <button class="cmd-esc" type="button" data-cmd-close aria-label="Schließen">esc</button>
+    </div>
+    <div id="cmdResults" class="cmd-results" role="listbox" aria-label="Suchergebnisse"></div>
+    <div class="cmd-foot">
+      <span><b>↑↓</b> wählen</span><span><b>↵</b> öffnen</span><span><b>esc</b> schließen</span>
     </div>
   </div>
 </div>

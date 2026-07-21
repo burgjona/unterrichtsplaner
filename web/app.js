@@ -3017,12 +3017,7 @@ function setNavCollapsed(collapsed) {
   try { localStorage.setItem(NAV_COLLAPSED_KEY, collapsed ? "1" : "0"); } catch (e) { /* egal */ }
 }
 
-/* ---------- Globale Volltextsuche (U25) ---------- */
-const SEARCH_TYPE_LABELS = {
-  lesson: "Stunden", material: "Material", note: "Notizen", calendar: "Termine",
-  class: "Klassen", reflection: "Reflexionen", todo: "To-dos", asuv: "ASUV-Entwürfe",
-  stoffplan: "Stoffpläne", lernbereich: "Lernbereiche",
-};
+/* ---------- Globale Volltextsuche (U25; Typ-Metadaten siehe SEARCH_TYPE_META) ---------- */
 let searchState = { q: "", type: null, subject: null, grade: null };
 
 function runGlobalSearch(q) {
@@ -3036,28 +3031,33 @@ function highlightSnippet(s) {
   return esc(s || "").split("[[").join("<mark>").split("]]").join("</mark>");
 }
 
+// U27 (Variante C): Facetten als Filter-Seitenleiste (Boxen Typ/Fach/Klasse mit farbigen Punkten + Zählern).
 function renderSearchFacets(facets) {
-  const chip = (dim, key, label, count, active) =>
-    `<button class="facet-chip${active ? " active" : ""}" data-fdim="${dim}" data-fkey="${esc(String(key))}">` +
-    `${esc(label)} <span class="facet-count">${count}</span></button>`;
+  const item = (dim, key, label, count, active, dotColor) =>
+    `<button class="search-fitem${active ? " on" : ""}" data-fdim="${dim}" data-fkey="${esc(String(key))}">` +
+    `<span class="search-fdot"${dotColor ? ` style="background:${dotColor}"` : ""}></span>` +
+    `<span class="search-flabel">${esc(label)}</span><span class="search-fn">${count}</span></button>`;
+  const box = (title, inner) => `<div class="search-fbox"><h4>${title}</h4>${inner}</div>`;
   const groups = [];
-  if (facets.types && facets.types.length)
-    groups.push(`<div class="facet-group"><span class="facet-label">Typ</span>` +
-      facets.types.map((f) => chip("type", f.key, SEARCH_TYPE_LABELS[f.key] || f.key, f.count, searchState.type === f.key)).join("") + `</div>`);
+  if (facets.types && facets.types.length) {
+    const total = facets.types.reduce((s, f) => s + f.count, 0);
+    let inner = item("type", "", "Alle", total, !searchState.type, "");
+    inner += facets.types.map((f) => item("type", f.key, cmdTypeMeta(f.key).pl, f.count, searchState.type === f.key, cmdTypeMeta(f.key).color)).join("");
+    groups.push(box("Typ", inner));
+  }
   if (facets.subjects && facets.subjects.length)
-    groups.push(`<div class="facet-group"><span class="facet-label">Fach</span>` +
-      facets.subjects.map((f) => chip("subject", f.key, f.key, f.count, searchState.subject === f.key)).join("") + `</div>`);
+    groups.push(box("Fach", facets.subjects.map((f) => item("subject", f.key, f.key, f.count, searchState.subject === f.key, "")).join("")));
   if (facets.grades && facets.grades.length)
-    groups.push(`<div class="facet-group"><span class="facet-label">Klasse</span>` +
-      facets.grades.map((f) => chip("grade", f.key, "Klasse " + f.key, f.count, String(searchState.grade) === f.key)).join("") + `</div>`);
+    groups.push(box("Klasse", facets.grades.map((f) => item("grade", f.key, "Klasse " + f.key, f.count, String(searchState.grade) === f.key, "")).join("")));
   return groups.join("");
 }
 
+// U27 (Variante C): dichte Trefferzeile mit farbigem Typ-Icon + farbigem Typ-Label.
 function renderSearchResultCard(r) {
-  const label = SEARCH_TYPE_LABELS[r.type] || r.type;
+  const m = cmdTypeMeta(r.type);
   const meta = [];
   if (r.subject) meta.push(esc(r.subject));
-  if (r.grade != null) meta.push("Klasse " + esc(String(r.grade)));
+  if (r.grade != null) meta.push("Kl. " + esc(String(r.grade)));
   if (r.date) meta.push(esc(r.date));
   if (r.type === "material" && r.pageFrom != null)
     meta.push("S. " + esc(String(r.pageFrom)) + (r.pageTo && r.pageTo !== r.pageFrom ? "–" + esc(String(r.pageTo)) : ""));
@@ -3065,8 +3065,10 @@ function renderSearchResultCard(r) {
   const snip = r.snippet ? `<div class="search-snippet">${highlightSnippet(r.snippet)}</div>` : "";
   const nav = r.type !== "lernbereich";   // Lernbereiche haben kein Navigationsziel (nur Anzeige)
   return `<div class="search-result${nav ? " nav" : ""}"${nav ? ` data-type="${esc(r.type)}" data-id="${r.id}"` : ""}>` +
-    `<div class="search-result-head"><span class="search-type-badge type-${esc(r.type)}">${esc(label)}</span> ` +
-    `<strong>${esc(r.title || "(ohne Titel)")}</strong>${metaHtml}</div>${snip}</div>`;
+    `<span class="search-result-ic" style="background:${cmdTint(m.color, .13)}; color:${m.color}">${cmdSvg(m.icon)}</span>` +
+    `<div class="search-result-body"><div class="search-result-head">` +
+    `<span class="search-type-badge" style="color:${m.color}">${esc(m.label)}</span> ` +
+    `<strong class="search-result-title">${esc(r.title || "(ohne Titel)")}</strong>${metaHtml}</div>${snip}</div></div>`;
 }
 
 async function renderSearchResults() {
@@ -3093,11 +3095,11 @@ async function renderSearchResults() {
   resWrap.innerHTML = data.results.length
     ? data.results.map(renderSearchResultCard).join("")
     : '<p class="muted small">Keine Treffer.</p>';
-  facetsWrap.querySelectorAll(".facet-chip").forEach((btn) => {
+  facetsWrap.querySelectorAll(".search-fitem").forEach((btn) => {
     btn.onclick = () => {
       const dim = btn.dataset.fdim, key = btn.dataset.fkey;
       if (dim === "grade") searchState.grade = (String(searchState.grade) === key) ? null : Number(key);
-      else searchState[dim] = (searchState[dim] === key) ? null : key;
+      else searchState[dim] = (key === "" || searchState[dim] === key) ? null : key;   // "" = „Alle" (Filter leeren)
       renderSearchResults();
     };
   });
@@ -3131,6 +3133,251 @@ function openSearchResult(type, id) {
   } else if (type === "stoffplan") {
     showView("stoff");
   }
+}
+
+/* ---------- Kommando-Palette (U27, Variante C): globale Suche + Sprünge (⌘K/Strg+K/„/") ---------- */
+// Typ-Metadaten: Farbe + Icon-Pfad + Plural. Statisch (keine Nutzerdaten → in svg/Style kein esc nötig).
+const SEARCH_TYPE_META = {
+  lesson:      { label: "Stunde",      pl: "Stunden",       color: "#16a34a", icon: "M12 6.3c-1.5-1.2-3.9-1.7-7.2-1.7V17c3.3 0 5.7.5 7.2 1.7 1.5-1.2 3.9-1.7 7.2-1.7V4.6c-3.3 0-5.7.5-7.2 1.7Z M12 6.3v12.4" },
+  material:    { label: "Material",    pl: "Materialien",   color: "#0284c7", icon: "M7 3.5h6.5L18 8v11.5a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1Z M13.3 3.6V8H18" },
+  calendar:    { label: "Termin",      pl: "Termine",       color: "#ea580c", icon: "M4.5 6.5A1.5 1.5 0 0 1 6 5h12a1.5 1.5 0 0 1 1.5 1.5v11A1.5 1.5 0 0 1 18 19H6a1.5 1.5 0 0 1-1.5-1.5Z M4.5 9.3h15 M8.3 3.5v3 M15.7 3.5v3" },
+  stoffplan:   { label: "Stoffplan",   pl: "Stoffpläne",    color: "#0d9488", icon: "M9 6.2h11 M9 12h11 M9 17.8h11 M4.6 6.2h.01 M4.6 12h.01 M4.6 17.8h.01" },
+  reflection:  { label: "Reflexion",   pl: "Reflexionen",   color: "#b45309", icon: "M4.5 5.5h15v9h-8.7L6 18v-3.5H4.5Z M8.4 10h.01 M12 10h.01 M15.6 10h.01" },
+  note:        { label: "Notiz",       pl: "Notizen",       color: "#db2777", icon: "M4 20h4L19 9l-4-4L4 16Z M14.2 5.8 18 9.6" },
+  asuv:        { label: "ASUV",        pl: "ASUV-Entwürfe", color: "#15803d", icon: "M7 3.5h6.5L18 8v11.5a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1Z M13.3 3.6V8H18 M9.4 14.4l1.9 1.9 3.4-3.9" },
+  todo:        { label: "To-do",       pl: "To-dos",        color: "#059669", icon: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z M8.4 12l2.3 2.3L15.6 9.2" },
+  class:       { label: "Klasse",      pl: "Klassen",       color: "#9333ea", icon: "M9 11.2a3.1 3.1 0 1 0 0-6.2 3.1 3.1 0 0 0 0 6.2Z M3.4 19.4c0-3.1 2.6-4.8 5.6-4.8s5.6 1.7 5.6 4.8 M16.4 5.3a3 3 0 0 1 0 5.7 M17.3 14.8c2.2.4 3.8 1.8 3.8 4.6" },
+  lernbereich: { label: "Lernbereich", pl: "Lernbereiche",  color: "#475569", icon: "M7 4h10v16l-5-3.8L7 20Z" },
+};
+const CMD_SEARCH_ICON = "M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14Z M20 20l-3.6-3.6";
+const CMD_BOLT_ICON = "M13 3 5.2 13H10l-1 8 7.8-10H12l1-8Z";
+function cmdTypeMeta(t) { return SEARCH_TYPE_META[t] || { label: t, pl: t, color: "#475569", icon: CMD_BOLT_ICON }; }
+function cmdSvg(d) {
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${d}"/></svg>`;
+}
+function cmdTint(hex, a) {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+
+// Sprünge = reine Ansichts-Navigation (Umfang: „Suche + Sprünge", kein Anlegen).
+const CMD_ACTIONS = [
+  { label: "Schulalltag heute", view: "heute", kw: "heute start dashboard tag todo" },
+  { label: "Klassen", view: "klassen", kw: "klassen klasse schueler schüler" },
+  { label: "Planungskalender", view: "kalender", kw: "kalender termine termin planung" },
+  { label: "Stoffverteilungsplan", view: "stoff", kw: "stoff stoffverteilung jahresplan plan" },
+  { label: "Unterrichtsplanung", view: "stunde", kw: "stunde unterricht planen neue" },
+  { label: "Reflexion", view: "reflexion", kw: "reflexion reflektieren journal ampel" },
+  { label: "Notizen", view: "notizen", kw: "notiz notizen gedanken" },
+  { label: "ASUV-Entwürfe", view: "asuv", kw: "asuv entwurf lehrprobe" },
+  { label: "Materialbibliothek", view: "material", kw: "material datei upload bibliothek" },
+  { label: "Schüleransicht", view: "praesentation", kw: "praesentation präsentation schueler schüler beamer" },
+  { label: "Einstellungen", view: "settings", kw: "einstellungen settings api schuljahr darstellung" },
+];
+
+let cmdState = { open: false, q: "", entries: [], selectable: [], activeIdx: -1, seq: 0 };
+let _cmdTimer = null, _cmdOpener = null;
+const cmdIsMac = (() => {
+  try { return /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent || ""); }
+  catch (e) { return false; }
+})();
+const cmdShortcutLabel = cmdIsMac ? "⌘K" : "Strg+K";
+
+function openCmdPalette() {
+  const pal = $("cmdPalette"); if (!pal) return;
+  _cmdOpener = document.activeElement;
+  cmdState.open = true;
+  pal.classList.remove("hidden");
+  document.body.classList.add("cmd-open");
+  const inp = $("cmdInput");
+  inp.value = cmdState.q || "";
+  inp.focus(); inp.select();
+  cmdRunSearch(inp.value);
+}
+function closeCmdPalette() {
+  const pal = $("cmdPalette"); if (!pal) return;
+  cmdState.open = false;
+  clearTimeout(_cmdTimer);
+  pal.classList.add("hidden");
+  document.body.classList.remove("cmd-open");
+  if (_cmdOpener && _cmdOpener.focus) { try { _cmdOpener.focus(); } catch (e) { /* egal */ } }
+}
+function toggleCmdPalette() { cmdState.open ? closeCmdPalette() : openCmdPalette(); }
+
+function cmdMatchActions(q) {
+  const s = q.trim().toLowerCase();
+  const base = s
+    ? CMD_ACTIONS.filter((a) => a.label.toLowerCase().includes(s) || a.kw.includes(s))
+    : CMD_ACTIONS.slice(0, 6);
+  return base.slice(0, 6);
+}
+
+// Entprellte Live-Suche; veraltete Antworten werden per Sequenznummer verworfen.
+function cmdRunSearch(q) {
+  cmdState.q = q;
+  clearTimeout(_cmdTimer);
+  const term = (q || "").trim();
+  const seq = ++cmdState.seq;
+  if (term.length < 2) { cmdBuild({ results: [], facets: { types: [] }, total: 0 }, term); return; }
+  _cmdTimer = setTimeout(async () => {
+    try {
+      const data = await API.get("/search?" + new URLSearchParams({ q: term, limit: "30" }).toString());
+      if (seq !== cmdState.seq) return;
+      cmdBuild(data, term);
+    } catch (e) {
+      if (seq !== cmdState.seq) return;
+      cmdBuild({ results: [], facets: { types: [] }, total: 0, error: e.message }, term);
+    }
+  }, 200);
+}
+
+// Ordnet Treffer nach Typ, ergänzt Sprünge + „Alle Ergebnisse"; baut die flache Auswahl-Liste.
+function cmdBuild(data, term) {
+  const entries = [];
+  const groups = {};
+  (data.results || []).forEach((r) => { (groups[r.type] = groups[r.type] || []).push(r); });
+  const order = (data.facets && data.facets.types) ? data.facets.types.map((f) => f.key) : Object.keys(groups);
+  const counts = {};
+  if (data.facets && data.facets.types) data.facets.types.forEach((f) => (counts[f.key] = f.count));
+
+  order.forEach((t) => {
+    const rows = (groups[t] || []).slice(0, 4);
+    if (!rows.length) return;
+    const m = cmdTypeMeta(t);
+    entries.push({ t: "header", label: m.pl, color: m.color, count: counts[t] != null ? counts[t] : rows.length });
+    rows.forEach((r) => entries.push({ t: "result", type: r.type, id: r.id, r }));
+  });
+
+  const actions = cmdMatchActions(term);
+  if (actions.length) {
+    entries.push({ t: "header", label: "Sprünge" });
+    actions.forEach((a) => entries.push({ t: "action", label: a.label, view: a.view }));
+  }
+  if (term.length >= 2) entries.push({ t: "all", term, total: data.total || 0 });
+
+  cmdState.entries = entries;
+  cmdState.selectable = entries.map((e, i) => (e.t !== "header" ? i : -1)).filter((i) => i >= 0);
+  cmdState.activeIdx = cmdState.selectable.length ? cmdState.selectable[0] : -1;
+  cmdRender(data, term);
+}
+
+function cmdRender(data, term) {
+  const box = $("cmdResults"); if (!box) return;
+  const entries = cmdState.entries || [];
+  let html = "";
+  if (data && data.error) html += `<div class="cmd-empty">Fehler bei der Suche: ${esc(data.error)}</div>`;
+  if (!entries.length) {
+    html += `<div class="cmd-empty">${term && term.length >= 2 ? "Keine Treffer." : "Mindestens zwei Zeichen tippen, um zu suchen."}</div>`;
+  }
+  entries.forEach((e, i) => {
+    if (e.t === "header") {
+      html += `<div class="cmd-sec">${esc(e.label)}` +
+        (e.count != null ? ` <span class="cmd-sec-n" style="background:${e.color}">${esc(String(e.count))}</span>` : "") + `</div>`;
+      return;
+    }
+    const sel = i === cmdState.activeIdx;
+    const cls = "cmd-row" + (e.t === "all" ? " cmd-row-all" : "") + (sel ? " active" : "");
+    const attrs = ` role="option" data-idx="${i}" aria-selected="${sel ? "true" : "false"}"`;
+    if (e.t === "result") {
+      const m = cmdTypeMeta(e.type);
+      const meta = [];
+      if (e.r.subject) meta.push(esc(e.r.subject));
+      if (e.r.grade != null) meta.push("Kl. " + esc(String(e.r.grade)));
+      if (e.r.date) meta.push(esc(e.r.date));
+      if (e.type === "material" && e.r.pageFrom != null)
+        meta.push("S. " + esc(String(e.r.pageFrom)) + (e.r.pageTo && e.r.pageTo !== e.r.pageFrom ? "–" + esc(String(e.r.pageTo)) : ""));
+      html += `<div class="${cls}"${attrs}>` +
+        `<span class="cmd-ic" style="background:${cmdTint(m.color, .14)}; color:${m.color}">${cmdSvg(m.icon)}</span>` +
+        `<span class="cmd-main"><span class="cmd-title">${esc(e.r.title || "(ohne Titel)")}</span>` +
+        `<span class="cmd-sub">${esc(m.label)}${meta.length ? " · " + meta.join(" · ") : ""}</span></span>` +
+        (e.r.snippet ? `<span class="cmd-snip">${highlightSnippet(e.r.snippet)}</span>` : "<span></span>") +
+        `</div>`;
+    } else if (e.t === "action") {
+      html += `<div class="${cls}"${attrs}>` +
+        `<span class="cmd-ic" style="background:${cmdTint("#16a34a", .12)}; color:#16a34a">${cmdSvg(CMD_BOLT_ICON)}</span>` +
+        `<span class="cmd-main"><span class="cmd-title">${esc(e.label)}</span><span class="cmd-sub">Ansicht öffnen</span></span>` +
+        `<span class="cmd-tag">Sprung</span></div>`;
+    } else if (e.t === "all") {
+      html += `<div class="${cls}"${attrs}>` +
+        `<span class="cmd-ic" style="background:${cmdTint("#16a34a", .12)}; color:#16a34a">${cmdSvg(CMD_SEARCH_ICON)}</span>` +
+        `<span class="cmd-main"><span class="cmd-title">Alle Ergebnisse für „${esc(e.term)}" anzeigen</span>` +
+        `<span class="cmd-sub">${esc(String(e.total))} Treffer · öffnet die Ergebnisseite</span></span><span></span></div>`;
+    }
+  });
+  box.innerHTML = html;
+  box.querySelectorAll(".cmd-row").forEach((el) => {
+    const idx = Number(el.dataset.idx);
+    el.addEventListener("mousemove", () => { if (idx !== cmdState.activeIdx) { cmdState.activeIdx = idx; cmdSyncActive(); } });
+    el.addEventListener("click", () => cmdActivate(idx));
+  });
+  cmdScrollActive();
+}
+
+function cmdSyncActive() {
+  const box = $("cmdResults"); if (!box) return;
+  box.querySelectorAll(".cmd-row").forEach((el) => {
+    const on = Number(el.dataset.idx) === cmdState.activeIdx;
+    el.classList.toggle("active", on);
+    el.setAttribute("aria-selected", on ? "true" : "false");
+  });
+  cmdScrollActive();
+}
+function cmdScrollActive() {
+  const box = $("cmdResults"); if (!box) return;
+  const el = box.querySelector(".cmd-row.active");
+  if (el && el.scrollIntoView) el.scrollIntoView({ block: "nearest" });
+}
+function cmdMove(dir) {
+  const sel = cmdState.selectable || [];
+  if (!sel.length) return;
+  let pos = sel.indexOf(cmdState.activeIdx);
+  pos = (pos + dir + sel.length) % sel.length;
+  cmdState.activeIdx = sel[pos];
+  cmdSyncActive();
+}
+function cmdActivate(idx) {
+  const e = (cmdState.entries || [])[idx];
+  if (!e) return;
+  if (e.t === "result") {
+    searchState.q = cmdState.q;          // Material-Deeplink in openSearchResult nutzt searchState.q
+    closeCmdPalette();
+    openSearchResult(e.type, e.id);
+  } else if (e.t === "action") {
+    closeCmdPalette();
+    showView(e.view);
+  } else if (e.t === "all") {
+    closeCmdPalette();
+    runGlobalSearch(e.term);
+  }
+}
+function cmdInputKeydown(e) {
+  if (e.key === "ArrowDown") { e.preventDefault(); cmdMove(1); }
+  else if (e.key === "ArrowUp") { e.preventDefault(); cmdMove(-1); }
+  else if (e.key === "Enter") { e.preventDefault(); if (cmdState.activeIdx >= 0) cmdActivate(cmdState.activeIdx); }
+  else if (e.key === "Escape") { e.preventDefault(); closeCmdPalette(); }
+}
+function cmdIsTypingTarget(t) {
+  if (!t || !t.tagName) return false;
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return true;
+  return !!t.isContentEditable;
+}
+function cmdAuthOpen() { const o = $("authOverlay"); return !!(o && !o.classList.contains("hidden")); }
+function cmdGlobalKeydown(e) {
+  if ((e.metaKey || e.ctrlKey) && !e.altKey && (e.key === "k" || e.key === "K")) {
+    e.preventDefault(); if (!cmdAuthOpen()) toggleCmdPalette(); return;
+  }
+  if (cmdState.open) { if (e.key === "Escape") { e.preventDefault(); closeCmdPalette(); } return; }
+  if (e.key === "/" && !cmdIsTypingTarget(e.target) && !cmdAuthOpen()) { e.preventDefault(); openCmdPalette(); }
+}
+function wireCmdPalette() {
+  const pal = $("cmdPalette"); if (!pal) return;
+  const inp = $("cmdInput");
+  inp.addEventListener("input", () => cmdRunSearch(inp.value));
+  inp.addEventListener("keydown", cmdInputKeydown);
+  pal.querySelectorAll("[data-cmd-close]").forEach((el) => (el.onclick = closeCmdPalette));
+  const trg = $("cmdOpenBtn"); if (trg) trg.onclick = openCmdPalette;
+  const kbd = $("cmdOpenBtnKbd"); if (kbd) kbd.textContent = cmdShortcutLabel;
+  document.addEventListener("keydown", cmdGlobalKeydown);
 }
 
 /* ---------- Refresh ---------- */
@@ -3200,6 +3447,7 @@ function wireEvents() {
     const q = $("globalSearchInput").value.trim();
     if (q) runGlobalSearch(q);
   });
+  wireCmdPalette();   // U27 (Variante C): Kommando-Palette (⌘K / Strg+K / „/")
 
   document.querySelectorAll(".nav-btn").forEach((btn) => (btn.onclick = () => showView(btn.dataset.view)));
   document.querySelectorAll("[data-view-target]").forEach((el) => (el.onclick = () => showView(el.dataset.viewTarget)));
