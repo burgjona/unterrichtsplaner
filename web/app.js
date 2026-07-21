@@ -1348,6 +1348,87 @@ function parseIso(s) {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s || "");
   return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
 }
+
+/* ---------- U27c: blasse Stundenplan-Ebene im Wochen-Kalender ----------
+   Rein additive, abschaltbare Kalender-Ebene (nur Wochen-Modus). Die A/B-Woche
+   liefert der Server FERTIG (weekType) — NIE clientseitig aus der KW nachrechnen.
+   Alle Top-Level-Namen mit Präfix calTt (U27b belegt tt* im selben Scope). */
+const CAL_TT_KEY = "ldb_cal_tt_layer";
+let calTtOn = true;                                      // Default: an
+try { calTtOn = localStorage.getItem(CAL_TT_KEY) !== "0"; } catch (e) { /* Storage evtl. blockiert */ }
+let calTtAvailable = false;                              // erst nach erfolgreichem Fetch (404-Degradation)
+let calTtGen = 0;                                        // Render-Generation gegen veraltete Async-Anwendung
+const calTtCache = new Map();                            // mondayStr → { data, time } | { promise, time }
+
+// Nur Hex-Farben zulassen → keine CSS-Injection über das style-Attribut; sonst neutraler Fallback.
+function calTtSafeColor(c) {
+  return (typeof c === "string" && /^#[0-9a-fA-F]{3,8}$/.test(c)) ? c : "#94a3b8";
+}
+// Resolved-Woche holen: Cache je Montag (TTL 5 Min), In-Flight-Dedupe über gespeicherte Promise.
+async function calTtFetch(mondayStr) {
+  const now = Date.now();
+  const hit = calTtCache.get(mondayStr);
+  if (hit) {
+    if (hit.promise) return hit.promise;                 // läuft schon → dedupe
+    if (now - hit.time < 300000) return hit.data;        // frisch → aus Cache
+  }
+  const promise = API.get("/stundenplan/resolved?start=" + encodeURIComponent(mondayStr));
+  calTtCache.set(mondayStr, { promise, time: now });
+  try {
+    const data = await promise;
+    calTtCache.set(mondayStr, { data, time: Date.now() });
+    return data;
+  } catch (e) {
+    calTtCache.delete(mondayStr);                        // Fehler nicht cachen (Retry erlauben)
+    throw e;
+  }
+}
+// Blasse Chips (Farbpunkt + zarte Tönung + Titel) in die Mo–Fr-Kacheln injizieren — nach .cal-daynum.
+function calTtApplyToCells(data) {
+  const grid = $("calGrid");
+  if (!grid || !data || !Array.isArray(data.days)) return;
+  data.days.forEach((day) => {
+    if (!day || !day.date || !Array.isArray(day.items) || !day.items.length) return;
+    const cell = grid.querySelector('.cal-cell[data-date="' + day.date + '"]');
+    if (!cell) return;
+    const strip = document.createElement("div");
+    strip.className = "cal-tt-strip";
+    strip.innerHTML = day.items.map((it) => {
+      const color = calTtSafeColor(it.color);            // nur Hex → im style-Attribut abgesichert
+      const tip = [it.timeRange, it.subtitle].filter(Boolean).join(" · ");
+      return '<span class="cal-tt-chip" style="--cal-tt-c:' + esc(color) + '" title="' + esc(tip) + '">' +
+        '<span class="cal-tt-dot"></span>' +
+        '<span class="cal-tt-title">' + esc(it.title) + '</span></span>';
+    }).join("");
+    const dayNum = cell.querySelector(".cal-daynum");
+    cell.insertBefore(strip, dayNum ? dayNum.nextSibling : cell.firstChild);
+  });
+}
+// Wochen-Render-Nachlauf: Verfügbarkeit ermitteln, Toggle/Badge pflegen, Chips einspielen.
+async function calTtRenderWeek(mondayStr, gen) {
+  let data;
+  try {
+    data = await calTtFetch(mondayStr);
+  } catch (e) {
+    if (e && e.status === 404) {                         // Route/Backend fehlt → sauber degradieren
+      calTtAvailable = false;
+      const tgl = $("calTtToggle"); if (tgl) tgl.classList.add("hidden");
+      const bdg = $("calWeekBadge"); if (bdg) bdg.classList.add("hidden");
+    }
+    return;                                              // andere Fehler (offline) still schlucken
+  }
+  if (gen !== calTtGen || calMode !== "week") return;    // Render veraltet/Modus gewechselt → nichts anwenden
+  calTtAvailable = true;
+  const tgl = $("calTtToggle");
+  if (tgl) { tgl.classList.remove("hidden"); tgl.classList.toggle("active", calTtOn); }
+  const bdg = $("calWeekBadge");
+  if (bdg) {
+    const wt = data.weekType;
+    if (wt === "A" || wt === "B") { bdg.textContent = wt + "-Woche"; bdg.classList.remove("hidden"); }
+    else bdg.classList.add("hidden");
+  }
+  if (calTtOn) calTtApplyToCells(data);
+}
 // U15: Kalender auf ein Datum springen lassen und den Tag kurz farblich hervorheben.
 function jumpCalendarToDate(dStr) {
   const d = parseIso(dStr);
@@ -1382,6 +1463,7 @@ function renderCalendar() {
   const grid = $("calGrid");
   if (!grid) return;
   grid.innerHTML = "";
+  const ttGen = ++calTtGen;  // U27c: jede Neurenderung entwertet noch laufende Stundenplan-Fetches
   ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"].forEach((d) => {
     const h = document.createElement("div"); h.className = "cal-head"; h.textContent = d; grid.appendChild(h);
   });
@@ -1427,10 +1509,15 @@ function renderCalendar() {
     const startOffset = (new Date(y, m, 1).getDay() + 6) % 7;
     const startDate = new Date(y, m, 1 - startOffset);
     for (let i = 0; i < 42; i++) { const d = new Date(startDate); d.setDate(startDate.getDate() + i); grid.appendChild(makeCell(d, d.getMonth() !== m)); }
+    // U27c: Stundenplan-Ebene ist Wochen-only → Toggle + KW-Badge im Monatsmodus verstecken.
+    const bdg = $("calWeekBadge"); if (bdg) bdg.classList.add("hidden");
+    const tgl = $("calTtToggle"); if (tgl) tgl.classList.add("hidden");
   } else {
     const d0 = new Date(calCursor); d0.setDate(d0.getDate() - ((d0.getDay() + 6) % 7));
     $("calLabel").textContent = "Woche " + isoWeek(d0) + ", " + d0.toLocaleDateString("de-DE", { year: "numeric" });
     for (let i = 0; i < 7; i++) { const d = new Date(d0); d.setDate(d0.getDate() + i); grid.appendChild(makeCell(d, false)); }
+    // U27c: Stundenplan-Ebene laden und (falls verfuegbar) blasse Chips einspielen.
+    calTtRenderWeek(isoDate(d0), ttGen);
   }
   grid.querySelectorAll(".cal-entry").forEach((el) => {
     const lid = el.dataset.lesson;
@@ -1445,7 +1532,8 @@ function renderCalendar() {
   // U22: Klick auf die freie Fläche eines Tages öffnet das Termin-Popover (vorbefülltes Datum).
   grid.querySelectorAll(".cal-cell").forEach((cell) => {
     cell.addEventListener("click", (ev) => {
-      if (ev.target.closest(".cal-entry")) return;
+      // U27c: Klicks auf die (blasse) Stundenplan-Ebene öffnen kein Termin-Popover.
+      if (ev.target.closest(".cal-entry, .cal-tt-strip")) return;
       openCalEntryPanel(cell.dataset.date);
     });
   });
@@ -3154,6 +3242,13 @@ function wireEvents() {
   $("calNextBtn").onclick = () => { calCursor.setDate(calCursor.getDate() + (calMode === "week" ? 7 : 30)); renderCalendar(); };
   $("calMonthBtn").onclick = () => { calMode = "month"; $("calMonthBtn").classList.add("active"); $("calWeekBtn").classList.remove("active"); renderCalendar(); };
   $("calWeekBtn").onclick = () => { calMode = "week"; $("calWeekBtn").classList.add("active"); $("calMonthBtn").classList.remove("active"); renderCalendar(); };
+  // U27c: blasse Stundenplan-Ebene ein-/ausschalten (persistiert, nur Wochen-Modus).
+  $("calTtToggle").onclick = () => {
+    calTtOn = !calTtOn;
+    try { localStorage.setItem(CAL_TT_KEY, calTtOn ? "1" : "0"); } catch (e) { /* egal */ }
+    $("calTtToggle").classList.toggle("active", calTtOn);
+    renderCalendar();
+  };
   $("calSaveEntryBtn").onclick = saveCalendarEntry;
   $("calEntryAllDay").onchange = () => {
     $("calEntryTimeRow").style.display = $("calEntryAllDay").checked ? "none" : "flex";
