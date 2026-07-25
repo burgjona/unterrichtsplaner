@@ -12,7 +12,7 @@ from fastapi.responses import Response
 
 from ..deps import get_db, get_user_id, row_or_404
 from ..lib.asuv_export import build_docx, build_pdf
-from ..schemas import AsuvDraft, AsuvOut
+from ..schemas import AsuvDraft, AsuvListItem, AsuvOut
 
 router = APIRouter(tags=["asuv"])
 
@@ -88,6 +88,20 @@ def _export_lesson(conn, lrow) -> dict:
         "bibox": {"werk": d["bibox_werk"], "seite": d["bibox_seite"], "notiz": d["bibox_notiz"]},
         "phases": [dict(p) for p in phases],
     }
+
+
+@router.get("/asuv", response_model=list[AsuvListItem])
+def list_asuv(conn: sqlite3.Connection = Depends(get_db), user_id: int = Depends(get_user_id)):
+    """Alle gespeicherten ASUV-Entwürfe des Nutzers (für die Materialbibliothek, U29)."""
+    rows = conn.execute(
+        "SELECT ad.lesson_id, ad.updated_at, l.title AS lesson_title, l.subject, l.grade, "
+        "l.class_id, c.name AS class_name "
+        "FROM asuv_drafts ad JOIN lessons l ON l.id = ad.lesson_id "
+        "LEFT JOIN classes c ON c.id = l.class_id "
+        "WHERE ad.user_id = ? ORDER BY ad.updated_at DESC",
+        (user_id,),
+    ).fetchall()
+    return [AsuvListItem(**dict(r)) for r in rows]
 
 
 @router.get("/lessons/{lid}/asuv", response_model=AsuvOut)

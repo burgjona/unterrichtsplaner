@@ -567,3 +567,21 @@ body.cmd-open { overflow:hidden; }
 @media (max-width: 600px) {
   .cal-tt-chip { font-size:10px; padding:1px 4px; }
 }
+
+/* U28: Stoffplan-Datepicker-Popover mit grau hinterlegten Ferien/Feiertagen */
+.date-picker-input { cursor:pointer; background:var(--surface); }
+.date-picker-popover {
+  z-index:1000; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius-sm);
+  box-shadow:var(--shadow); padding:10px; width:240px; font-size:13px;
+}
+.dp-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
+.dp-month-label { font-weight:600; color:var(--primary-dark); }
+.dp-nav { background:none; border:none; cursor:pointer; font-size:16px; color:var(--primary-dark); padding:2px 8px; }
+.dp-nav:hover { color:var(--primary); }
+.dp-grid { display:grid; grid-template-columns:repeat(7, 1fr); gap:2px; }
+.dp-weekdays { margin-bottom:2px; }
+.dp-cell { display:flex; align-items:center; justify-content:center; height:26px; border-radius:6px; }
+.dp-cell.dp-wd { color:var(--muted); font-size:11px; font-weight:600; height:18px; }
+.dp-cell[data-date] { cursor:pointer; }
+.dp-cell[data-date]:hover { outline:2px solid var(--primary); outline-offset:-2px; }
+.dp-cell.dp-selected { background:var(--primary); color:#fff; }

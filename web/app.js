@@ -213,6 +213,7 @@ function clearLessonForm() {
   lessonZiele = [];
   renderLernziele();
   $("lueHint").classList.toggle("hidden", $("lessonType").value !== "Übungsstunde vor LUE");
+  updateLessonLbOptions(null);
 }
 
 /* ---------- Bearbeitungsmodus Unterrichtsplanung ---------- */
@@ -273,21 +274,71 @@ function loadLessonIntoForm(l) {
     $("stundeEinordnungResult").textContent = "";
     h.classList.toggle("hidden", l.lernbereichId != null);
   }
+  updateLessonLbOptions(l.lernbereichId ?? null);
+}
+
+/* ---------- U29: LB-Zuordnung in der Unterrichtsplanung (aus aktivem Stoffverteilungsplan) ---------- */
+// Befüllt das LB-Select anhand des aktiven Stoffplans der gewählten Klasse; blendet die Zeile aus, wenn
+// keine Klasse gewählt ist oder kein aktiver Plan existiert (Stunde bleibt dann ohne LB anlegbar).
+async function updateLessonLbOptions(preselectLbId) {
+  const row = $("lessonLbRow"), sel = $("lessonLb");
+  if (!row || !sel) return;
+  const clsId = $("lessonClass").value ? Number($("lessonClass").value) : null;
+  const ap = clsId ? state.activePlans[clsId] : null;
+  if (!clsId || !ap || !ap.blocks.length) {
+    row.classList.add("hidden");
+    sel.innerHTML = '<option value="">– kein Lernbereich –</option>';
+    $("lessonLbProgress").textContent = "";
+    return;
+  }
+  const cls = state.classes.find((c) => c.id === clsId);
+  const lbList = cls ? await getLernbereiche(cls) : [];
+  const resolved = ap.blocks
+    .map((b) => ({ block: b, lb: lbList.find((l) => l.code === b.lbCode) }))
+    .filter((x) => x.lb);
+  sel.innerHTML = '<option value="">– kein Lernbereich –</option>' +
+    resolved.map((x) => `<option value="${x.lb.id}" data-ustd="${esc(x.block.ustd ?? "")}">${esc(x.block.lbCode)} ${esc(x.block.title || "")}</option>`).join("");
+  if (preselectLbId != null && !sel.querySelector(`option[value="${preselectLbId}"]`)) {
+    const opt = document.createElement("option");
+    opt.value = String(preselectLbId);
+    opt.textContent = "(Lernbereich außerhalb des aktiven Plans)";
+    sel.appendChild(opt);
+  }
+  sel.value = preselectLbId != null ? String(preselectLbId) : "";
+  row.classList.remove("hidden");
+  updateLessonLbProgress();
+}
+
+// Zeigt "X von Y Stunden verplant" für den aktuell im LB-Select gewählten Lernbereich.
+// X = Summe der Dauer (in 45-Min.-Einheiten) aller Stunden der Klasse mit diesem LB, Y = Sollstunden (ustd) des Blocks.
+function updateLessonLbProgress() {
+  const out = $("lessonLbProgress");
+  if (!out) return;
+  const opt = $("lessonLb").selectedOptions[0];
+  const clsId = $("lessonClass").value ? Number($("lessonClass").value) : null;
+  const lbId = $("lessonLb").value ? Number($("lessonLb").value) : null;
+  if (!clsId || !lbId || !opt || opt.dataset.ustd === undefined || opt.dataset.ustd === "") { out.textContent = ""; return; }
+  const soll = Number(opt.dataset.ustd);
+  const planned = state.lessons
+    .filter((l) => l.classId === clsId && l.lernbereichId === lbId)
+    .reduce((sum, l) => sum + (Number(l.durationMinutes) || 45) / 45, 0);
+  out.textContent = `${planned % 1 === 0 ? planned : planned.toFixed(1)} von ${soll} Stunden verplant`;
 }
 
 /* ---------- Laden & Rendern ---------- */
 async function loadAll() {
-  const [classes, lessons, reflections, open, materials, todos, notes, schoolYears, calendar, calendarCategories] = await Promise.all([
+  const [classes, lessons, reflections, open, materials, todos, notes, schoolYears, calendar, calendarCategories, asuvDrafts] = await Promise.all([
     API.get("/classes"), API.get("/lessons"), API.get("/reflections"),
     API.get("/reflections/open"), API.get("/materials"), API.get("/todos"),
     API.get("/notes"), API.get("/school-years"), API.get("/calendar"), API.get("/calendar-categories"),
+    API.get("/asuv"),
   ]);
   let schoolDates = [];
   for (const sy of schoolYears) {
     try { schoolDates = schoolDates.concat(await API.get(`/school-years/${sy.id}/dates`)); }
     catch (e) { /* best effort */ }
   }
-  Object.assign(state, { classes, lessons, reflections, open, materials, todos, notes, schoolYears, calendar, calendarCategories, schoolDates });
+  Object.assign(state, { classes, lessons, reflections, open, materials, todos, notes, schoolYears, calendar, calendarCategories, schoolDates, asuvDrafts });
   await loadActivePlans();
 }
 
@@ -342,6 +393,7 @@ function renderAll() {
   renderCalendarLegend();
   renderTimeline();
   renderMaterialList();
+  renderAsuvLibrary();
   renderAsuvLessonSelect();
   renderPraesentControls();
 }
@@ -424,13 +476,15 @@ function renderClassDetail() {
   if (!lessons.length) {
     wrap.innerHTML = '<p class="muted small">Noch keine Stunden für diese Klasse geplant.</p>';
   } else {
+    const asuvByLesson = new Set((state.asuvDrafts || []).map((a) => a.lessonId));
     lessons.forEach((l) => {
       const div = document.createElement("div");
       div.className = "mini-item";
       div.style.cursor = "pointer";
+      const asuvBadge = asuvByLesson.has(l.id) ? '<span class="badge ok">ASUV</span>' : "";
       div.innerHTML =
         `<span class="time">${esc(l.date || "–")}</span>` +
-        `<span>${esc(l.title)} <span class="muted small">(${esc(l.lessonType || "Stunde")})</span></span>`;
+        `<span>${esc(l.title)} <span class="muted small">(${esc(l.lessonType || "Stunde")})</span></span>${asuvBadge}`;
       div.onclick = () => openLessonModal(l);
       wrap.appendChild(div);
     });
@@ -870,14 +924,13 @@ function renderLessonTable() {
   });
 }
 
-function renderTodayList() {
-  const list = $("todayLessonList");
-  list.innerHTML = "";
-  if (!state.lessons.length) {
+function todayFallbackList(list, todayStr) {
+  const todays = state.lessons.filter((l) => l.date === todayStr);
+  if (!todays.length) {
     list.innerHTML = '<p class="small" style="color:#dcfce7;">Noch keine Stunden geplant.</p>';
     return;
   }
-  state.lessons.forEach((l) => {
+  todays.forEach((l) => {
     const complete = (l.phases || []).some((p) => p.teacherActivity || p.studentActivity);
     const badge = complete ? '<span class="badge ok">geplant</span>' : '<span class="badge warn">Phasen offen</span>';
     const div = document.createElement("div");
@@ -888,6 +941,43 @@ function renderTodayList() {
     div.onclick = () => openLessonModal(l);
     list.appendChild(div);
   });
+}
+
+// U29: zeigt den heutigen Ausschnitt des persönlichen Stundenplans (U27) mit laufender/nächsten Stunde;
+// fällt auf die klassischen, für heute datierten Lessons zurück, wenn kein Stundenplan hinterlegt ist.
+async function renderTodayList() {
+  const list = $("todayLessonList");
+  list.innerHTML = "";
+  const todayStr = isoDate(new Date());
+  const wd = new Date().getDay(); // 0=So … 6=Sa
+  if (wd >= 1 && wd <= 5) {
+    try {
+      const d = new Date();
+      d.setDate(d.getDate() - ((d.getDay() + 6) % 7));      // Montag der aktuellen Woche
+      const data = await calTtFetch(isoDate(d));
+      const day = data.days.find((dd) => dd.date === todayStr);
+      if (day && day.items.length) {
+        const now = String(new Date().getHours()).padStart(2, "0") + ":" + String(new Date().getMinutes()).padStart(2, "0");
+        const lessonsToday = state.lessons.filter((l) => l.date === todayStr);
+        day.items.forEach((it) => {
+          const [start, end] = (it.timeRange || "").split("–");
+          const isNow = start && end && now >= start && now < end;
+          const isPast = end && now >= end;
+          const match = lessonsToday.find((l) => l.classId === it.classId);
+          const div = document.createElement("div");
+          div.className = "mini-item";
+          if (isPast) div.style.opacity = "0.55";
+          const statusBadge = isNow ? '<span class="badge ok">jetzt</span>'
+            : match ? '<span class="badge ok">geplant</span>' : '<span class="badge warn">nicht geplant</span>';
+          div.innerHTML = `<span class="time">${esc(it.timeRange || "")}</span><span>${esc(it.title)}</span>${statusBadge}`;
+          if (match) div.onclick = () => openLessonModal(match);
+          list.appendChild(div);
+        });
+        return;
+      }
+    } catch (e) { /* kein Stundenplan hinterlegt oder Fehler → Fallback unten */ }
+  }
+  todayFallbackList(list, todayStr);
 }
 
 function renderReflectSelect() {
@@ -998,6 +1088,37 @@ function renderMaterialList() {
       if (!confirm("Material löschen?")) return;
       try { await API.del("/materials/" + b.dataset.delMat); await refresh(); toast("Material gelöscht."); }
       catch (e) { toast(e.message, false); }
+    };
+  });
+}
+
+// U29: gespeicherte ASUV-Entwürfe als eigener "Ordner" der Materialbibliothek (virtuell, kein materials-Datensatz).
+function renderAsuvLibrary() {
+  const wrap = $("asuvLibraryList");
+  if (!wrap) return;
+  wrap.innerHTML = "";
+  if (!state.asuvDrafts || !state.asuvDrafts.length) {
+    wrap.innerHTML = '<p class="muted small">Noch keine gespeicherten ASUV-Entwürfe.</p>';
+    return;
+  }
+  state.asuvDrafts.forEach((a) => {
+    const tags = [a.subject, a.grade ? "Kl. " + a.grade : null, a.className]
+      .filter(Boolean).map((t) => `<span class="tag">${esc(t)}</span>`).join("");
+    const div = document.createElement("div");
+    div.className = "file-chip";
+    div.innerHTML =
+      `<span>${esc(a.lessonTitle)}</span>` +
+      `<span class="tag-row">${tags}` +
+      `<a class="btn small secondary" href="/api/lessons/${a.lessonId}/asuv/export?format=pdf" target="_blank" rel="noopener">Anzeigen/Drucken</a>` +
+      `<a class="btn small secondary" href="/api/lessons/${a.lessonId}/asuv/export?format=docx" target="_blank" rel="noopener">Word speichern</a>` +
+      `<button class="btn small" data-asuv-edit="${a.lessonId}">Bearbeiten</button></span>`;
+    wrap.appendChild(div);
+  });
+  wrap.querySelectorAll("[data-asuv-edit]").forEach((b) => {
+    b.onclick = () => {
+      showView("asuv");
+      $("asuvLesson").value = b.dataset.asuvEdit;
+      loadAsuv(b.dataset.asuvEdit);
     };
   });
 }
@@ -1347,6 +1468,76 @@ function isoDate(d) {
 function parseIso(s) {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s || "");
   return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
+}
+
+/* ---------- U28: Stoffplan-Datepicker mit grau hinterlegten Ferien ---------- */
+// Nächster Montag ECHT NACH dateStr (fällt dateStr selbst auf einen Montag, wird eine Woche weitergesprungen).
+function nextMonday(dateStr) {
+  const d = parseIso(dateStr);
+  if (!d) return null;
+  const day = d.getDay(); // 0=So … 6=Sa
+  let add = (8 - day) % 7;
+  if (add === 0) add = 7;
+  d.setDate(d.getDate() + add);
+  return isoDate(d);
+}
+
+let _datePickerEl = null;
+function closeDatePicker() {
+  if (_datePickerEl) { _datePickerEl.remove(); _datePickerEl = null; }
+  document.removeEventListener("mousedown", _datePickerOutsideHandler, true);
+}
+function _datePickerOutsideHandler(e) {
+  if (_datePickerEl && !_datePickerEl.contains(e.target)) closeDatePicker();
+}
+// Öffnet ein kleines Monats-Popover unter inputEl; Ferien/Feiertage grau/gelb hinterlegt (wie im Kalender).
+function openDatePicker(inputEl) {
+  closeDatePicker();
+  const base = parseIso(inputEl.value) || new Date();
+  let viewYear = base.getFullYear(), viewMonth = base.getMonth();
+  const pop = document.createElement("div");
+  pop.className = "date-picker-popover";
+  document.body.appendChild(pop);
+  _datePickerEl = pop;
+  const rect = inputEl.getBoundingClientRect();
+  pop.style.position = "absolute";
+  pop.style.top = `${window.scrollY + rect.bottom + 4}px`;
+  pop.style.left = `${window.scrollX + rect.left}px`;
+
+  function render() {
+    const first = new Date(viewYear, viewMonth, 1);
+    const startOffset = (first.getDay() + 6) % 7; // Woche beginnt Montag
+    const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+    const monthLabel = first.toLocaleDateString("de-DE", { month: "long", year: "numeric" });
+    let cells = "";
+    for (let i = 0; i < startOffset; i++) cells += `<div class="dp-cell dp-empty"></div>`;
+    for (let day = 1; day <= daysInMonth; day++) {
+      const d = new Date(viewYear, viewMonth, day);
+      const dStr = isoDate(d);
+      const sd = schoolDateFor(dStr);
+      const isSel = dStr === inputEl.value;
+      let style = "";
+      if (sd) style = `style="background:${cssVar(sd.kind === "feiertag" ? "--cal-holiday" : "--cal-vacation", sd.kind === "feiertag" ? "#fde68a" : "#e5e7eb")};"`;
+      cells += `<div class="dp-cell${isSel ? " dp-selected" : ""}" data-date="${dStr}" ${style} title="${sd ? esc(sd.name) : ""}">${day}</div>`;
+    }
+    pop.innerHTML = `
+      <div class="dp-header">
+        <button type="button" class="dp-nav" data-nav="-1">‹</button>
+        <span class="dp-month-label">${esc(monthLabel)}</span>
+        <button type="button" class="dp-nav" data-nav="1">›</button>
+      </div>
+      <div class="dp-grid dp-weekdays">${["Mo","Di","Mi","Do","Fr","Sa","So"].map((d) => `<div class="dp-cell dp-wd">${d}</div>`).join("")}</div>
+      <div class="dp-grid">${cells}</div>`;
+    pop.querySelector('[data-nav="-1"]').onclick = () => { viewMonth--; if (viewMonth < 0) { viewMonth = 11; viewYear--; } render(); };
+    pop.querySelector('[data-nav="1"]').onclick = () => { viewMonth++; if (viewMonth > 11) { viewMonth = 0; viewYear++; } render(); };
+    pop.querySelectorAll(".dp-cell[data-date]").forEach((c) => c.onclick = () => {
+      inputEl.value = c.dataset.date;
+      inputEl.dispatchEvent(new Event("change", { bubbles: true }));
+      closeDatePicker();
+    });
+  }
+  render();
+  setTimeout(() => document.addEventListener("mousedown", _datePickerOutsideHandler, true), 0);
 }
 
 /* ---------- U27c: blasse Stundenplan-Ebene im Wochen-Kalender ----------
@@ -1803,39 +1994,6 @@ async function saveSchoolYear() {
 }
 
 /* ---------- Jahres-Verplanung ---------- */
-async function runPlanning() {
-  const syId = Number($("planYear").value), clsId = Number($("planClass").value);
-  if (!syId || !clsId) { toast("Bitte Schuljahr und Klasse wählen.", false); return; }
-  try {
-    const res = await API.post("/planning/preview", { schoolYearId: syId, classId: clsId });
-    $("planSummary").textContent =
-      `${res.planned} von ${res.planned + res.unplaced} Lernbereichen verplant · ${res.teachingWeeks} Unterrichtswochen`;
-    const b = document.querySelector("#planTable tbody");
-    b.innerHTML = "";
-    res.blocks.forEach((x) => {
-      const tr = document.createElement("tr");
-      tr.innerHTML =
-        `<td>${esc(x.code)}</td><td>${esc(x.title)}</td><td>${esc(x.ustd)}</td><td>${esc(x.weeks)}</td>` +
-        `<td>${esc(x.startDate)} – ${esc(x.endDate)}</td>` +
-        `<td>${x.conflictWithFixed ? '<span class="badge bad">Konflikt fixer Termin</span>' : "—"}</td>`;
-      b.appendChild(tr);
-    });
-    // Vorschau für „Plan speichern" merken (U12).
-    state.stoffPreview = res.blocks.map((x) => ({
-      code: x.code, title: x.title, ustd: x.ustd,
-      startDate: x.startDate, endDate: x.endDate,
-      conflictNote: x.conflictWithFixed ? "Konflikt fixer Termin" : null,
-    }));
-    // Direkt-Upload zu einem Lernbereich freischalten
-    const card = $("stoffUploadCard");
-    $("stoffLb").innerHTML = res.blocks.filter((x) => x.lernbereichId)
-      .map((x) => `<option value="${x.lernbereichId}">${esc(x.code)} ${esc(x.title)}</option>`).join("");
-    card.dataset.syId = syId;
-    card.dataset.clsId = clsId;
-    card.style.display = res.blocks.length ? "block" : "none";
-  } catch (e) { toast(e.message, false); }
-}
-
 async function stoffUpload() {
   const f = $("stoffFile").files[0];
   const lbId = $("stoffLb").value;
@@ -1909,7 +2067,7 @@ async function saveStoffPlan() {
   const clsId = Number($("planClass").value), syId = Number($("planYear").value);
   if (!clsId) { toast("Bitte eine Klasse wählen.", false); return; }
   if (!state.stoffPreview.length) {
-    toast("Kein Vorschlag vorhanden – erst „Jahresplan vorschlagen“ oder „KI-Vorschlag“.", false);
+    toast("Kein Vorschlag vorhanden – erst „✨ KI-Vorschlag“ erzeugen.", false);
     return;
   }
   const def = `Stoffverteilungsplan ${selectedText("planClass")} ${selectedText("planYear")}`.trim();
@@ -2010,8 +2168,8 @@ async function renderStoffPlanEditor(id) {
       <td>${esc(b.lbCode || "")}</td>
       <td><input type="text" data-f="title" value="${esc(b.title || "")}" /></td>
       <td><input type="number" data-f="ustd" min="0" value="${esc(b.ustd ?? "")}" style="width:70px;" /></td>
-      <td><input type="date" data-f="startDate" value="${esc(b.startDate || "")}" /></td>
-      <td><input type="date" data-f="endDate" value="${esc(b.endDate || "")}" /></td>
+      <td><input type="text" readonly class="date-picker-input" data-f="startDate" value="${esc(b.startDate || "")}" placeholder="jjjj-mm-tt" /></td>
+      <td><input type="text" readonly class="date-picker-input" data-f="endDate" value="${esc(b.endDate || "")}" placeholder="jjjj-mm-tt" /></td>
     </tr>`).join("");
   box.innerHTML = `
     <div class="stoff-plan-edit-inner">
@@ -2028,6 +2186,34 @@ async function renderStoffPlanEditor(id) {
     </div>`;
   box.querySelector(`[data-sp-save="${id}"]`).onclick = () => saveStoffPlanEdits(id);
   box.querySelector(`[data-sp-cancel="${id}"]`).onclick = () => { editingStoffPlanId = null; renderStoffPlans(); };
+  box.querySelectorAll(".date-picker-input").forEach((inp) => inp.addEventListener("click", () => openDatePicker(inp)));
+  // Endet ein Block, wird für den nächsten Block „nächster Montag danach" vorgeschlagen und die Kette bei Bedarf nachgezogen.
+  box.querySelectorAll('[data-f="endDate"]').forEach((inp) => inp.addEventListener("change", (e) => {
+    const tr = e.target.closest("tr[data-i]");
+    if (tr) cascadeStoffPlanDates(box, Number(tr.dataset.i));
+  }));
+}
+
+// Zieht ab fromIndex+1 die Start-/Enddaten der Folgeblöcke nach (Start = nächster Montag nach Vorgänger-Ende,
+// Dauer des Folgeblocks bleibt erhalten). Bricht ab, sobald ein Folgeblock bereits passt (kein weiterer Effekt).
+function cascadeStoffPlanDates(box, fromIndex) {
+  const rows = [...box.querySelectorAll("tbody tr[data-i]")];
+  for (let i = fromIndex; i < rows.length - 1; i++) {
+    const curEnd = rows[i].querySelector('[data-f="endDate"]').value;
+    if (!curEnd) break;
+    const nextStartEl = rows[i + 1].querySelector('[data-f="startDate"]');
+    const nextEndEl = rows[i + 1].querySelector('[data-f="endDate"]');
+    const oldStart = nextStartEl.value;
+    const newStart = nextMonday(curEnd);
+    if (oldStart === newStart) break;
+    if (oldStart && nextEndEl.value) {
+      const deltaDays = Math.round((parseIso(newStart) - parseIso(oldStart)) / 86400000);
+      const newEnd = new Date(parseIso(nextEndEl.value));
+      newEnd.setDate(newEnd.getDate() + deltaDays);
+      nextEndEl.value = isoDate(newEnd);
+    }
+    nextStartEl.value = newStart;
+  }
 }
 
 async function saveStoffPlanEdits(id) {
@@ -2179,6 +2365,7 @@ async function saveLesson() {
     lessonType: $("lessonType").value,
     durationMinutes: Number($("lessonDuration").value) || 45,
     classId: $("lessonClass").value ? Number($("lessonClass").value) : null,
+    lernbereichId: $("lessonLb") && $("lessonLb").value ? Number($("lessonLb").value) : null,
     date: $("lessonDate").value || null,
     klafki: {
       gegenwart: $("klafki1").value, zukunft: $("klafki2").value, exemplarisch: $("klafki3").value,
@@ -2584,6 +2771,7 @@ function exportAsuv(fmt) {
   if (!asuvLessonId) { toast("Bitte eine Stunde wählen.", false); return; }
   const a = document.createElement("a");
   a.href = `/api/lessons/${asuvLessonId}/asuv/export?format=${fmt}`;
+  a.target = "_blank"; // sonst navigiert die SPA weg (Browser-PDF-Viewer ignoriert Content-Disposition: attachment)
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -2696,6 +2884,18 @@ async function aiStoffplan() {
       code: x.code, title: x.title, ustd: x.ustd,
       startDate: null, endDate: null, conflictNote: x.note || null,
     }));
+    // Direkt-Upload zu einem Lernbereich freischalten (vormals nur nach "Jahresplan vorschlagen" verfügbar).
+    // Die KI-Antwort liefert nur den Code, keine lernbereichId – daher gegen die geladenen Lernbereiche der Klasse auflösen.
+    const cls = state.classes.find((c) => c.id === clsId);
+    const lbList = cls ? await getLernbereiche(cls) : [];
+    const card = $("stoffUploadCard");
+    $("stoffLb").innerHTML = blocks
+      .map((x) => ({ x, lb: lbList.find((l) => l.code === x.code) }))
+      .filter((p) => p.lb)
+      .map((p) => `<option value="${p.lb.id}">${esc(p.x.code)} ${esc(p.x.title)}</option>`).join("");
+    card.dataset.syId = syId;
+    card.dataset.clsId = clsId;
+    card.style.display = $("stoffLb").innerHTML ? "block" : "none";
     toast(res.cached ? "KI-Stoffplan (aus Cache)." : "KI-Stoffplan-Vorschlag erzeugt.");
   } catch (e) { toast(e.message, false); }
   finally { btn.disabled = false; btn.textContent = label; }
@@ -3483,6 +3683,8 @@ function wireEvents() {
   $("spAiBtn").onclick = aiArrangeSeats;
   $("saveLesson").onclick = saveLesson;
   $("cancelEditBtn").onclick = () => { resetLessonEditState(); clearLessonForm(); toast("Formular geleert – neue Stunde."); };
+  $("lessonClass").addEventListener("change", () => updateLessonLbOptions(null));
+  $("lessonLb").addEventListener("change", updateLessonLbProgress);
   $("saveReflect").onclick = saveReflect;
 
   // Kalender
@@ -3508,7 +3710,6 @@ function wireEvents() {
   $("addCatBtn").onclick = addCategory;
   $("importAnalyzeBtn").onclick = analyzeJahresplan;  // U20: Jahresplan-Import
   $("saveSchoolYear").onclick = saveSchoolYear;
-  $("planPreviewBtn").onclick = runPlanning;
   $("stoffUpload").onclick = stoffUpload;
   $("planSaveBtn").onclick = saveStoffPlan;
   $("planClass").addEventListener("change", () => { loadPlanNotes(); editingStoffPlanId = null; loadStoffPlans(); });

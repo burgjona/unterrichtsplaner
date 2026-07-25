@@ -440,6 +440,17 @@ class AsuvOut(AsuvDraft):
     bibox_empty: bool
 
 
+# U29: Übersicht aller gespeicherten ASUV-Entwürfe (für die Materialbibliothek).
+class AsuvListItem(Base):
+    lesson_id: int
+    lesson_title: str
+    subject: str
+    grade: Optional[int] = None
+    class_id: Optional[int] = None
+    class_name: Optional[str] = None
+    updated_at: str
+
+
 # ---------- KI-Anfragen (Meilenstein 7) ----------
 class LessonSuggestIn(Base):
     ideas: str = ""

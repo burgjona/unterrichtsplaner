@@ -92,3 +92,21 @@ def test_export_pdf(client, auth):
     assert r.status_code == 200
     assert r.content[:4] == b"%PDF"
     assert len(r.content) > 1500
+
+
+def test_list_asuv_only_saved(client, auth):
+    """U29: /asuv liefert nur Stunden mit tatsächlich gespeichertem Entwurf, inkl. Klassenbezug."""
+    saved = _lesson_with_phase(client)
+    unsaved = _lesson_with_phase(client)
+    cls = client.post("/api/classes", json={
+        "name": "8a", "subject": "Deutsch", "grade": 8, "track": "gemischt", "weeklyHours": 4,
+    }).json()
+    client.put(f"/api/lessons/{saved['id']}", json={"classId": cls["id"]})
+    client.put(f"/api/lessons/{saved['id']}/asuv", json={"sachanalyse": "Text."})
+
+    items = client.get("/api/asuv").json()
+    assert len(items) == 1
+    assert items[0]["lessonId"] == saved["id"]
+    assert items[0]["classId"] == cls["id"]
+    assert items[0]["className"] == "8a"
+    assert all(i["lessonId"] != unsaved["id"] for i in items)
