@@ -21,7 +21,7 @@ services:
     # scheitert SQLite mit "unable to open database file" (uid 1000 hat keine Rechte).
     user: "0:0"
     ports:
-      - "127.0.0.1:8097:8000"       # nur lokal erreichbar; der Tunnel greift intern zu
+      - "8097:8000"                 # im LAN erreichbar; Cloudflare-Tunnel zeigt auf die NAS-LAN-IP:8097
 
   # Cloudflare Tunnel als Sidecar (Token aus dem Cloudflare-Zero-Trust-Dashboard).
   # Der Tunnel zeigt im Dashboard auf den Service:  http://app:8000
