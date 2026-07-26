@@ -1555,6 +1555,15 @@ const calTtCache = new Map();                            // mondayStr → { data
 function calTtSafeColor(c) {
   return (typeof c === "string" && /^#[0-9a-fA-F]{3,8}$/.test(c)) ? c : "#94a3b8";
 }
+// Lesbare Schriftfarbe (weiß/dunkel) für eine beliebige Kategorie-Hintergrundfarbe (WCAG-Näherung per Luminanz).
+function readableTextColor(hex) {
+  const h = hex.replace("#", "");
+  const full = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
+  const r = parseInt(full.slice(0, 2), 16) / 255, g = parseInt(full.slice(2, 4), 16) / 255, b = parseInt(full.slice(4, 6), 16) / 255;
+  const lin = (v) => (v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
+  const L = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+  return L > 0.55 ? "#14261a" : "#ffffff";
+}
 // Resolved-Woche holen: Cache je Montag (TTL 5 Min), In-Flight-Dedupe über gespeicherte Promise.
 async function calTtFetch(mondayStr) {
   const now = Date.now();
@@ -1688,7 +1697,8 @@ function renderCalendar() {
     cell.innerHTML = `<div class="cal-daynum">${d.getDate()}</div>` + stripHtml +
       entriesForDate(dStr).map((e) => {
         const cat = catById(e.categoryId);
-        const style = cat ? ` style="border-left:4px solid ${esc(cat.color)}"` : "";
+        const color = cat ? calTtSafeColor(cat.color) : null;
+        const style = color ? ` style="background:${color};color:${readableTextColor(color)}"` : "";
         const time = (!e.allDay && e.startTime) ? esc(e.startTime) + " " : "";
         return `<div class="cal-entry ${esc(e.entryType)}" data-lesson="${e.lessonId == null ? "" : e.lessonId}" data-entry-id="${e.id}"${style}>${time}${esc(e.title)}</div>`;
       }).join("");
