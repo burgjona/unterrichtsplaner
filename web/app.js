@@ -3258,9 +3258,16 @@ const titles = {
   material: ["Materialbibliothek", "Material hochladen, taggen und wiederfinden (folgt in M5)."],
   settings: ["Einstellungen", "API-Key und Konto."],
   suche: ["Suche", "Volltextsuche über alle Inhalte."],
+  mehr: ["Mehr", "Weitere Bereiche und Einstellungen."],
 };
+// Mobile Bottom-Nav: Views ohne eigenen Tab landen als "aktiv" auf dem Mehr-Tab.
+const BOTTOM_NAV_VIEWS = new Set(["stundenplan", "kalender", "heute", "material"]);
 function showView(view) {
   document.querySelectorAll(".nav-btn").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
+  document.querySelectorAll(".bn-item").forEach((b) => {
+    const bv = b.dataset.view;
+    b.classList.toggle("active", bv === view || (bv === "mehr" && !BOTTOM_NAV_VIEWS.has(view)));
+  });
   document.querySelectorAll(".view").forEach((v) => v.classList.add("hidden"));
   $(view).classList.remove("hidden");
   $("pageTitle").textContent = titles[view][0];
@@ -3725,6 +3732,7 @@ function wireEvents() {
 
   document.querySelectorAll(".nav-btn").forEach((btn) => (btn.onclick = () => showView(btn.dataset.view)));
   document.querySelectorAll("[data-view-target]").forEach((el) => (el.onclick = () => showView(el.dataset.viewTarget)));
+  document.querySelectorAll(".bn-item, .mehr-item").forEach((btn) => (btn.onclick = () => showView(btn.dataset.view)));
 
   const burger = $("burgerBtn");
   burger.onclick = () => {
