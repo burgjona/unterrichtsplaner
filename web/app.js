@@ -26,6 +26,7 @@ let editingStoffPlanId = null;        // gerade im Inline-Editor geöffneter Pla
 const lbCache = {};                 // Lernbereiche je Fach|Stufe|Bildungsgang
 let calMode = "month";
 let calCursor = new Date();
+let calSelectedDate = null;  // U28: im Monatsmodus ausgewählter Tag (Tages-Agenda unten im Grid)
 
 /* ---------- kleine Helfer ---------- */
 function toast(msg, ok = true) {
@@ -1634,6 +1635,7 @@ function jumpCalendarToDate(dStr) {
   const d = parseIso(dStr);
   if (!d) return;
   calCursor = d;
+  calSelectedDate = dStr;
   renderCalendar();
   const grid = $("calGrid");
   if (grid) grid.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -1682,7 +1684,12 @@ function renderCalendar() {
       planSegs.push({ start: b.startDate, end, code: b.lbCode || "", color: tlColors[i % tlColors.length], tip });
     });
   });
-  const makeCell = (d, other) => {
+  const entryDotColor = (e) => {
+    const cat = catById(e.categoryId);
+    if (cat) return calTtSafeColor(cat.color);
+    return e.entryType === "lu" ? "var(--bad)" : e.entryType === "exam" ? "var(--orange)" : "var(--primary)";
+  };
+  const makeCell = (d, other, isMonth) => {
     const dStr = isoDate(d);
     const cell = document.createElement("div");
     cell.className = "cal-cell" + (other ? " otherMonth" : "") + (dStr === todayStr ? " today" : "");
@@ -1694,50 +1701,107 @@ function renderCalendar() {
       ? `<div class="cal-plan-strips">` + strips.map((s) =>
           `<span class="cal-plan-strip" style="background:${s.color}" title="${s.tip}">${esc(s.code)}</span>`).join("") + `</div>`
       : "";
-    cell.innerHTML = `<div class="cal-daynum">${d.getDate()}</div>` + stripHtml +
-      entriesForDate(dStr).map((e) => {
-        const cat = catById(e.categoryId);
-        const color = cat ? calTtSafeColor(cat.color) : null;
-        const style = color ? ` style="background:${color};color:${readableTextColor(color)}"` : "";
-        const time = (!e.allDay && e.startTime) ? esc(e.startTime) + " " : "";
-        return `<div class="cal-entry ${esc(e.entryType)}" data-lesson="${e.lessonId == null ? "" : e.lessonId}" data-entry-id="${e.id}"${style}>${time}${esc(e.title)}</div>`;
-      }).join("");
+    const entries = entriesForDate(dStr);
+    // U28: Im Monatsraster nur dezente Farbpunkte (Fantastical-Stil) — die Tages-Agenda unten
+    // zeigt Titel/Zeit im Klartext, damit die winzigen Kacheln nicht überladen wirken.
+    const entriesHtml = isMonth
+      ? (entries.length ? `<div class="cal-dots">` +
+          entries.slice(0, 5).map((e) => {
+            const tip = ((!e.allDay && e.startTime) ? e.startTime + " " : "") + e.title;
+            return `<span class="cal-dot" style="background:${entryDotColor(e)}" title="${esc(tip)}"></span>`;
+          }).join("") +
+          (entries.length > 5 ? `<span class="cal-dot-more">+${entries.length - 5}</span>` : "") + `</div>`
+          : "")
+      : entries.map((e) => {
+          const cat = catById(e.categoryId);
+          const color = cat ? calTtSafeColor(cat.color) : null;
+          const style = color ? ` style="background:${color};color:${readableTextColor(color)}"` : "";
+          const time = (!e.allDay && e.startTime) ? esc(e.startTime) + " " : "";
+          return `<div class="cal-entry ${esc(e.entryType)}" data-lesson="${e.lessonId == null ? "" : e.lessonId}" data-entry-id="${e.id}"${style}>${time}${esc(e.title)}</div>`;
+        }).join("");
+    cell.innerHTML = `<div class="cal-daynum">${d.getDate()}</div>` + stripHtml + entriesHtml;
     return cell;
   };
+  let monthStartStr = null, monthEndStr = null;
   if (calMode === "month") {
     const y = calCursor.getFullYear(), m = calCursor.getMonth();
     $("calLabel").textContent = calCursor.toLocaleDateString("de-DE", { month: "long", year: "numeric" });
     const startOffset = (new Date(y, m, 1).getDay() + 6) % 7;
     const startDate = new Date(y, m, 1 - startOffset);
-    for (let i = 0; i < 42; i++) { const d = new Date(startDate); d.setDate(startDate.getDate() + i); grid.appendChild(makeCell(d, d.getMonth() !== m)); }
+    for (let i = 0; i < 42; i++) { const d = new Date(startDate); d.setDate(startDate.getDate() + i); grid.appendChild(makeCell(d, d.getMonth() !== m, true)); }
     // U27c: Stundenplan-Ebene ist Wochen-only → Toggle + KW-Badge im Monatsmodus verstecken.
     const bdg = $("calWeekBadge"); if (bdg) bdg.classList.add("hidden");
     const tgl = $("calTtToggle"); if (tgl) tgl.classList.add("hidden");
+    monthStartStr = isoDate(new Date(y, m, 1)); monthEndStr = isoDate(new Date(y, m + 1, 0));
   } else {
     const d0 = new Date(calCursor); d0.setDate(d0.getDate() - ((d0.getDay() + 6) % 7));
     $("calLabel").textContent = "Woche " + isoWeek(d0) + ", " + d0.toLocaleDateString("de-DE", { year: "numeric" });
-    for (let i = 0; i < 7; i++) { const d = new Date(d0); d.setDate(d0.getDate() + i); grid.appendChild(makeCell(d, false)); }
+    for (let i = 0; i < 7; i++) { const d = new Date(d0); d.setDate(d0.getDate() + i); grid.appendChild(makeCell(d, false, false)); }
     // U27c: Stundenplan-Ebene laden und (falls verfuegbar) blasse Chips einspielen.
     calTtRenderWeek(isoDate(d0), ttGen);
   }
-  grid.querySelectorAll(".cal-entry").forEach((el) => {
-    const lid = el.dataset.lesson;
-    if (lid) {
-      // U26: Stundentermin → direkt in die Stunden-Detailansicht springen (wie bisher).
-      el.onclick = () => { const l = state.lessons.find((x) => String(x.id) === lid); if (l) openLessonModal(l); };
-    } else if (el.dataset.entryId) {
-      // U26: manueller/Google-/Import-Termin → Bearbeiten-Modal (wie Google Kalender).
-      el.onclick = () => openCalendarEventModal(Number(el.dataset.entryId));
+  if (calMode === "month") {
+    // U28: Termine bleiben in den kleinen Monatskacheln unklickbar → Klick wählt den Tag,
+    // die Tages-Agenda darunter übernimmt Anzeige und Bearbeiten-Klicks (Fantastical-Stil).
+    if (!calSelectedDate || calSelectedDate < monthStartStr || calSelectedDate > monthEndStr) {
+      calSelectedDate = (todayStr >= monthStartStr && todayStr <= monthEndStr) ? todayStr : monthStartStr;
     }
-  });
-  // U22: Klick auf die freie Fläche eines Tages öffnet das Termin-Popover (vorbefülltes Datum).
-  grid.querySelectorAll(".cal-cell").forEach((cell) => {
-    cell.addEventListener("click", (ev) => {
-      // U27c: Klicks auf die (blasse) Stundenplan-Ebene öffnen kein Termin-Popover.
-      if (ev.target.closest(".cal-entry, .cal-tt-strip")) return;
-      openCalEntryPanel(cell.dataset.date);
+    grid.querySelectorAll(".cal-cell").forEach((cell) => {
+      cell.addEventListener("click", () => renderDayAgenda(cell.dataset.date));
     });
+    renderDayAgenda(calSelectedDate);
+  } else {
+    const agenda = $("calDayAgenda"); if (agenda) agenda.classList.add("hidden");
+    grid.querySelectorAll(".cal-entry").forEach((el) => {
+      const lid = el.dataset.lesson;
+      if (lid) {
+        // U26: Stundentermin → direkt in die Stunden-Detailansicht springen (wie bisher).
+        el.onclick = () => { const l = state.lessons.find((x) => String(x.id) === lid); if (l) openLessonModal(l); };
+      } else if (el.dataset.entryId) {
+        // U26: manueller/Google-/Import-Termin → Bearbeiten-Modal (wie Google Kalender).
+        el.onclick = () => openCalendarEventModal(Number(el.dataset.entryId));
+      }
+    });
+    // U22: Klick auf die freie Fläche eines Tages öffnet das Termin-Popover (vorbefülltes Datum).
+    grid.querySelectorAll(".cal-cell").forEach((cell) => {
+      cell.addEventListener("click", (ev) => {
+        // U27c: Klicks auf die (blasse) Stundenplan-Ebene öffnen kein Termin-Popover.
+        if (ev.target.closest(".cal-entry, .cal-tt-strip")) return;
+        openCalEntryPanel(cell.dataset.date);
+      });
+    });
+  }
+}
+// U28: Tages-Agenda unter dem Monatsgitter — zeigt die Termine eines Tages als Liste
+// (Klick öffnet Bearbeiten/Detail); ersetzt das direkte Öffnen aus der Mini-Kachel heraus.
+function renderDayAgenda(dStr) {
+  calSelectedDate = dStr;
+  const panel = $("calDayAgenda");
+  if (!panel) return;
+  document.querySelectorAll("#calGrid .cal-cell").forEach((c) => c.classList.toggle("selected", c.dataset.date === dStr));
+  const d = parseIso(dStr);
+  $("calDayAgendaDate").textContent = d ? d.toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long" }) : dStr;
+  const items = entriesForDate(dStr).slice().sort((a, b) => {
+    if (a.allDay !== b.allDay) return a.allDay ? -1 : 1;
+    return (a.startTime || "").localeCompare(b.startTime || "");
   });
+  const list = $("calDayAgendaList");
+  list.innerHTML = items.length ? items.map((e) => {
+    const cat = catById(e.categoryId);
+    const color = cat ? calTtSafeColor(cat.color) : null;
+    const style = color ? ` style="background:${color};color:${readableTextColor(color)}"` : "";
+    const time = e.allDay ? "Ganztägig" : ([e.startTime, e.endTime].filter(Boolean).join(" – ") || "—");
+    return `<div class="cal-day-agenda-item ${esc(e.entryType)}" data-lesson="${e.lessonId == null ? "" : e.lessonId}" data-entry-id="${e.id}"${style}>` +
+      `<span class="cal-day-agenda-time">${esc(time)}</span><span class="cal-day-agenda-title">${esc(e.title)}</span></div>`;
+  }).join("") : `<p class="muted small cal-day-agenda-empty">Keine Termine an diesem Tag.</p>`;
+  list.querySelectorAll(".cal-day-agenda-item").forEach((el) => {
+    const lid = el.dataset.lesson;
+    if (lid) el.onclick = () => { const l = state.lessons.find((x) => String(x.id) === lid); if (l) openLessonModal(l); };
+    else if (el.dataset.entryId) el.onclick = () => openCalendarEventModal(Number(el.dataset.entryId));
+  });
+  const addBtn = $("calDayAgendaAddBtn");
+  if (addBtn) addBtn.onclick = () => openCalEntryPanel(dStr);
+  panel.classList.remove("hidden");
 }
 
 async function saveCalendarEntry() {

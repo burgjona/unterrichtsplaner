@@ -126,9 +126,10 @@ tbody tr td:first-child { border-radius:10px 0 0 10px; } tbody tr td:last-child 
 .mini-meyer-chip { display:inline-block; padding:5px 8px; border-radius:7px; font-size:11px; margin:2px; color:white; }
 .cal-grid { display:grid; grid-template-columns: repeat(7, minmax(0,1fr)); gap:6px; }
 .cal-head { font-size:11px; text-transform:uppercase; color:var(--muted); text-align:center; padding-bottom:4px; }
-.cal-cell { min-height:88px; background:var(--surface-2); border:1px solid var(--line); border-radius:10px; padding:6px; font-size:11px; }
+.cal-cell { min-height:64px; background:var(--surface-2); border:1px solid var(--line); border-radius:10px; padding:6px; font-size:11px; cursor:pointer; transition:background .12s, border-color .12s; }
 .cal-cell.today { border:2px solid var(--primary); }
 .cal-cell.otherMonth { opacity:.4; }
+.cal-cell.selected { border-color:var(--primary-dark); background:var(--surface); box-shadow:inset 0 0 0 1px var(--primary-dark); }
 .cal-daynum { font-weight:800; color:var(--primary-dark); margin-bottom:3px; }
 .cal-entry {
   background:var(--primary); color:white; border-radius:6px; padding:3px 6px; margin-bottom:3px;
@@ -138,6 +139,28 @@ tbody tr td:first-child { border-radius:10px 0 0 10px; } tbody tr td:last-child 
 .cal-entry:hover { filter:brightness(1.08); }
 .cal-entry.lu { background:var(--bad); }
 .cal-entry.exam { background:var(--orange); }
+/* U28: Farbpunkte statt Text-Chips im Monatsraster (Fantastical-Stil) — Details stehen in der Tages-Agenda. */
+.cal-dots { display:flex; flex-wrap:wrap; gap:3px; margin-top:2px; }
+.cal-dot { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
+.cal-dot-more { font-size:9px; font-weight:700; color:var(--muted); line-height:6px; }
+
+/* U28: Tages-Agenda unter dem Monatsgitter (Fantastical-Stil) — Klick auf einen Tag zeigt seine
+   Termine hier statt sie direkt in der winzigen Kachel zu öffnen; von hier aus bearbeiten. */
+.cal-day-agenda { margin-top:10px; padding-top:10px; border-top:1px solid var(--line); }
+.cal-day-agenda-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px; }
+.cal-day-agenda-date { font-weight:800; color:var(--primary-dark); font-size:14px; }
+.cal-day-agenda-list { display:flex; flex-direction:column; gap:6px; }
+.cal-day-agenda-item {
+  display:flex; align-items:center; gap:10px; min-height:44px; padding:8px 12px;
+  border-radius:10px; background:var(--primary); color:white; cursor:pointer;
+  font-size:13px; font-weight:600; transition:filter .12s;
+}
+.cal-day-agenda-item:hover { filter:brightness(1.08); }
+.cal-day-agenda-item.lu { background:var(--bad); }
+.cal-day-agenda-item.exam { background:var(--orange); }
+.cal-day-agenda-time { font-variant-numeric:tabular-nums; font-weight:700; opacity:.9; white-space:nowrap; flex-shrink:0; }
+.cal-day-agenda-title { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.cal-day-agenda-empty { padding:8px 2px; }
 .cal-nav { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
 .cal-nav button { background:var(--surface-2); border:1px solid var(--line); border-radius:8px; padding:6px 11px; cursor:pointer; font-weight:700; color:var(--primary-dark); }
 .view-toggle { display:flex; gap:6px; margin-left:auto; }
@@ -173,7 +196,7 @@ tbody tr td:first-child { border-radius:10px 0 0 10px; } tbody tr td:last-child 
   .view-toggle { width:100%; }
   .view-toggle button { flex:1; }
   .cal-grid { grid-template-columns: repeat(7, minmax(0,1fr)); overflow-x:visible; gap:4px; }
-  .cal-cell { min-height:76px; padding:4px; }
+  .cal-cell { min-height:48px; padding:4px; }
   .cal-entry { font-size:9.5px; padding:3px 5px; border-radius:5px; }
   .cal-daynum { font-size:11px; }
   .kpi { font-size:26px; }

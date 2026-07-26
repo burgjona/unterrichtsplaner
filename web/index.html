@@ -272,7 +272,15 @@
               <button class="btn small secondary" id="calSideToggle" title="Werkzeuge ein-/ausblenden">Werkzeuge</button>
             </div>
             <div class="cal-grid" id="calGrid"></div>
-            <p class="small muted" style="margin-top:8px;">Grau hinterlegt = Ferien/Feiertag. Klick auf einen Tag legt einen Termin an; Klick auf einen Stundentermin öffnet die Detailansicht.</p>
+            <!-- U28: Tages-Agenda (Fantastical-Stil) — Klick auf einen Monatstag zeigt seine Termine hier statt sie direkt zu öffnen. -->
+            <div class="cal-day-agenda hidden" id="calDayAgenda">
+              <div class="cal-day-agenda-head">
+                <span class="cal-day-agenda-date" id="calDayAgendaDate"></span>
+                <button class="btn small" id="calDayAgendaAddBtn">+ Termin</button>
+              </div>
+              <div class="cal-day-agenda-list" id="calDayAgendaList"></div>
+            </div>
+            <p class="small muted" style="margin-top:8px;">Grau hinterlegt = Ferien/Feiertag. Klick auf einen Tag zeigt seine Termine unten; Klick auf einen Stundentermin öffnet die Detailansicht.</p>
             <div class="cal-legend" id="calLegend"></div>
             <button class="btn small secondary" id="calManageCatBtn" data-view-target="settings" style="margin-top:8px;">Kategorien verwalten</button>
           </div>
