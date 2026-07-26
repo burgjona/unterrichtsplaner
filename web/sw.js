@@ -73,26 +73,6 @@ async function networkFirst(request, cacheName, fallbackUrl) {
   }
 }
 
-/* Stale-While-Revalidate: sofort aus Cache liefern, im Hintergrund aktualisieren;
-   offline → letzte gecachte Antwort. `event` hält den SW via waitUntil am Leben,
-   bis die Hintergrund-Aktualisierung geschrieben ist. */
-async function staleWhileRevalidate(event, cacheName) {
-  const request = event.request;
-  const cache = await caches.open(cacheName);
-  const cached = await cache.match(request);
-  const network = fetch(request)
-    .then((res) => {
-      if (res && res.ok) return cache.put(request, res.clone()).then(() => res);
-      return res;
-    })
-    .catch(() => null);
-  if (cached) {
-    event.waitUntil(network);   // Revalidierung abschließen, auch nach Antwort.
-    return cached;
-  }
-  return (await network) || Promise.reject(new Error("offline und kein Cache"));
-}
-
 self.addEventListener("fetch", (event) => {
   const req = event.request;
 
@@ -110,14 +90,12 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // API-GETs.
+  // API-GETs: immer Netz-First, damit nach Schreibvorgängen (POST/PUT/DELETE) sofort
+  // die aktuellen Daten erscheinen — der Cache dient nur noch als Offline-Fallback.
+  // (Stale-While-Revalidate lieferte hier sonst nach dem Anlegen/Ändern eines Termins
+  // erst beim übernächsten Aufruf die frischen Daten — daher weg damit.)
   if (url.pathname.startsWith("/api/")) {
-    // Auth network-first, damit ein abgemeldeter Zustand nicht „hängt".
-    if (url.pathname.startsWith("/api/auth/")) {
-      event.respondWith(networkFirst(req, DATA_CACHE));
-    } else {
-      event.respondWith(staleWhileRevalidate(event, DATA_CACHE));
-    }
+    event.respondWith(networkFirst(req, DATA_CACHE));
     return;
   }
 
