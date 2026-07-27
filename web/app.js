@@ -3261,7 +3261,7 @@ const titles = {
   mehr: ["Mehr", "Weitere Bereiche und Einstellungen."],
 };
 // Mobile Bottom-Nav: Views ohne eigenen Tab landen als "aktiv" auf dem Mehr-Tab.
-const BOTTOM_NAV_VIEWS = new Set(["stundenplan", "kalender", "heute", "material"]);
+const BOTTOM_NAV_VIEWS = new Set(["stundenplan", "kalender", "heute", "stunde"]);
 function showView(view) {
   document.querySelectorAll(".nav-btn").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
   document.querySelectorAll(".bn-item").forEach((b) => {
