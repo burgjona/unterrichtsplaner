@@ -369,18 +369,10 @@ async function getLernbereiche(c) {
 }
 
 function renderAll() {
-  $("kpiClasses").textContent = state.classes.length;
-  $("kpiLessons").textContent = state.lessons.length;
-  $("kpiReflect").textContent = state.reflections.length;
-  $("kpiMaterial").textContent = state.materials.length;
-  $("openReflectCount").textContent =
-    state.open.length + (state.open.length === 1 ? " Reflexion offen" : " Reflexionen offen");
-  $("openLessonCount").textContent =
-    state.lessons.length + (state.lessons.length === 1 ? " Stunde geplant" : " Stunden geplant");
-
   renderClassTable();
   renderLessonTable();
   renderTodayList();
+  renderWeekOverview();
   renderReflectSelect();
   renderReflectTable();
   renderOpenReflections();
@@ -397,6 +389,7 @@ function renderAll() {
   renderAsuvLibrary();
   renderAsuvLessonSelect();
   renderPraesentControls();
+  renderSpruchDesTages();
 }
 
 function renderClassTable() {
@@ -1124,6 +1117,146 @@ async function renderTodayList() {
   }
   todayFallbackList(list, todayStr);
 }
+
+const WEEKDAY_SHORT = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+function weekdayOf(dateStr) { return (new Date(dateStr + "T00:00:00").getDay() + 6) % 7; }
+
+// „Woche im Blick": ungeplante Stunden (Stundenplan-Slot mit Klasse ohne passende Unterrichts-
+// planung an dem Tag, Ferien/Feiertage ausgenommen) + alle Kalendertermine dieser Woche
+// (Kalendereinträge sind nie Unterrichtsstunden selbst – die laufen separat über die Lessons).
+async function renderWeekOverview() {
+  const unplannedEl = $("weekUnplannedList");
+  const apptEl = $("weekAppointmentsList");
+  if (!unplannedEl || !apptEl) return;
+
+  const monday = new Date();
+  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+  const mondayStr = isoDate(monday);
+  const weekEnd = new Date(monday);
+  weekEnd.setDate(weekEnd.getDate() + 6);
+  const weekEndStr = isoDate(weekEnd);
+
+  const vis = visibleClassIds();
+  const appts = state.calendar
+    .filter((e) => {
+      const end = e.endDate || e.entryDate;
+      return e.entryDate <= weekEndStr && end >= mondayStr && (e.classId == null || vis.includes(e.classId));
+    })
+    .sort((a, b) => (a.entryDate + (a.startTime || "")).localeCompare(b.entryDate + (b.startTime || "")));
+
+  apptEl.innerHTML = "";
+  if (!appts.length) {
+    apptEl.innerHTML = '<p class="mini-empty">Keine Termine diese Woche.</p>';
+  } else {
+    appts.forEach((e) => {
+      const badgeClass = e.entryType === "lu" ? "bad" : e.entryType === "exam" ? "warn" : "ok";
+      const badgeLabel = e.entryType === "lu" ? "LEK" : e.entryType === "exam" ? "Prüfung" : "Termin";
+      const sub = WEEKDAY_SHORT[weekdayOf(e.entryDate)] + (e.startTime ? ", " + e.startTime : "");
+      const div = document.createElement("div");
+      div.className = "mini-item";
+      div.innerHTML =
+        `<span class="lbl">${esc(e.title)}<span class="sub">${esc(sub)}</span></span>` +
+        `<span class="badge ${badgeClass}">${badgeLabel}</span>`;
+      div.onclick = () => openCalendarEventModal(e.id);
+      apptEl.appendChild(div);
+    });
+  }
+
+  unplannedEl.innerHTML = '<p class="mini-empty">Lade …</p>';
+  try {
+    const data = await calTtFetch(mondayStr);
+    const unplanned = [];
+    (data.days || []).forEach((day) => {
+      if (schoolDateFor(day.date)) return;   // Ferien/Feiertag → an dem Tag ohnehin keine Stunde
+      (day.items || []).forEach((it) => {
+        if (it.classId == null) return;      // kein Klassen-Slot (z. B. Aufsicht) → nicht relevant
+        const planned = state.lessons.some((l) => l.classId === it.classId && l.date === day.date);
+        if (!planned) unplanned.push({ date: day.date, weekday: day.weekday, title: it.title, timeRange: it.timeRange });
+      });
+    });
+    unplannedEl.innerHTML = "";
+    if (!unplanned.length) {
+      unplannedEl.innerHTML = '<p class="mini-empty">Alle Stunden dieser Woche sind geplant.</p>';
+    } else {
+      unplanned.forEach((u) => {
+        const div = document.createElement("div");
+        div.className = "mini-item";
+        div.innerHTML =
+          `<span class="lbl">${esc(u.title)}<span class="sub">${esc(WEEKDAY_SHORT[u.weekday])}, ${esc(u.timeRange || "")}</span></span>` +
+          `<span class="badge warn">planen</span>`;
+        div.onclick = () => showView("stunde");
+        unplannedEl.appendChild(div);
+      });
+    }
+  } catch (e) {
+    unplannedEl.innerHTML = '<p class="mini-empty">Stundenplan konnte nicht geladen werden.</p>';
+  }
+}
+
+// Spruch des Tages: feste Liste, deterministisch nach Datum gewählt (bleibt über den Tag stabil).
+const SAYINGS = [
+  "Guter Unterricht beginnt mit einer guten Frage.",
+  "Fehler sind Fußspuren auf dem Weg zum Verstehen.",
+  "Wer Fragen stellt, hat schon zugehört.",
+  "Ruhe im Klassenzimmer beginnt mit Ruhe am Pult.",
+  "Ein Lob zur rechten Zeit wirkt länger als jede Note.",
+  "Nicht jede Stunde muss perfekt sein – manche muss nur ehrlich sein.",
+  "Die beste Tafel ist die, die am Ende voller Ideen der Klasse ist.",
+  "Geduld ist das leiseste Unterrichtsprinzip – und das wirksamste.",
+  "Wer differenziert, sieht mehr als nur eine Klasse.",
+  "Ein Klassenraum ist immer auch ein Übungsraum für Vertrauen.",
+  "Motivation wächst dort, wo jemand zuerst geglaubt hat.",
+  "Die Pausenklingel unterbricht die Stunde, nicht das Lernen.",
+  "Kleine Rituale tragen große Klassen durch das Schuljahr.",
+  "Vorbereitung ist die Höflichkeit gegenüber der eigenen Klasse.",
+  "Wer zuhört, unterrichtet schon.",
+  "Jede Klasse hat ihr eigenes Tempo – finde es, bevor du planst.",
+  "Struktur gibt Freiheit, kein Korsett.",
+  "Ein gutes Beispiel erklärt mehr als drei gute Sätze.",
+  "Wer Fehler zulässt, macht Lernen erst möglich.",
+  "Der Stundenplan ist ein Gerüst, kein Gesetz.",
+  "Auch die leiseste Klasse hat etwas zu sagen.",
+  "Reflexion ist der Unterricht nach dem Unterricht.",
+  "Ein aufgeräumtes Pult macht noch keinen aufgeräumten Kopf – aber es hilft.",
+  "Wer differenziert plant, muss seltener improvisieren.",
+  "Interesse steckt an – auch das eigene.",
+  "Die beste Disziplin ist eine gute Aufgabe.",
+  "Manchmal ist die wichtigste Frage: Wie geht es dir heute?",
+  "Aus Kreide wird Kreidestaub, aus Mühe wird Können.",
+  "Ein Klassenzimmer wächst mit jedem Schuljahr ein Stück mit.",
+  "Wer plant, gewinnt Zeit für die Momente, die man nicht planen kann.",
+  "Verstehen braucht Zeit – auch wenn die Stunde nur 45 Minuten hat.",
+  "Der Unterricht endet mit der Stunde, das Lernen selten.",
+];
+function spruchIndexForToday() {
+  const d = isoDate(new Date());
+  let h = 0;
+  for (let i = 0; i < d.length; i++) h = (h * 31 + d.charCodeAt(i)) >>> 0;
+  return h % SAYINGS.length;
+}
+function renderSpruchDesTages() {
+  const el = $("spruchText");
+  if (el) el.textContent = SAYINGS[spruchIndexForToday()];
+}
+
+// Vollbild-„Bildschirmschoner": derselbe Spruch wie auf der Kachel, zufälliger Hintergrund.
+const SS_BACKGROUNDS = [
+  "radial-gradient(circle at 20% 20%, #1c6b3a 0%, #0b2f1a 55%, #071f11 100%)",
+  "linear-gradient(135deg, #14532d 0%, #0e3d21 45%, #1c6b3a 100%)",
+  "radial-gradient(circle at 80% 30%, #2c7a4a 0%, #0d2b18 60%, #06170c 100%)",
+  "linear-gradient(160deg, #0f3d22 0%, #1f7a44 60%, #0b2414 100%)",
+  "radial-gradient(circle at 50% 80%, #24623b 0%, #0a2213 55%, #050f0a 100%)",
+  "linear-gradient(200deg, #155e33 0%, #0a2013 65%, #041008 100%)",
+  "radial-gradient(circle at 30% 70%, #1d7043 0%, #0c2c18 55%, #05130a 100%)",
+  "linear-gradient(125deg, #0e2f1c 0%, #1a5c37 50%, #082414 100%)",
+];
+function openScreensaver() {
+  $("ssQuoteText").textContent = SAYINGS[spruchIndexForToday()];
+  $("ssBg").style.background = SS_BACKGROUNDS[Math.floor(Math.random() * SS_BACKGROUNDS.length)];
+  $("screensaver").classList.remove("hidden");
+  $("ssClose").focus();
+}
+function closeScreensaver() { $("screensaver").classList.add("hidden"); }
 
 function renderReflectSelect() {
   $("reflectLesson").innerHTML = state.lessons
@@ -3887,6 +4020,23 @@ function wireEvents() {
   $("notizSearch").addEventListener("input", (e) => {
     notizSearchQuery = e.target.value;
     renderNotizList();
+  });
+
+  // Dashboard-Quicklinks: direkt zur passenden Aktion in der jeweiligen Ansicht springen.
+  $("qlNoteBtn").onclick = () => { showView("notizen"); $("notizNewBtn").click(); };
+  $("qlCalendarBtn").onclick = () => { showView("kalender"); openCalEntryPanel(isoDate(new Date())); };
+  $("qlUploadBtn").onclick = () => {
+    showView("material");
+    const el = $("matFile");
+    if (el) { el.scrollIntoView({ behavior: "smooth", block: "center" }); el.click(); }
+  };
+
+  // Spruch des Tages: Kachel öffnet Vollbild-Vorschau (Klick/Enter/Leertaste); Schließen per „×"/Esc.
+  $("spruchCard").onclick = openScreensaver;
+  $("spruchCard").onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openScreensaver(); } };
+  $("ssClose").onclick = closeScreensaver;
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !$("screensaver").classList.contains("hidden")) closeScreensaver();
   });
 
   document.querySelectorAll(".nav-btn").forEach((btn) => (btn.onclick = () => showView(btn.dataset.view)));

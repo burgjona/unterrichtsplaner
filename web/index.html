@@ -103,18 +103,23 @@
         </div>
         <div class="card dark">
           <h3>Woche im Blick</h3>
-          <div class="mini-list">
-            <div class="mini-item" data-view-target="reflexion"><span id="openReflectCount">0 Reflexionen offen</span><span class="badge warn">ansehen</span></div>
-            <div class="mini-item" data-view-target="stunde"><span id="openLessonCount">0 Stunden geplant</span><span class="badge ok">planen</span></div>
-          </div>
+          <div class="sec-h">Ungeplante Stunden</div>
+          <div class="mini-list" id="weekUnplannedList"></div>
+          <div class="sec-h">Termine diese Woche</div>
+          <div class="mini-list" id="weekAppointmentsList"></div>
         </div>
       </div>
 
-      <div class="grid grid-4">
-        <div class="card kpi-card" data-view-target="klassen"><div class="muted">Angelegte Klassen</div><div class="kpi" id="kpiClasses">0</div><div class="small muted">aktuelles Schuljahr</div></div>
-        <div class="card kpi-card yellow" data-view-target="stunde"><div class="muted">Geplante Stunden</div><div class="kpi" id="kpiLessons">0</div><div class="small muted">mit Klafki, Meyer und Phasen</div></div>
-        <div class="card kpi-card orange" data-view-target="reflexion"><div class="muted">Reflexionen</div><div class="kpi" id="kpiReflect">0</div><div class="small muted">als Journal mit Ampel-Logik</div></div>
-        <div class="card kpi-card" data-view-target="material"><div class="muted">Materialien</div><div class="kpi" id="kpiMaterial">0</div><div class="small muted">getaggt &amp; referenziert</div></div>
+      <div class="ql-row">
+        <div class="ql-cell"><button type="button" class="ql-pill" id="qlNoteBtn"><span class="ql-ic">✎</span>Notiz anlegen</button></div>
+        <div class="ql-cell"><button type="button" class="ql-pill" id="qlCalendarBtn"><span class="ql-ic">📅</span>Kalendereintrag</button></div>
+        <div class="ql-cell"><button type="button" class="ql-pill" id="qlUploadBtn"><span class="ql-ic">⇧</span>Datei hochladen</button></div>
+        <div class="spruch-card" id="spruchCard" tabindex="0" role="button" aria-label="Spruch des Tages, Vollbild öffnen">
+          <div class="qmark">&quot;</div>
+          <div class="eyebrow">Spruch des Tages</div>
+          <blockquote id="spruchText"></blockquote>
+          <div class="expand-hint">↗ Klicken zum Vergrößern</div>
+        </div>
       </div>
 
       <div class="card soft" style="margin-top:16px;">
@@ -836,6 +841,18 @@
 </div>
 
 <div id="modalRoot"></div>
+
+<!-- Spruch des Tages: Vollbild-Vorschau (schließen per „×" oder Esc) -->
+<div id="screensaver" class="screensaver hidden" role="dialog" aria-modal="true" aria-label="Spruch des Tages, Vollbild">
+  <div class="ss-bg" id="ssBg"></div>
+  <button class="ss-close" id="ssClose" aria-label="Schließen">×</button>
+  <div class="ss-quote">
+    <div class="qmark">&quot;</div>
+    <blockquote id="ssQuoteText"></blockquote>
+  </div>
+  <div class="ss-kbd">Esc zum Schließen</div>
+</div>
+
 <script src="api.js"></script>
 <script src="app.js"></script>
 <script src="stundenplan.js"></script>

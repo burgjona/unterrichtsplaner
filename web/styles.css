@@ -45,9 +45,6 @@ main { padding:26px 30px; }
 .card.soft { background:var(--surface-2); } .card.dark { background:var(--primary-dark); color:#f0fdf4; border:none; }
 .card h3 { margin:0 0 10px; font-size:17px; color:var(--primary-dark); }
 .card.dark h3 { color:white; }
-.kpi { font-size:32px; font-weight:800; margin:8px 0 4px; color:var(--primary-dark); }
-.kpi-card { border-top:4px solid var(--primary); cursor:pointer; transition:.15s; } .kpi-card:hover { box-shadow:0 16px 34px rgba(20,83,45,0.16); transform:translateY(-2px); }
-.kpi-card.yellow { border-top-color:var(--yellow); } .kpi-card.orange { border-top-color:var(--orange); }
 .hidden { display:none !important; }
 label { display:block; font-size:13px; color:var(--muted); margin:10px 0 5px; font-weight:700; }
 .hint { font-size:11px; color:var(--muted); margin-top:-3px; margin-bottom:5px; }
@@ -87,6 +84,36 @@ tbody tr td:first-child { border-radius:10px 0 0 10px; } tbody tr td:last-child 
 .badge.ok { background:var(--badge-ok-bg, #bbf7d0); color:var(--badge-ok-text, #14532d); }
 .badge.warn { background:var(--badge-warn-bg, #fef08a); color:var(--badge-warn-text, #713f12); }
 .badge.bad { background:var(--badge-bad-bg, #fecaca); color:var(--badge-bad-text, #7f1d1d); }
+.sec-h { font-size:11px; text-transform:uppercase; letter-spacing:.07em; color:var(--sidebar-label, #86efac); margin:12px 0 6px; }
+.sec-h:first-child { margin-top:0; }
+.mini-item .lbl { display:flex; flex-direction:column; gap:1px; }
+.mini-item .lbl .sub { font-size:11.5px; font-weight:400; opacity:.75; }
+.mini-empty { font-size:12.5px; opacity:.75; padding:6px 2px; }
+
+/* Quicklinks + Spruch des Tages (an der Stelle der früheren Statistik-Kacheln) */
+.ql-row { display:grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap:16px; margin-top:16px; align-items:stretch; }
+.ql-cell { display:flex; align-items:center; }
+.ql-pill { display:flex; align-items:center; gap:9px; width:100%; background:var(--surface); border:1px solid var(--line); border-radius:999px; padding:12px 16px 12px 12px; cursor:pointer; font:700 13.5px inherit; color:var(--primary-dark); transition:.15s; }
+.ql-pill:hover { background:var(--surface-2); border-color:var(--primary); transform:translateY(-1px); }
+.ql-pill .ql-ic { flex:0 0 auto; width:28px; height:28px; border-radius:9px; background:var(--surface-2); display:flex; align-items:center; justify-content:center; font-size:14px; }
+.ql-pill:hover .ql-ic { background:#fff; }
+.spruch-card { background:linear-gradient(155deg, var(--primary-dark), #0c3820); color:#eafbee; border-radius:var(--radius); box-shadow:var(--shadow); padding:16px; cursor:pointer; position:relative; overflow:hidden; display:flex; flex-direction:column; justify-content:space-between; }
+.spruch-card .qmark { position:absolute; top:-14px; right:6px; font-size:76px; font-family:Georgia,serif; color:rgba(255,255,255,0.08); line-height:1; }
+.spruch-card .eyebrow { font-size:10.5px; text-transform:uppercase; letter-spacing:.08em; color:#9fe0ac; font-weight:700; }
+.spruch-card blockquote { margin:8px 0 0; font-size:14.5px; line-height:1.45; font-weight:600; }
+.spruch-card .expand-hint { margin-top:12px; font-size:10.5px; color:#9fe0ac; display:flex; align-items:center; gap:5px; }
+.spruch-card:focus-visible { outline:2px solid #fff; outline-offset:2px; }
+
+/* Spruch des Tages: Vollbild-„Bildschirmschoner" */
+.screensaver { position:fixed; inset:0; z-index:60; display:flex; align-items:center; justify-content:center; padding:40px; text-align:center; }
+.ss-bg { position:absolute; inset:0; z-index:-1; }
+.ss-close { position:absolute; top:22px; right:26px; width:42px; height:42px; border-radius:50%; border:1.5px solid rgba(255,255,255,0.45); background:rgba(0,0,0,0.15); color:#fff; font-size:19px; line-height:1; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+.ss-close:hover { background:rgba(0,0,0,0.32); }
+.ss-close:focus-visible { outline:2px solid #fff; outline-offset:2px; }
+.ss-kbd { position:absolute; bottom:22px; right:26px; color:rgba(255,255,255,0.65); font-size:11.5px; letter-spacing:.03em; }
+.ss-quote { max-width:680px; }
+.ss-quote .qmark { font-family:Georgia,serif; font-size:64px; color:rgba(255,255,255,0.55); line-height:1; margin-bottom:4px; }
+.ss-quote blockquote { margin:0; font-size:clamp(22px,3.4vw,34px); line-height:1.4; color:#fff; font-weight:700; text-shadow:0 2px 18px rgba(0,0,0,0.25); }
 .meyer-grid { display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap:8px; }
 .meyer-row { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:9px 11px; background:var(--surface-2); border:1px solid var(--line); border-radius:10px; }
 .meyer-row .name { font-size:12px; font-weight:700; color:var(--primary-dark); }
@@ -166,7 +193,7 @@ tbody tr td:first-child { border-radius:10px 0 0 10px; } tbody tr td:last-child 
 .view-toggle { display:flex; gap:6px; margin-left:auto; }
 .view-toggle button { background:var(--surface-2); border:1px solid var(--line); border-radius:8px; padding:6px 12px; cursor:pointer; font-size:12px; font-weight:700; color:var(--muted); }
 .view-toggle button.active { background:var(--primary); color:white; border-color:var(--primary); }
-@media (max-width: 1080px) { .hero-grid, .grid-3, .grid-2, .grid-4, .row, .row-3, .row-4, .meyer-grid { grid-template-columns: 1fr; } }
+@media (max-width: 1080px) { .hero-grid, .grid-3, .grid-2, .grid-4, .row, .row-3, .row-4, .meyer-grid { grid-template-columns: 1fr; } .ql-row { grid-template-columns: repeat(2, minmax(0,1fr)); } }
 .burger-btn { display:none; }
 .nav-backdrop { display:none; }
 .bottom-nav { display:none; }
@@ -240,18 +267,18 @@ tbody tr td:first-child { border-radius:10px 0 0 10px; } tbody tr td:last-child 
   .cal-cell { min-height:48px; padding:4px; }
   .cal-entry { font-size:9.5px; padding:3px 5px; border-radius:5px; }
   .cal-daynum { font-size:11px; }
-  .kpi { font-size:26px; }
   .brand-wrap { gap:10px; }
   .class-toggle-row { gap:6px; }
   .timeline-block { white-space:normal; word-break:break-word; }
   input, select, textarea, button { font-size:16px; }
-  .nav-btn, .btn, .mini-item, .kpi-card, .class-toggle-row button, .view-toggle button { min-height:44px; }
+  .nav-btn, .btn, .mini-item, .ql-pill, .class-toggle-row button, .view-toggle button { min-height:44px; }
   .table-scroll { overflow-x:visible; }
   table { width:100%; table-layout:fixed; }
   th, td { word-break:break-word; padding:6px 4px; font-size:11px; white-space:normal; }
   .row, .row-3 { grid-template-columns: 1fr; }
   .grid-4, .grid-3, .grid-2 { grid-template-columns: 1fr; }
   .hero-grid { grid-template-columns: 1fr; }
+  .ql-row { grid-template-columns: 1fr; }
 }
 
 /* M10 U3: Sidebar am Desktop einklappbar (nur >920px, Mobile-Drawer unberührt) */
