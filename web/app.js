@@ -4046,6 +4046,10 @@ function wireEvents() {
         const keys = await caches.keys();
         await Promise.all(keys.map((k) => caches.delete(k)));
       }
+      // Service-Worker-CacheStorage allein reicht nicht — der normale HTTP-Disk-Cache
+      // des Browsers bleibt davon unberührt (das erklärt den Unterschied zwischen Chrome
+      // und Edge). Clear-Site-Data ist der einzige Weg, auch den zuverlässig zu leeren.
+      await API.post("/settings/clear-cache");
     } catch (e) { /* egal — trotzdem neu laden */ }
     location.reload();
   };

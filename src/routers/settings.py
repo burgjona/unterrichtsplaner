@@ -8,7 +8,7 @@ import json
 import os
 import sqlite3
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 from fastapi.responses import FileResponse
 
 from ..deps import get_db, get_storage_root, get_user_id
@@ -45,6 +45,16 @@ def _settings_out(conn, user_id) -> SettingsOut:
 @router.get("", response_model=SettingsOut)
 def get_settings(conn: sqlite3.Connection = Depends(get_db), user_id: int = Depends(get_user_id)):
     return _settings_out(conn, user_id)
+
+
+@router.post("/clear-cache", status_code=204)
+def clear_cache(user_id: int = Depends(get_user_id)):
+    """Weist den Browser per Clear-Site-Data-Header an, HTTP-Cache + Service-Worker/
+    Cache-Storage für diese Origin zu leeren. Rein clientseitiges Löschen (caches.delete,
+    registration.unregister) erreicht den normalen HTTP-Disk-Cache nicht — dieser Header
+    ist der einzige zuverlässige, browserübergreifende Weg dafür (fehlte bislang, deshalb
+    wirkte der Button in Chrome nicht, in Edge zufällig schon)."""
+    return Response(status_code=204, headers={"Clear-Site-Data": '"cache", "storage"'})
 
 
 @router.put("/api-key", response_model=SettingsOut)
