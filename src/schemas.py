@@ -966,6 +966,7 @@ class TimetableResolvedItem(Base):
 class TimetableResolvedDay(Base):
     date: str
     weekday: int
+    is_tropentag: bool = False   # Tropenplan (verkürzter Unterricht) gilt an diesem Tag
     items: List[TimetableResolvedItem] = Field(default_factory=list)
 
 
@@ -976,3 +977,42 @@ class TimetableResolved(Base):
     plan_id: int
     plan_name: str
     days: List[TimetableResolvedDay] = Field(default_factory=list)
+
+
+# --- Tropenplan (U27d): eigenes Klingelraster + markierte Tropentage ---
+class TropenSlotCreate(Base):
+    position: int
+    slot_type: Literal["lesson", "break"] = "lesson"
+    label: str
+    start_time: str = Field(pattern=_TIME_RE)
+    end_time: str = Field(pattern=_TIME_RE)
+    covers: int = Field(default=1, ge=1, le=4)
+
+
+class TropenSlotUpdate(Base):
+    position: Optional[int] = None
+    slot_type: Optional[Literal["lesson", "break"]] = None
+    label: Optional[str] = None
+    start_time: Optional[str] = Field(default=None, pattern=_TIME_RE)
+    end_time: Optional[str] = Field(default=None, pattern=_TIME_RE)
+    covers: Optional[int] = Field(default=None, ge=1, le=4)
+
+
+class TropenSlotOut(Base):
+    id: int
+    position: int
+    slot_type: str
+    label: str
+    start_time: str
+    end_time: str
+    covers: int
+    created_at: str
+
+
+class TropentagUpdate(Base):
+    active: bool
+
+
+class TropentagOut(Base):
+    date: str
+    active: bool

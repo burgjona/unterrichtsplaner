@@ -304,3 +304,106 @@ def test_slot_delete_cascades_to_entries(client, auth):
     remaining = {e["id"] for e in client.get(f"{BASE}/entries", params={"planId": plan_id}).json()}
     assert e1["id"] not in remaining
     assert e2["id"] in remaining
+
+
+# ---------------------------------------------------------------- 13) Tropenplan-Slots (Seed)
+def test_tropen_slots_seed_idempotent(client, auth):
+    t1 = client.get(f"{BASE}/tropenslots").json()
+    t2 = client.get(f"{BASE}/tropenslots").json()
+    assert len(t1) == len(t2) == 13
+
+    lessons = [s for s in t1 if s["slotType"] == "lesson"]
+    assert [s["label"] for s in lessons] == ["1.", "2.", "3.", "4.", "5.", "6.", "7./8."]
+    # Summe covers == Anzahl normaler 'lesson'-Slots (8, siehe DEFAULT_SLOTS).
+    assert sum(s["covers"] for s in lessons) == 8
+    merged = next(s for s in lessons if s["label"] == "7./8.")
+    assert merged["covers"] == 2 and merged["startTime"] == "12:10" and merged["endTime"] == "13:10"
+
+    # Umlaute unverändert.
+    assert any(s["label"] == "Frühstückspause" for s in t1)
+
+
+def test_tropen_slots_crud(client, auth):
+    client.get(f"{BASE}/tropenslots")  # Seed auslösen
+    created = client.post(f"{BASE}/tropenslots", json={
+        "position": 20, "slotType": "lesson", "label": "Test", "startTime": "07:00", "endTime": "07:30",
+    })
+    assert created.status_code == 201
+    sid = created.json()["id"]
+    assert created.json()["covers"] == 1
+
+    put = client.put(f"{BASE}/tropenslots/{sid}", json={"label": "Test2", "covers": 2})
+    assert put.status_code == 200
+    assert put.json()["label"] == "Test2" and put.json()["covers"] == 2
+
+    assert client.delete(f"{BASE}/tropenslots/{sid}").status_code == 204
+    assert client.delete(f"{BASE}/tropenslots/{sid}").status_code == 404
+    assert client.put(f"{BASE}/tropenslots/{sid}", json={"label": "x"}).status_code == 404
+
+
+# ---------------------------------------------------------------- 14) Tropentage
+def test_tropentag_requires_login(client):
+    assert client.put(f"{BASE}/tropentage/2026-01-12", json={"active": True}).status_code == 401
+
+
+def test_tropentag_invalid_date(client, auth):
+    assert client.put(f"{BASE}/tropentage/not-a-date", json={"active": True}).status_code == 400
+
+
+def test_tropentag_toggle_idempotent(client, auth):
+    on = client.put(f"{BASE}/tropentage/2026-01-12", json={"active": True})
+    assert on.status_code == 200 and on.json() == {"date": "2026-01-12", "active": True}
+    # Zweimal aktivieren (ON CONFLICT DO NOTHING) darf nicht knallen.
+    assert client.put(f"{BASE}/tropentage/2026-01-12", json={"active": True}).status_code == 200
+
+    off = client.put(f"{BASE}/tropentage/2026-01-12", json={"active": False})
+    assert off.status_code == 200 and off.json() == {"date": "2026-01-12", "active": False}
+    # Deaktivieren eines nie gesetzten Tages darf ebenfalls nicht knallen.
+    assert client.put(f"{BASE}/tropentage/2026-02-01", json={"active": False}).status_code == 200
+
+
+# ---------------------------------------------------------------- 15) Resolved: Tropentag-Zeiten
+def test_resolved_tropentag_overrides_times(client, auth):
+    _, slots, plans = _seed(client)
+    plan_id = plans[0]["id"]
+    kinds = client.get(f"{BASE}/kinds").json()
+    kind_id = kinds[0]["id"]
+    client.get(f"{BASE}/tropenslots")  # Tropenplan-Raster seeden
+
+    monday = _this_monday()
+    monday_str = monday.isoformat()
+    tuesday_str = (monday + datetime.timedelta(days=1)).isoformat()
+
+    # Montag: 1. Stunde (slots[1] = "1.", normal 07:30–08:15) + Doppelstunde 7./8. (slots[9]="7.", span 2).
+    e_first = client.post(f"{BASE}/entries", json={
+        "planId": plan_id, "slotId": slots[1]["id"], "kindId": kind_id, "weekday": 0,
+    }).json()
+    e_double = client.post(f"{BASE}/entries", json={
+        "planId": plan_id, "slotId": slots[9]["id"], "kindId": kind_id, "weekday": 0, "spanSlots": 2,
+    }).json()
+    # Dienstag: dieselbe 1. Stunde, aber kein Tropentag → Zeiten bleiben normal.
+    client.post(f"{BASE}/entries", json={
+        "planId": plan_id, "slotId": slots[1]["id"], "kindId": kind_id, "weekday": 1,
+    })
+
+    # Nur Montag als Tropentag markieren.
+    assert client.put(f"{BASE}/tropentage/{monday_str}", json={"active": True}).status_code == 200
+
+    r = client.get(f"{BASE}/resolved", params={"start": monday_str}).json()
+    mon, tue = r["days"][0], r["days"][1]
+    assert mon["date"] == monday_str and mon["isTropentag"] is True
+    assert tue["date"] == tuesday_str and tue["isTropentag"] is False
+
+    by_id = {it["entryId"]: it for it in mon["items"]}
+    assert by_id[e_first["id"]]["timeRange"] == "07:50–08:20"          # Tropenplan "1."
+    assert by_id[e_double["id"]]["timeRange"] == "12:10–13:10"         # 7./8. zusammengelegt
+
+    tue_item = next(it for it in tue["items"] if it["slotId"] == slots[1]["id"])
+    assert tue_item["timeRange"] == "07:30–08:15"                      # normaler Klingelplan
+
+    # Tropentag wieder deaktivieren → Montag zeigt wieder normale Zeiten.
+    assert client.put(f"{BASE}/tropentage/{monday_str}", json={"active": False}).status_code == 200
+    r2 = client.get(f"{BASE}/resolved", params={"start": monday_str}).json()
+    mon2 = r2["days"][0]
+    assert mon2["isTropentag"] is False
+    assert next(it for it in mon2["items"] if it["entryId"] == e_first["id"])["timeRange"] == "07:30–08:15"

@@ -667,6 +667,22 @@ body.cmd-open { overflow:hidden; }
   .cal-tt-chip { font-size:10px; padding:1px 4px; }
 }
 
+/* U27d: Tropenplan-Toggle je Wochentag (verkürzter Unterricht bei Hitze). */
+.cal-tt-daytoggle {
+  display:block; width:100%; margin-bottom:3px; padding:1px 5px;
+  border:1px solid var(--line); border-radius:6px; background:var(--surface);
+  color:var(--muted); font-size:10px; font-weight:700; line-height:1.5;
+  cursor:pointer; text-align:left; opacity:.55;
+}
+.cal-tt-daytoggle:hover { opacity:1; border-color:var(--orange); color:var(--orange); }
+.cal-tt-daytoggle.active {
+  opacity:1; background:color-mix(in srgb, var(--orange) 18%, var(--surface));
+  border-color:var(--orange); color:var(--orange);
+}
+@media (max-width: 600px) {
+  .cal-tt-daytoggle { font-size:9px; padding:1px 4px; }
+}
+
 /* U28: Stoffplan-Datepicker-Popover mit grau hinterlegten Ferien/Feiertagen */
 .date-picker-input { cursor:pointer; background:var(--surface); }
 .date-picker-popover {

@@ -1862,13 +1862,31 @@ async function calTtFetch(mondayStr) {
   }
 }
 // Blasse Chips (Farbpunkt + zarte Tönung + Titel) in die Mo–Fr-Kacheln injizieren — nach .cal-daynum.
+// U27d: zusätzlich pro Wochentag ein Toggle-Chip, um den Tag als Tropentag (verkürzter
+// Unterricht bei Hitze) zu markieren — unabhängig davon, ob Einträge vorhanden sind.
 function calTtApplyToCells(data) {
   const grid = $("calGrid");
   if (!grid || !data || !Array.isArray(data.days)) return;
   data.days.forEach((day) => {
-    if (!day || !day.date || !Array.isArray(day.items) || !day.items.length) return;
+    if (!day || !day.date) return;
     const cell = grid.querySelector('.cal-cell[data-date="' + day.date + '"]');
     if (!cell) return;
+    // Re-Anwendung (z. B. nach Tropentag-Toggle) räumt zuerst die vorherige Injektion weg —
+    // sonst verdoppeln sich Toggle-Chip und Strip bei jedem erneuten calTtApplyToCells-Aufruf.
+    cell.querySelectorAll(".cal-tt-daytoggle, .cal-tt-strip").forEach((el) => el.remove());
+    const dayNum = cell.querySelector(".cal-daynum");
+
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "cal-tt-daytoggle" + (day.isTropentag ? " active" : "");
+    toggle.textContent = "Tropenplan";
+    toggle.title = day.isTropentag
+      ? "Tropenplan für diesen Tag aufheben"
+      : "Diesen Tag als Tropentag markieren (verkürzter Unterricht)";
+    toggle.onclick = (ev) => { ev.stopPropagation(); calTtToggleTropentag(day.date, !day.isTropentag); };
+    cell.insertBefore(toggle, dayNum ? dayNum.nextSibling : cell.firstChild);
+
+    if (!Array.isArray(day.items) || !day.items.length) return;
     const strip = document.createElement("div");
     strip.className = "cal-tt-strip";
     strip.innerHTML = day.items.map((it) => {
@@ -1878,9 +1896,22 @@ function calTtApplyToCells(data) {
         '<span class="cal-tt-dot"></span>' +
         '<span class="cal-tt-title">' + esc(it.title) + '</span></span>';
     }).join("");
-    const dayNum = cell.querySelector(".cal-daynum");
-    cell.insertBefore(strip, dayNum ? dayNum.nextSibling : cell.firstChild);
+    cell.insertBefore(strip, toggle.nextSibling);
   });
+}
+// U27d: Tropentag umschalten (PUT + Cache invalidieren + Woche neu einspielen).
+async function calTtToggleTropentag(dateStr, active) {
+  try {
+    await API.put("/stundenplan/tropentage/" + encodeURIComponent(dateStr), { active });
+    const d = parseIso(dateStr);
+    if (!d) return;
+    const monday = new Date(d);
+    monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+    const mondayStr = isoDate(monday);
+    calTtCache.delete(mondayStr);
+    if (calMode === "week") await calTtRenderWeek(mondayStr, ++calTtGen);
+    toast(active ? "Tropentag markiert – Zeiten in der Woche angepasst." : "Tropentag aufgehoben.");
+  } catch (e) { toast(e.message, false); }
 }
 // Wochen-Render-Nachlauf: Verfügbarkeit ermitteln, Toggle/Badge pflegen, Chips einspielen.
 async function calTtRenderWeek(mondayStr, gen) {
@@ -2042,8 +2073,9 @@ function renderCalendar() {
     // U22: Klick auf die freie Fläche eines Tages öffnet das Termin-Popover (vorbefülltes Datum).
     grid.querySelectorAll(".cal-cell").forEach((cell) => {
       cell.addEventListener("click", (ev) => {
-        // U27c: Klicks auf die (blasse) Stundenplan-Ebene öffnen kein Termin-Popover.
-        if (ev.target.closest(".cal-entry, .cal-tt-strip")) return;
+        // U27c/U27d: Klicks auf die (blasse) Stundenplan-Ebene oder den Tropentag-Toggle
+        // öffnen kein Termin-Popover.
+        if (ev.target.closest(".cal-entry, .cal-tt-strip, .cal-tt-daytoggle")) return;
         openCalEntryPanel(cell.dataset.date);
       });
     });

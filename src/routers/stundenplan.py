@@ -25,6 +25,8 @@ from ..schemas import (
     TimetableResolved, TimetableResolvedDay, TimetableResolvedItem,
     TimetableSettingsOut, TimetableSettingsUpdate,
     TimetableSlotCreate, TimetableSlotOut, TimetableSlotUpdate,
+    TropenSlotCreate, TropenSlotOut, TropenSlotUpdate,
+    TropentagOut, TropentagUpdate,
 )
 
 router = APIRouter(prefix="/stundenplan", tags=["stundenplan"])
@@ -56,6 +58,26 @@ DEFAULT_SLOTS = [
     (8, "lesson", "6.", "12:45", "13:30"),
     (9, "lesson", "7.", "13:40", "14:25"),
     (10, "lesson", "8.", "14:30", "15:15"),
+]
+
+# Standard-Tropenplan-Klingelraster (position, slot_type, label, start, end, covers) –
+# `covers` = wie viele normale 'lesson'-Slots (in Positions-Reihenfolge) dieser Tropen-
+# Slot zeitlich zusammenfasst; Summe der covers muss der Anzahl normaler Stunden
+# entsprechen (hier 8, wie DEFAULT_SLOTS). Nur die letzte Stunde (7./8.) wird gemerged.
+DEFAULT_TROPEN_SLOTS = [
+    (0, "lesson", "1.", "07:50", "08:20", 1),
+    (1, "break", "Pause", "08:20", "08:30", 1),
+    (2, "lesson", "2.", "08:30", "09:00", 1),
+    (3, "break", "Pause", "09:00", "09:10", 1),
+    (4, "lesson", "3.", "09:10", "09:40", 1),
+    (5, "break", "Frühstückspause", "09:40", "10:00", 1),
+    (6, "lesson", "4.", "10:00", "10:30", 1),
+    (7, "break", "Pause", "10:30", "10:40", 1),
+    (8, "lesson", "5.", "10:40", "11:10", 1),
+    (9, "break", "Mittagspause", "11:10", "11:35", 1),
+    (10, "lesson", "6.", "11:35", "12:05", 1),
+    (11, "break", "Pause", "12:05", "12:10", 1),
+    (12, "lesson", "7./8.", "12:10", "13:10", 2),
 ]
 
 
@@ -131,6 +153,56 @@ def _seed_defaults(conn, user_id: int) -> None:
     except Exception:
         conn.rollback()
         raise
+
+
+def _seed_tropen_defaults(conn, user_id: int) -> None:
+    """Legt das Tropenplan-Klingelraster einmalig an (idempotent, eigenes Gate –
+    unabhängig von _seed_defaults, damit Bestandsnutzer es nachträglich bekommen)."""
+    if conn.execute(
+        "SELECT 1 FROM tropenplan_slots WHERE user_id = ? LIMIT 1", (user_id,)
+    ).fetchone():
+        return
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        if conn.execute(
+            "SELECT 1 FROM tropenplan_slots WHERE user_id = ? LIMIT 1", (user_id,)
+        ).fetchone():
+            conn.rollback()
+            return
+        conn.executemany(
+            "INSERT INTO tropenplan_slots"
+            "(user_id, position, slot_type, label, start_time, end_time, covers) "
+            "VALUES (?,?,?,?,?,?,?)",
+            [(user_id, pos, stype, label, start, end, covers)
+             for pos, stype, label, start, end, covers in DEFAULT_TROPEN_SLOTS],
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
+def _tropen_time_map(conn, user_id: int) -> dict:
+    """normale slot_id (nur 'lesson') -> (start,end) aus dem Tropenplan-Raster.
+    Paarung über die Positions-Reihenfolge der 'lesson'-Slots; `covers` dehnt einen
+    Tropen-Slot auf mehrere aufeinanderfolgende normale Stunden (z. B. 7./8.)."""
+    normal_lessons = conn.execute(
+        "SELECT id FROM timetable_slots WHERE user_id = ? AND slot_type = 'lesson' "
+        "ORDER BY position, id", (user_id,)
+    ).fetchall()
+    tropen_lessons = conn.execute(
+        "SELECT start_time, end_time, covers FROM tropenplan_slots "
+        "WHERE user_id = ? AND slot_type = 'lesson' ORDER BY position, id", (user_id,)
+    ).fetchall()
+    mapping = {}
+    ni = 0
+    for t in tropen_lessons:
+        for _ in range(max(t["covers"], 1)):
+            if ni >= len(normal_lessons):
+                break
+            mapping[normal_lessons[ni]["id"]] = (t["start_time"], t["end_time"])
+            ni += 1
+    return mapping
 
 
 def _settings_out(conn, user_id: int) -> TimetableSettingsOut:
@@ -429,6 +501,78 @@ def put_settings(body: TimetableSettingsUpdate, conn=Depends(get_db), user_id: i
     return _settings_out(conn, user_id)
 
 
+# ---------------------------------------------------------------- Tropenplan-Slots
+def _get_tropen_slot(conn, user_id, sid):
+    row = conn.execute(
+        "SELECT * FROM tropenplan_slots WHERE id = ? AND user_id = ?", (sid, user_id)
+    ).fetchone()
+    return TropenSlotOut(**dict(row)) if row else None
+
+
+@router.get("/tropenslots", response_model=List[TropenSlotOut])
+def list_tropen_slots(conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+    _seed_tropen_defaults(conn, user_id)
+    rows = conn.execute(
+        "SELECT * FROM tropenplan_slots WHERE user_id = ? ORDER BY position, id", (user_id,)
+    ).fetchall()
+    return [TropenSlotOut(**dict(r)) for r in rows]
+
+
+@router.post("/tropenslots", response_model=TropenSlotOut, status_code=201)
+def create_tropen_slot(body: TropenSlotCreate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+    cur = conn.execute(
+        "INSERT INTO tropenplan_slots(user_id, position, slot_type, label, start_time, end_time, covers) "
+        "VALUES (?,?,?,?,?,?,?)",
+        (user_id, body.position, body.slot_type, body.label, body.start_time, body.end_time, body.covers),
+    )
+    conn.commit()
+    return _get_tropen_slot(conn, user_id, cur.lastrowid)
+
+
+@router.put("/tropenslots/{sid}", response_model=TropenSlotOut)
+def update_tropen_slot(sid: int, body: TropenSlotUpdate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+    row_or_404(_get_tropen_slot(conn, user_id, sid), "Tropenplan-Slot")
+    fields = body.model_dump(exclude_unset=True)
+    if fields:
+        cols = ", ".join(f"{k} = :{k}" for k in fields)
+        fields.update(id=sid, uid=user_id)
+        conn.execute(f"UPDATE tropenplan_slots SET {cols} WHERE id = :id AND user_id = :uid", fields)
+        conn.commit()
+    return _get_tropen_slot(conn, user_id, sid)
+
+
+@router.delete("/tropenslots/{sid}", status_code=204)
+def delete_tropen_slot(sid: int, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+    cur = conn.execute("DELETE FROM tropenplan_slots WHERE id = ? AND user_id = ?", (sid, user_id))
+    conn.commit()
+    if cur.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Tropenplan-Slot nicht gefunden.")
+
+
+# ---------------------------------------------------------------- Tropentage
+@router.put("/tropentage/{tag_date}", response_model=TropentagOut)
+def put_tropentag(
+    tag_date: str,
+    body: TropentagUpdate,
+    conn=Depends(get_db),
+    user_id: int = Depends(get_user_id),
+):
+    try:
+        date.fromisoformat(tag_date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Ungültiges Datum (YYYY-MM-DD erwartet).")
+    if body.active:
+        conn.execute(
+            "INSERT INTO tropentage(user_id, date) VALUES (?, ?) "
+            "ON CONFLICT(user_id, date) DO NOTHING",
+            (user_id, tag_date),
+        )
+    else:
+        conn.execute("DELETE FROM tropentage WHERE user_id = ? AND date = ?", (user_id, tag_date))
+    conn.commit()
+    return TropentagOut(date=tag_date, active=body.active)
+
+
 # ---------------------------------------------------------------- Aufgelöste Woche
 @router.get("/resolved", response_model=TimetableResolved)
 def resolved(
@@ -437,6 +581,7 @@ def resolved(
     user_id: int = Depends(get_user_id),
 ):
     _seed_defaults(conn, user_id)
+    _seed_tropen_defaults(conn, user_id)
     try:
         d = date.fromisoformat(start)
     except ValueError:
@@ -462,8 +607,13 @@ def resolved(
             (user_id,),
         ).fetchone()
 
+    week_dates = [(monday + timedelta(days=wd)).isoformat() for wd in range(5)]
+    tropen_dates = {r["date"] for r in conn.execute(
+        "SELECT date FROM tropentage WHERE user_id = ? AND date IN (?,?,?,?,?)",
+        (user_id, *week_dates),
+    ).fetchall()}
     days = [
-        TimetableResolvedDay(date=(monday + timedelta(days=wd)).isoformat(), weekday=wd, items=[])
+        TimetableResolvedDay(date=week_dates[wd], weekday=wd, is_tropentag=week_dates[wd] in tropen_dates, items=[])
         for wd in range(5)
     ]
     if plan is None:                                 # dank Seeding praktisch unerreichbar
@@ -486,6 +636,8 @@ def resolved(
     classes = {c["id"]: c for c in conn.execute(
         "SELECT id, name, subject FROM classes WHERE user_id = ?", (user_id,)
     ).fetchall()}
+    # Tropenplan-Zeitmapping nur berechnen, wenn diese Woche überhaupt einen Tropentag hat.
+    tropen_map = _tropen_time_map(conn, user_id) if tropen_dates else {}
 
     entries = conn.execute(
         "SELECT e.* FROM timetable_entries e "
@@ -500,7 +652,14 @@ def resolved(
         if anchor is None:                           # defensiv (Slot-CASCADE räumt sonst auf)
             continue
         end_idx = min(idx_by_id[e["slot_id"]] + e["span_slots"] - 1, len(ordered) - 1)
-        time_range = f'{anchor["start_time"]}–{ordered[end_idx]["end_time"]}'
+        end_slot_id = ordered[end_idx]["id"]
+        # Tropentag: Zeiten aus dem Tropenplan-Raster statt dem normalen Klingelraster.
+        if days[e["weekday"]].is_tropentag and e["slot_id"] in tropen_map:
+            t_start, _ = tropen_map[e["slot_id"]]
+            _, t_end = tropen_map.get(end_slot_id, tropen_map[e["slot_id"]])
+            time_range = f'{t_start}–{t_end}'
+        else:
+            time_range = f'{anchor["start_time"]}–{ordered[end_idx]["end_time"]}'
 
         cls = classes.get(e["class_id"]) if e["class_id"] is not None else None
         kind = kinds.get(e["kind_id"])
