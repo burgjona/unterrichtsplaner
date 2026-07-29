@@ -4036,6 +4036,19 @@ function wireEvents() {
     try { await API.post("/auth/logout"); } catch (e) { /* egal */ }
     location.reload();
   };
+  $("clearCacheBtn").onclick = async () => {
+    try {
+      if ("serviceWorker" in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map((r) => r.unregister()));
+      }
+      if ("caches" in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((k) => caches.delete(k)));
+      }
+    } catch (e) { /* egal — trotzdem neu laden */ }
+    location.reload();
+  };
 
   // Branding: Profilbild & Logo (M12/U10)
   $("avatarUploadBtn").onclick = () => $("avatarFileInput").click();
