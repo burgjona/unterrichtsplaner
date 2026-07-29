@@ -657,3 +657,57 @@ body.cmd-open { overflow:hidden; }
 .dp-cell[data-date] { cursor:pointer; }
 .dp-cell[data-date]:hover { outline:2px solid var(--primary); outline-offset:-2px; }
 .dp-cell.dp-selected { background:var(--primary); color:#fff; }
+
+/* U17-Umbau: Notizen-Arbeitsbereich (Liste + Editor, iOS-Notizen-artig; Desktop-Layout) */
+.notiz-ws-card { padding:0; overflow:hidden; }
+.notiz-ws { display:grid; grid-template-columns:280px minmax(0,1fr); min-height:520px; }
+.notiz-ws-side { background:var(--surface-2); border-right:1px solid var(--line); display:flex; flex-direction:column; min-height:0; }
+.notiz-ws-side-head { display:flex; align-items:center; justify-content:space-between; padding:16px 16px 10px; }
+.notiz-ws-side-head h3 { margin:0; font-size:19px; color:var(--primary-dark); }
+.notiz-search { margin:0 14px 10px; width:auto; }
+.notiz-ws-list { flex:1; overflow-y:auto; padding:0 8px 16px; }
+.notiz-item { display:flex; flex-direction:column; gap:3px; padding:9px 10px; border-radius:10px; cursor:pointer; margin-bottom:2px; }
+.notiz-item:hover { background:var(--surface); }
+.notiz-item.active { background:var(--primary); }
+.notiz-item.active .notiz-item-title, .notiz-item.active .notiz-item-meta, .notiz-item.active .notiz-item-preview { color:#fff; }
+.notiz-item-title { font-size:14px; font-weight:700; color:var(--text); }
+.notiz-item-meta { font-size:11.5px; color:var(--muted); }
+.notiz-item-preview { font-size:12.5px; color:var(--muted); line-height:1.4; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.notiz-ws-empty-list { padding:16px 12px; color:var(--muted); font-size:13px; }
+.notiz-ws-main { display:flex; flex-direction:column; min-height:0; }
+.notiz-main-head { padding:18px 24px 12px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap; }
+.notiz-main-head-info { min-width:0; }
+.notiz-main-head-info span { font-size:12.5px; color:var(--muted); }
+.notiz-main-scope-select { margin-top:4px; }
+.notiz-back-btn { display:none; }
+.notizen-text { width:100%; flex:1; min-height:340px; border:0; resize:none; padding:20px 24px; font-size:14.5px; line-height:1.7; background:transparent; color:var(--text); font-family:inherit; }
+.notizen-text:focus { outline:none; }
+.notizen-foot { display:flex; align-items:center; justify-content:space-between; padding:8px 24px 16px; }
+.notiz-ws-placeholder { flex:1; display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:13.5px; padding:24px; text-align:center; }
+
+@media (max-width: 920px) {
+  .notiz-ws { grid-template-columns:1fr; }
+  .notiz-ws.notiz-detail-open .notiz-ws-side { display:none; }
+  .notiz-ws:not(.notiz-detail-open) .notiz-ws-main { display:none; }
+  .notiz-back-btn { display:inline-flex; }
+}
+@media (max-width: 600px) {
+  .notiz-ws { min-height:0; }
+  .notiz-ws-side-head { padding:12px 12px 8px; }
+  .notiz-main-head { padding:14px 16px 10px; }
+  .notizen-text { padding:14px 16px; min-height:260px; }
+  .notizen-foot { padding:8px 16px 14px; }
+}
+
+/* Mini-Ausgabe des Notizen-Arbeitsbereichs in der Klassen-Detailansicht */
+.notiz-ws-mini { display:flex; flex-direction:column; gap:12px; }
+.notiz-ws-mini-list { display:flex; flex-direction:column; gap:6px; }
+.notiz-mini-item { display:flex; flex-direction:column; gap:2px; padding:8px 10px; border-radius:10px; cursor:pointer; border:1px solid var(--line); background:var(--surface-2); }
+.notiz-mini-item:hover { background:var(--surface); }
+.notiz-mini-item.active { background:var(--primary); border-color:var(--primary); }
+.notiz-mini-item.active .notiz-mini-title, .notiz-mini-item.active .notiz-mini-meta { color:#fff; }
+.notiz-mini-title { font-size:13.5px; font-weight:700; }
+.notiz-mini-meta { font-size:11.5px; color:var(--muted); }
+.notiz-ws-mini-editor { border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+.notiz-ws-mini-editor .notizen-text { min-height:160px; padding:14px 16px; }
+.notiz-ws-mini-editor .notizen-foot { padding:6px 16px 12px; }

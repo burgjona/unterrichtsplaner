@@ -494,6 +494,150 @@ function renderClassDetail() {
   renderClassDupControl();
   initSeatPlan();
   renderClassDetailStoffPlans();
+  renderClassDetailNotes();
+}
+
+/* ---------- U17-Anbindung: Notizen zu dieser Klasse in der Klassen-Detailansicht ----------
+   Mini-Ausgabe desselben Arbeitsbereichs wie die Notizen-Hauptansicht (s. u.), auf die
+   aktuelle Klasse gefiltert. Liste und Editor sind eigene DOM-Container, damit ein
+   Autosave der Liste nie den Editor (und damit Fokus/Cursor) neu aufbaut. */
+let cdNoteSelectedId = null;
+let cdNoteIsDraft = false;
+let cdNoteTimer = null;
+let cdNoteSaving = false;
+let cdNoteClassId = null;
+
+function renderClassDetailNotes() {
+  cdNoteClassId = detailClassId;
+  cdNoteSelectedId = null;
+  cdNoteIsDraft = false;
+  if (cdNoteTimer) { clearTimeout(cdNoteTimer); cdNoteTimer = null; }
+  const panel = $("cdNotesPanel");
+  if (!panel) return;
+  panel.innerHTML =
+    `<div id="cdNoteListWrap" class="notiz-ws-mini-list"></div>` +
+    `<div class="notiz-ws-mini-editor" id="cdNoteEditorWrap"></div>`;
+  renderCdNoteList();
+  renderCdNoteEditor();
+}
+
+function renderCdNoteList() {
+  const wrap = $("cdNoteListWrap");
+  if (!wrap) return;
+  const notes = activeNotesSorted((n) => n.scope === "klasse" && n.classId === cdNoteClassId);
+  if (!notes.length) {
+    wrap.innerHTML = '<p class="muted small">Noch keine Notizen für diese Klasse.</p>';
+  } else {
+    wrap.innerHTML = notes.map((n) => `
+      <div class="notiz-mini-item${n.id === cdNoteSelectedId && !cdNoteIsDraft ? " active" : ""}" data-note-id="${n.id}">
+        <span class="notiz-mini-title">${esc(noteTitle(n))}</span>
+        <span class="notiz-mini-meta">${esc(noteDateLabel(n.updatedAt))}</span>
+      </div>`).join("");
+    wrap.querySelectorAll("[data-note-id]").forEach((el) => {
+      el.onclick = async () => {
+        await flushCdNoteSave();
+        cdNoteSelectedId = Number(el.dataset.noteId);
+        cdNoteIsDraft = false;
+        renderCdNoteList();
+        renderCdNoteEditor();
+      };
+    });
+  }
+}
+
+function renderCdNoteEditor() {
+  const wrap = $("cdNoteEditorWrap");
+  if (!wrap) return;
+  if (cdNoteTimer) { clearTimeout(cdNoteTimer); cdNoteTimer = null; }
+  if (cdNoteIsDraft) {
+    wrap.innerHTML =
+      `<textarea id="cdNoteText" class="notizen-text" placeholder="Gedanken zu dieser Klasse …"></textarea>` +
+      `<div class="notizen-foot"><span class="small muted" id="cdNoteStatus"></span>` +
+      `<button class="btn small secondary" id="cdNoteCancelBtn">Verwerfen</button></div>`;
+    const ta = $("cdNoteText");
+    ta.value = "";
+    ta.oninput = scheduleCdNoteSave;
+    ta.focus();
+    $("cdNoteCancelBtn").onclick = () => { cdNoteIsDraft = false; renderCdNoteEditor(); };
+    return;
+  }
+  const note = state.notes.find((n) => n.id === cdNoteSelectedId && n.archivedAt == null);
+  if (!note) {
+    cdNoteSelectedId = null;
+    wrap.innerHTML = '<p class="muted small" style="padding:2px 2px 8px;">Notiz auswählen oder „+ Neue Notiz" anlegen.</p>';
+    return;
+  }
+  wrap.innerHTML =
+    `<textarea id="cdNoteText" class="notizen-text" placeholder="Gedanken zu dieser Klasse …"></textarea>` +
+    `<div class="notizen-foot"><span class="small muted" id="cdNoteStatus"></span>` +
+    `<button class="btn small secondary" id="cdNoteArchiveBtn">Notiz archivieren</button></div>`;
+  const ta = $("cdNoteText");
+  ta.value = note.bodyMd || "";
+  ta.oninput = scheduleCdNoteSave;
+  $("cdNoteArchiveBtn").onclick = archiveCdNote;
+}
+
+function scheduleCdNoteSave() {
+  const status = $("cdNoteStatus");
+  if (status) status.textContent = "…";
+  if (cdNoteTimer) clearTimeout(cdNoteTimer);
+  cdNoteTimer = setTimeout(saveCdNote, 900);
+}
+
+async function flushCdNoteSave() {
+  if (cdNoteTimer) { clearTimeout(cdNoteTimer); cdNoteTimer = null; await saveCdNote(); }
+}
+
+async function saveCdNote() {
+  const ta = $("cdNoteText");
+  if (!ta) return;
+  if (cdNoteSaving) { scheduleCdNoteSave(); return; }
+  const body = ta.value;
+  cdNoteSaving = true;
+  try {
+    if (cdNoteIsDraft) {
+      if (!body.trim()) { cdNoteSaving = false; return; }   // leere Entwürfe nicht anlegen
+      const created = await API.post("/notes", { scope: "klasse", classId: cdNoteClassId, bodyMd: body });
+      state.notes.push(created);
+      cdNoteIsDraft = false;
+      cdNoteSelectedId = created.id;
+      renderCdNoteList();
+      promoteCdDraftFoot();
+    } else if (cdNoteSelectedId != null) {
+      const updated = await API.put(`/notes/${cdNoteSelectedId}`, { bodyMd: body });
+      const idx = state.notes.findIndex((n) => n.id === cdNoteSelectedId);
+      if (idx >= 0) state.notes[idx] = updated;
+      renderCdNoteList();
+    }
+    const st = $("cdNoteStatus"); if (st) st.textContent = "Gespeichert.";
+  } catch (e) {
+    const st = $("cdNoteStatus"); if (st) st.textContent = "";
+    toast(e.message, false);
+  } finally {
+    cdNoteSaving = false;
+  }
+}
+
+// Ersetzt nur die Fußzeile (Entwurf → gespeicherte Notiz), damit Fokus/Cursor im Textfeld erhalten bleiben.
+function promoteCdDraftFoot() {
+  const foot = document.querySelector("#cdNoteEditorWrap .notizen-foot");
+  if (!foot) return;
+  foot.innerHTML = `<span class="small muted" id="cdNoteStatus"></span><button class="btn small secondary" id="cdNoteArchiveBtn">Notiz archivieren</button>`;
+  $("cdNoteArchiveBtn").onclick = archiveCdNote;
+}
+
+async function archiveCdNote() {
+  if (cdNoteIsDraft || cdNoteSelectedId == null) return;
+  if (!confirm("Diese Notiz archivieren? Sie wandert ins Archiv der Materialbibliothek.")) return;
+  try {
+    await flushCdNoteSave();
+    await API.post(`/notes/${cdNoteSelectedId}/archive`);
+    cdNoteSelectedId = null;
+    await refresh();
+    renderCdNoteList();
+    renderCdNoteEditor();
+    toast("Notiz archiviert.");
+  } catch (e) { toast(e.message, false); }
 }
 
 /* ---------- U16: Plan für Parallelklasse duplizieren (Klassen-Detail) ---------- */
@@ -3406,6 +3550,7 @@ function openSearchResult(type, id) {
   } else if (type === "class") {
     openClassDetail(id);
   } else if (type === "note") {
+    notizPendingOpenId = id;
     showView("notizen");
   } else if (type === "reflection") {
     showView("reflexion");
@@ -3730,6 +3875,20 @@ function wireEvents() {
   });
   wireCmdPalette();   // U27 (Variante C): Kommando-Palette (⌘K / Strg+K / „/")
 
+  // U17-Umbau: Notizen-Arbeitsbereich (neue Notiz, Suche)
+  $("notizNewBtn").onclick = async () => {
+    await flushNotizSave();
+    notizIsDraft = true;
+    notizSelectedId = null;
+    notizDraftScope = "allgemein";
+    notizDraftClassId = null;
+    renderNotizen();
+  };
+  $("notizSearch").addEventListener("input", (e) => {
+    notizSearchQuery = e.target.value;
+    renderNotizList();
+  });
+
   document.querySelectorAll(".nav-btn").forEach((btn) => (btn.onclick = () => showView(btn.dataset.view)));
   document.querySelectorAll("[data-view-target]").forEach((el) => (el.onclick = () => showView(el.dataset.viewTarget)));
   document.querySelectorAll(".bn-item, .mehr-item").forEach((btn) => (btn.onclick = () => showView(btn.dataset.view)));
@@ -3756,6 +3915,13 @@ function wireEvents() {
     if (c) editClass(c);
   };
   $("cdPraesentBtn").onclick = showClassInPraesent;
+  $("cdNoteNewBtn").onclick = async () => {
+    await flushCdNoteSave();
+    cdNoteIsDraft = true;
+    cdNoteSelectedId = null;
+    renderCdNoteList();
+    renderCdNoteEditor();
+  };
   $("cdStudentName").addEventListener("keydown", (e) => { if (e.key === "Enter") addStudent(); });
   $("cdStudentBulkBtn").onclick = addStudentsBulk;
   // U18: Sitzplan
@@ -3888,114 +4054,217 @@ function wireEvents() {
 }
 
 /* =========================================================================
-   U17: Notizen ("Gedanken sammeln") – additiver Block.
-   Unterreiter "Allgemein" + je aktiver Klasse einer; großes Textfeld mit
-   Autosave (Debounce → PUT; erster Schreibvorgang POST). Archivieren pro Notiz;
-   Archiv-Liste in der Materialbibliothek (renderArchivNotizen).
+   U17: Notizen ("Gedanken sammeln") – additiver Block, seit dem Umbau iOS-
+   Notizen-artig: Liste links (Suche, „+ Neu") + Editor rechts, statt einem
+   Tab je Klasse. Datenmodell unverändert – beliebig viele Notizen je Scope
+   ("allgemein" oder "klasse"); der Titel in der Liste ist die erste Zeile
+   des Texts (kein eigenes Titelfeld). Klassenzuordnung ist bei Anlage fix.
+   Autosave (Debounce → PUT; erster Schreibvorgang POST). Archivieren pro
+   Notiz; Archiv-Liste in der Materialbibliothek (renderArchivNotizen).
    ========================================================================= */
-let notizenTab = "allgemein";   // "allgemein" oder String(class.id)
-let notizenSaveId = null;       // id der aktuell bearbeiteten Notiz (null = noch keine)
-let notizenTimer = null;
-let notizenSaving = false;
+let notizSelectedId = null;      // id der im Editor offenen Notiz, oder null
+let notizIsDraft = false;        // true = Editor zeigt eine neue, noch ungespeicherte Notiz
+let notizDraftScope = "allgemein";
+let notizDraftClassId = null;
+let notizTimer = null;
+let notizSaving = false;
+let notizSearchQuery = "";
+let notizPendingOpenId = null;   // von der Suche gesetzt: nach dem Rendern diese Notiz öffnen
+
+function noteFirstLine(bodyMd) {
+  return (bodyMd || "").split("\n").map((s) => s.trim()).find((s) => s) || "";
+}
+function noteTitle(n) {
+  return noteFirstLine(n.bodyMd) || "Neue Notiz";
+}
+function notePreviewText(n) {
+  const lines = (n.bodyMd || "").split("\n").map((s) => s.trim()).filter((s) => s);
+  return lines.slice(1).join(" ");
+}
+function noteScopeLabel(n) {
+  if (n.scope === "allgemein") return "Allgemein";
+  const c = state.classes.find((x) => x.id === n.classId);
+  return c ? `${c.name} (${c.subject})` : "Klasse";
+}
+function noteDateLabel(iso) {
+  if (!iso) return "";
+  const datePart = iso.split(" ")[0] || iso.split("T")[0] || "";
+  const [y, m, d] = datePart.split("-");
+  return y ? `${d}.${m}.${y}` : "";
+}
+function activeNotesSorted(filterFn) {
+  return state.notes
+    .filter((n) => n.archivedAt == null && (!filterFn || filterFn(n)))
+    .sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || ""));
+}
 
 function renderNotizen() {
-  const tabsWrap = $("notizenTabs");
-  if (!tabsWrap) return;
-  const tabs = [{ key: "allgemein", label: "Allgemein" }];
-  state.classes.forEach((c) => {
-    const sy = state.schoolYears.find((s) => s.id === c.schoolYearId);
-    const label = sy ? `${c.name} (${sy.label})` : c.name;
-    tabs.push({ key: String(c.id), label });
-  });
-  if (!tabs.some((t) => t.key === notizenTab)) notizenTab = "allgemein";
-  tabsWrap.innerHTML = tabs.map((t) =>
-    `<button class="notizen-tab${t.key === notizenTab ? " active" : ""}" data-notiz-tab="${esc(t.key)}">${esc(t.label)}</button>`
-  ).join("");
-  tabsWrap.querySelectorAll("[data-notiz-tab]").forEach((b) => {
-    b.onclick = async () => {
-      await flushNotizenSave();     // ausstehende Eingabe des alten Reiters sichern
-      notizenTab = b.dataset.notizTab;
-      renderNotizen();
+  if (notizPendingOpenId != null) {
+    notizSelectedId = notizPendingOpenId;
+    notizPendingOpenId = null;
+    notizIsDraft = false;
+  }
+  renderNotizList();
+  renderNotizMain();
+}
+
+function renderNotizList() {
+  const wrap = $("notizList");
+  if (!wrap) return;
+  const q = notizSearchQuery.trim().toLowerCase();
+  let notes = activeNotesSorted();
+  if (q) notes = notes.filter((n) => (noteTitle(n) + " " + (n.bodyMd || "")).toLowerCase().includes(q));
+  if (!notes.length) {
+    wrap.innerHTML = `<p class="notiz-ws-empty-list">${q ? "Keine Treffer." : 'Noch keine Notizen – „+ Neu" anlegen.'}</p>`;
+    return;
+  }
+  wrap.innerHTML = notes.map((n) => `
+    <div class="notiz-item${n.id === notizSelectedId && !notizIsDraft ? " active" : ""}" data-note-id="${n.id}">
+      <span class="notiz-item-title">${esc(noteTitle(n))}</span>
+      <span class="notiz-item-meta">${esc(noteScopeLabel(n))} · ${esc(noteDateLabel(n.updatedAt))}</span>
+      ${notePreviewText(n) ? `<span class="notiz-item-preview">${esc(notePreviewText(n))}</span>` : ""}
+    </div>`).join("");
+  wrap.querySelectorAll("[data-note-id]").forEach((el) => {
+    el.onclick = async () => {
+      await flushNotizSave();
+      notizSelectedId = Number(el.dataset.noteId);
+      notizIsDraft = false;
+      renderNotizList();
+      renderNotizMain();
     };
   });
-  renderNotizenPanel();
 }
 
-function renderNotizenPanel() {
-  const panel = $("notizenPanel");
-  if (!panel) return;
-  if (notizenTimer) { clearTimeout(notizenTimer); notizenTimer = null; }
-  const isAllg = notizenTab === "allgemein";
-  const classId = isAllg ? null : Number(notizenTab);
-  const note = state.notes.find((n) =>
-    n.archivedAt == null &&
-    (isAllg ? n.scope === "allgemein" : (n.scope === "klasse" && n.classId === classId)));
-  notizenSaveId = note ? note.id : null;
-  const hint = isAllg
-    ? "Allgemeine Gedanken, klassenübergreifend."
-    : "Gedanken zu dieser Klasse.";
-  panel.innerHTML =
-    `<p class="muted small">${esc(hint)}</p>` +
+function renderNotizMain() {
+  const main = $("notizMain");
+  if (!main) return;
+  if (notizTimer) { clearTimeout(notizTimer); notizTimer = null; }
+  const ws = $("notizWs");
+
+  if (notizIsDraft) {
+    const classOpts = state.classes.filter((c) => !c.archivedAt)
+      .map((c) => `<option value="${c.id}">${esc(c.name)} (${esc(c.subject)})</option>`).join("");
+    main.innerHTML =
+      `<div class="notiz-main-head">` +
+      `<button class="btn small secondary notiz-back-btn" id="notizBackBtn">← Notizen</button>` +
+      `<div class="notiz-main-head-info"><label class="small muted" for="notizDraftScope">Zuordnung</label>` +
+      `<select id="notizDraftScope" class="notiz-main-scope-select">` +
+      `<option value="allgemein">Allgemein</option>` +
+      (classOpts ? `<optgroup label="Klasse">${classOpts}</optgroup>` : "") +
+      `</select></div>` +
+      `<button class="btn small secondary" id="notizDraftCancelBtn">Verwerfen</button>` +
+      `</div>` +
+      `<textarea id="notizenText" class="notizen-text" placeholder="Gedanken sammeln …"></textarea>` +
+      `<div class="notizen-foot"><span class="small muted" id="notizenStatus"></span></div>`;
+    if (ws) ws.classList.add("notiz-detail-open");
+    const sel = $("notizDraftScope");
+    sel.value = notizDraftScope === "klasse" && notizDraftClassId ? String(notizDraftClassId) : "allgemein";
+    sel.onchange = () => {
+      if (sel.value === "allgemein") { notizDraftScope = "allgemein"; notizDraftClassId = null; }
+      else { notizDraftScope = "klasse"; notizDraftClassId = Number(sel.value); }
+    };
+    const ta = $("notizenText");
+    ta.value = "";
+    ta.oninput = scheduleNotizSave;
+    ta.focus();
+    $("notizDraftCancelBtn").onclick = () => { notizIsDraft = false; renderNotizen(); };
+    bindNotizBackBtn();
+    return;
+  }
+
+  const note = state.notes.find((n) => n.id === notizSelectedId && n.archivedAt == null);
+  if (!note) {
+    notizSelectedId = null;
+    main.innerHTML = '<div class="notiz-ws-placeholder">Notiz auswählen oder „+ Neu" anlegen.</div>';
+    if (ws) ws.classList.remove("notiz-detail-open");
+    return;
+  }
+  if (ws) ws.classList.add("notiz-detail-open");
+  main.innerHTML =
+    `<div class="notiz-main-head">` +
+    `<button class="btn small secondary notiz-back-btn" id="notizBackBtn">← Notizen</button>` +
+    `<div class="notiz-main-head-info"><span>${esc(noteScopeLabel(note))} · zuletzt bearbeitet ${esc(noteDateLabel(note.updatedAt))}</span></div>` +
+    `<button class="btn small secondary" id="notizArchiveBtn">Notiz archivieren</button>` +
+    `</div>` +
     `<textarea id="notizenText" class="notizen-text" placeholder="Gedanken sammeln …"></textarea>` +
-    `<div class="notizen-foot">` +
-    `<span class="small muted" id="notizenStatus"></span>` +
-    `<button class="btn small secondary" id="notizenArchiveBtn"${note ? "" : " disabled"}>Notiz archivieren</button>` +
-    `</div>`;
+    `<div class="notizen-foot"><span class="small muted" id="notizenStatus"></span></div>`;
   const ta = $("notizenText");
-  ta.value = note ? (note.bodyMd || "") : "";
-  ta.oninput = scheduleNotizenSave;
-  $("notizenArchiveBtn").onclick = archiveCurrentNote;
+  ta.value = note.bodyMd || "";
+  ta.oninput = scheduleNotizSave;
+  $("notizArchiveBtn").onclick = archiveCurrentNote;
+  bindNotizBackBtn();
 }
 
-function scheduleNotizenSave() {
+// Mobil: „← Notizen" blendet nur die Editor-Spalte wieder aus, ohne die Auswahl zu verwerfen.
+function bindNotizBackBtn() {
+  const back = $("notizBackBtn");
+  if (back) back.onclick = () => { const ws = $("notizWs"); if (ws) ws.classList.remove("notiz-detail-open"); };
+}
+
+// Ersetzt nur die Kopfzeile (Entwurf → gespeicherte Notiz), damit Fokus/Cursor im Textfeld erhalten bleiben.
+function promoteNotizDraftHead(note) {
+  const head = document.querySelector("#notizMain .notiz-main-head");
+  if (!head) return;
+  head.innerHTML =
+    `<button class="btn small secondary notiz-back-btn" id="notizBackBtn">← Notizen</button>` +
+    `<div class="notiz-main-head-info"><span>${esc(noteScopeLabel(note))} · zuletzt bearbeitet ${esc(noteDateLabel(note.updatedAt))}</span></div>` +
+    `<button class="btn small secondary" id="notizArchiveBtn">Notiz archivieren</button>`;
+  $("notizArchiveBtn").onclick = archiveCurrentNote;
+  bindNotizBackBtn();
+}
+
+function scheduleNotizSave() {
   const status = $("notizenStatus");
   if (status) status.textContent = "…";
-  if (notizenTimer) clearTimeout(notizenTimer);
-  notizenTimer = setTimeout(saveNotizen, 900);
+  if (notizTimer) clearTimeout(notizTimer);
+  notizTimer = setTimeout(saveNotiz, 900);
 }
 
-async function flushNotizenSave() {
-  if (notizenTimer) { clearTimeout(notizenTimer); notizenTimer = null; await saveNotizen(); }
+async function flushNotizSave() {
+  if (notizTimer) { clearTimeout(notizTimer); notizTimer = null; await saveNotiz(); }
 }
 
-async function saveNotizen() {
+async function saveNotiz() {
   const ta = $("notizenText");
   if (!ta) return;
-  if (notizenSaving) { scheduleNotizenSave(); return; }  // Überlappung vermeiden (kein Doppel-POST)
-  const status = $("notizenStatus");
+  if (notizSaving) { scheduleNotizSave(); return; }  // Überlappung vermeiden (kein Doppel-POST)
   const body = ta.value;
-  const isAllg = notizenTab === "allgemein";
-  notizenSaving = true;
+  notizSaving = true;
   try {
-    if (notizenSaveId == null) {
+    if (notizIsDraft) {
+      if (!body.trim()) { notizSaving = false; return; }   // leere Entwürfe nicht anlegen
       const created = await API.post("/notes", {
-        scope: isAllg ? "allgemein" : "klasse",
-        classId: isAllg ? null : Number(notizenTab),
+        scope: notizDraftScope,
+        classId: notizDraftScope === "klasse" ? notizDraftClassId : null,
         bodyMd: body,
       });
-      notizenSaveId = created.id;
       state.notes.push(created);
-      const ab = $("notizenArchiveBtn"); if (ab) ab.disabled = false;
-    } else {
-      const updated = await API.put(`/notes/${notizenSaveId}`, { bodyMd: body });
-      const idx = state.notes.findIndex((n) => n.id === notizenSaveId);
+      notizIsDraft = false;
+      notizSelectedId = created.id;
+      renderNotizList();
+      promoteNotizDraftHead(created);
+    } else if (notizSelectedId != null) {
+      const updated = await API.put(`/notes/${notizSelectedId}`, { bodyMd: body });
+      const idx = state.notes.findIndex((n) => n.id === notizSelectedId);
       if (idx >= 0) state.notes[idx] = updated;
+      renderNotizList();
     }
-    if (status) status.textContent = "Gespeichert.";
+    const st = $("notizenStatus"); if (st) st.textContent = "Gespeichert.";
   } catch (e) {
-    if (status) status.textContent = "";
+    const st = $("notizenStatus"); if (st) st.textContent = "";
     toast(e.message, false);
   } finally {
-    notizenSaving = false;
+    notizSaving = false;
   }
 }
 
 async function archiveCurrentNote() {
-  if (notizenSaveId == null) return;
+  if (notizIsDraft || notizSelectedId == null) return;
   if (!confirm("Diese Notiz archivieren? Sie wandert ins Archiv der Materialbibliothek.")) return;
   try {
-    await flushNotizenSave();
-    await API.post(`/notes/${notizenSaveId}/archive`);
+    await flushNotizSave();
+    await API.post(`/notes/${notizSelectedId}/archive`);
+    notizSelectedId = null;
     await refresh();
     renderNotizen();
     toast("Notiz archiviert.");

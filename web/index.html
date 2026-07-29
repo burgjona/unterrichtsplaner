@@ -227,6 +227,16 @@
         </div>
       </div>
       <!-- ===== /U18 ===== -->
+
+      <!-- Notizen zu dieser Klasse (U17-Anbindung) -->
+      <div class="card" style="margin-top:14px;">
+        <div class="cd-head">
+          <h3>Notizen zu dieser Klasse</h3>
+          <button class="btn small secondary" id="cdNoteNewBtn">+ Neue Notiz</button>
+        </div>
+        <p class="muted small">Dieselben Notizen wie unter „Notizen" – hier auf diese Klasse gefiltert. Wird beim Tippen automatisch gespeichert.</p>
+        <div id="cdNotesPanel" class="notiz-ws-mini"></div>
+      </div>
     </section>
 
     <!-- KALENDER -->
@@ -518,11 +528,18 @@
 
     <!-- NOTIZEN (U17): freies Gedanken-Sammeln, allgemein oder je Klasse, mit Autosave -->
     <section id="notizen" class="view hidden">
-      <div class="card">
-        <h3>Gedanken sammeln</h3>
-        <p class="muted small">Freies Notizfeld – „Allgemein" klassenübergreifend oder je aktiver Klasse ein eigener Reiter. Wird beim Tippen automatisch gespeichert.</p>
-        <div class="notizen-tabs" id="notizenTabs"></div>
-        <div id="notizenPanel"></div>
+      <div class="card notiz-ws-card">
+        <div class="notiz-ws" id="notizWs">
+          <div class="notiz-ws-side">
+            <div class="notiz-ws-side-head">
+              <h3>Notizen</h3>
+              <button class="btn small" id="notizNewBtn">+ Neu</button>
+            </div>
+            <input type="search" id="notizSearch" class="notiz-search" placeholder="Notizen durchsuchen …" />
+            <div class="notiz-ws-list" id="notizList"></div>
+          </div>
+          <div class="notiz-ws-main" id="notizMain"></div>
+        </div>
       </div>
     </section>
 
