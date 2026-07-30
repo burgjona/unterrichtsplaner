@@ -10,13 +10,18 @@ from io import BytesIO
 from .asuv_export import _register_fonts
 
 
+def _de_date(iso) -> str:
+    parts = str(iso).split("-") if iso else []
+    return f"{parts[2]}.{parts[1]}.{parts[0]}" if len(parts) == 3 else (iso or "")
+
+
 def _zeitraum(start, end) -> str:
     if start and end:
-        return f"{start} – {end}"
+        return f"{_de_date(start)} – {_de_date(end)}"
     if start:
-        return f"ab {start}"
+        return f"ab {_de_date(start)}"
     if end:
-        return f"bis {end}"
+        return f"bis {_de_date(end)}"
     return "—"
 
 

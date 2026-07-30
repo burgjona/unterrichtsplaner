@@ -38,28 +38,28 @@
     </button>
 
     <div class="section-label">Übersicht</div>
-    <button class="nav-btn active" data-view="heute">Schulalltag heute</button>
-    <button class="nav-btn" data-view="klassen">Klassen</button>
-    <button class="nav-btn" data-view="kalender">Planungskalender</button>
-    <button class="nav-btn" data-view="stundenplan">Mein Stundenplan</button>
+    <a class="nav-btn active" href="#heute" data-view="heute">Schulalltag heute</a>
+    <a class="nav-btn" href="#klassen" data-view="klassen">Klassen</a>
+    <a class="nav-btn" href="#kalender" data-view="kalender">Planungskalender</a>
+    <a class="nav-btn" href="#stundenplan" data-view="stundenplan">Mein Stundenplan</a>
 
     <div class="section-label">Präsentation</div>
-    <button class="nav-btn" data-view="praesentation">Schüleransicht</button>
+    <a class="nav-btn" href="#praesentation" data-view="praesentation">Schüleransicht</a>
 
     <div class="section-label">Planung</div>
-    <button class="nav-btn" data-view="stoff">Stoffverteilungsplan</button>
-    <button class="nav-btn" data-view="stunde">Unterrichtsplanung</button>
-    <button class="nav-btn" data-view="reflexion">Reflexion</button>
-    <button class="nav-btn" data-view="notizen">Notizen</button>
+    <a class="nav-btn" href="#stoff" data-view="stoff">Stoffverteilungsplan</a>
+    <a class="nav-btn" href="#stunde" data-view="stunde">Unterrichtsplanung</a>
+    <a class="nav-btn" href="#reflexion" data-view="reflexion">Reflexion</a>
+    <a class="nav-btn" href="#notizen" data-view="notizen">Notizen</a>
 
     <div class="section-label">Referendariat</div>
-    <button class="nav-btn" data-view="asuv">ASUV-Entwürfe</button>
+    <a class="nav-btn" href="#asuv" data-view="asuv">ASUV-Entwürfe</a>
 
     <div class="section-label">Material</div>
-    <button class="nav-btn" data-view="material">Materialbibliothek</button>
+    <a class="nav-btn" href="#material" data-view="material">Materialbibliothek</a>
 
     <div class="section-label">System</div>
-    <button class="nav-btn" data-view="settings">Einstellungen</button>
+    <a class="nav-btn" href="#settings" data-view="settings">Einstellungen</a>
 
     <div class="nav-footer"><div style="font-weight:700; margin-bottom:5px;">Angemeldet</div><span id="navUser">–</span></div>
   </aside>
@@ -387,7 +387,7 @@
       <div class="card" style="margin-top:14px;">
         <h3>Planvorschlag</h3>
         <div id="planSummary" class="small muted" style="margin-bottom:8px;"></div>
-        <div class="table-scroll"><table id="planTable"><thead><tr><th>LB</th><th>Thema</th><th>Ustd.</th><th>Wochen</th><th>Zeitraum</th><th>Hinweis</th></tr></thead><tbody></tbody></table></div>
+        <div class="table-scroll"><table id="planTable"><thead><tr><th>LB</th><th>Thema</th><th>Ustd.</th><th>Wochen</th><th>Zeitraum</th></tr></thead><tbody></tbody></table></div>
         <div style="margin-top:12px;">
           <button class="btn" id="planSaveBtn">Plan speichern</button>
           <span class="small muted" style="margin-left:8px;">Speichert den aktuell angezeigten Vorschlag als Stoffverteilungsplan.</span>

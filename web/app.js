@@ -228,6 +228,7 @@ function resetLessonEditState() {
 function loadLessonIntoForm(l) {
   clearLessonForm();
   editingLessonId = l.id;
+  syncHash("stunde");
   $("lessonTitle").value = l.title || "";
   $("lessonSubject").value = l.subject || "Deutsch";
   if (l.grade != null) $("lessonGrade").value = String(l.grade);
@@ -742,17 +743,19 @@ async function showClassDetailStoffBlocks(id) {
     return;
   }
   const rows = blocks.map((b) => {
-    const zeit = (b.startDate || b.endDate) ? `${esc(b.startDate || "?")} – ${esc(b.endDate || "?")}` : "—";
+    const zeit = (b.startDate || b.endDate) ? `${esc(deDate(b.startDate) || "?")} – ${esc(deDate(b.endDate) || "?")}` : "—";
+    const noteRow = b.conflictNote
+      ? `<tr class="stoff-note-row"><td colspan="4" class="stoff-note-cell"><span class="stoff-note-label">Bemerkung:</span> ${esc(b.conflictNote)}</td></tr>`
+      : "";
     return `<tr>
       <td>${esc(b.lbCode || "")}</td>
       <td>${esc(b.title || "")}</td>
       <td>${esc(b.ustd ?? "")}</td>
       <td>${zeit}</td>
-      <td>${esc(b.conflictNote || "—")}</td>
-    </tr>`;
+    </tr>${noteRow}`;
   }).join("");
   box.innerHTML = `<div class="table-scroll"><table class="cd-stoff-table">
-    <thead><tr><th>LB</th><th>Thema</th><th>Ustd.</th><th>Zeitraum</th><th>Bemerkung</th></tr></thead>
+    <thead><tr><th>LB</th><th>Thema</th><th>Ustd.</th><th>Zeitraum</th></tr></thead>
     <tbody>${rows}</tbody>
   </table></div>`;
 }
@@ -1747,6 +1750,11 @@ function parseIso(s) {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s || "");
   return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
 }
+// "YYYY-MM-DD" → deutsches Anzeigeformat "TT.MM.JJJJ".
+function deDate(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || "");
+  return m ? `${m[3]}.${m[2]}.${m[1]}` : "";
+}
 
 /* ---------- U28: Stoffplan-Datepicker mit grau hinterlegten Ferien ---------- */
 // Nächster Montag ECHT NACH dateStr (fällt dateStr selbst auf einen Montag, wird eine Woche weitergesprungen).
@@ -2606,10 +2614,16 @@ async function loadStoffPlanIntoTable(id) {
     body.innerHTML = "";
     (p.blocks || []).forEach((b) => {
       const tr = document.createElement("tr");
-      const zeit = (b.startDate || b.endDate) ? `${esc(b.startDate || "?")} – ${esc(b.endDate || "?")}` : "—";
+      const zeit = (b.startDate || b.endDate) ? `${esc(deDate(b.startDate) || "?")} – ${esc(deDate(b.endDate) || "?")}` : "—";
       tr.innerHTML = `<td>${esc(b.lbCode || "")}</td><td>${esc(b.title || "")}</td><td>${esc(b.ustd ?? "")}</td>` +
-        `<td>—</td><td>${zeit}</td><td>${esc(b.conflictNote || "—")}</td>`;
+        `<td>—</td><td>${zeit}</td>`;
       body.appendChild(tr);
+      if (b.conflictNote) {
+        const noteTr = document.createElement("tr");
+        noteTr.className = "stoff-note-row";
+        noteTr.innerHTML = `<td colspan="5" class="stoff-note-cell"><span class="stoff-note-label">Hinweis:</span> ${esc(b.conflictNote)}</td>`;
+        body.appendChild(noteTr);
+      }
     });
     toast("Plan in die Tabelle geladen.");
   } catch (e) { toast(e.message, false); }
@@ -2633,15 +2647,20 @@ async function renderStoffPlanEditor(id) {
       <td><input type="number" data-f="ustd" min="0" value="${esc(b.ustd ?? "")}" style="width:70px;" /></td>
       <td><input type="text" readonly class="date-picker-input" data-f="startDate" value="${esc(b.startDate || "")}" placeholder="jjjj-mm-tt" /></td>
       <td><input type="text" readonly class="date-picker-input" data-f="endDate" value="${esc(b.endDate || "")}" placeholder="jjjj-mm-tt" /></td>
-      <td><input type="text" data-f="conflictNote" value="${esc(b.conflictNote || "")}" style="width:100%;" /></td>
+    </tr>
+    <tr class="stoff-note-row">
+      <td colspan="5" class="stoff-note-cell">
+        <label class="small stoff-note-label">Hinweis</label>
+        <textarea class="stoff-note-textarea" data-note-i="${i}" data-f="conflictNote" rows="2">${esc(b.conflictNote || "")}</textarea>
+      </td>
     </tr>`).join("");
   box.innerHTML = `
     <div class="stoff-plan-edit-inner">
       <label class="small">Titel</label>
       <input type="text" data-edit-title value="${esc(p.title)}" style="width:100%; margin-bottom:8px;" />
       <div class="table-scroll"><table class="stoff-edit-table">
-        <thead><tr><th>LB</th><th>Thema</th><th>Ustd.</th><th>Beginn</th><th>Ende</th><th>Hinweis</th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="6" class="muted small">Keine Blöcke.</td></tr>'}</tbody>
+        <thead><tr><th>LB</th><th>Thema</th><th>Ustd.</th><th>Beginn</th><th>Ende</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="5" class="muted small">Keine Blöcke.</td></tr>'}</tbody>
       </table></div>
       <div style="margin-top:10px;">
         <button class="btn small" data-sp-save="${id}">Änderungen speichern</button>
@@ -2686,13 +2705,14 @@ async function saveStoffPlanEdits(id) {
   const title = box.querySelector("[data-edit-title]").value;
   const blocks = [...box.querySelectorAll("tbody tr[data-i]")].map((tr) => {
     const get = (f) => { const el = tr.querySelector(`[data-f="${f}"]`); return el ? el.value : ""; };
+    const noteEl = box.querySelector(`[data-note-i="${tr.dataset.i}"]`);
     return {
       lbCode: tr.children[0].textContent || null,
       title: get("title") || null,
       ustd: get("ustd") === "" ? null : Number(get("ustd")),
       startDate: get("startDate") || null,
       endDate: get("endDate") || null,
-      conflictNote: get("conflictNote") || null,
+      conflictNote: (noteEl ? noteEl.value : "") || null,
     };
   });
   try {
@@ -3181,6 +3201,7 @@ function renderAsuvLessonSelect() {
 async function loadAsuv(lessonId) {
   asuvLessonId = Number(lessonId);
   if (!asuvLessonId) return;
+  syncHash("asuv");
   $("asuvLesson").value = String(asuvLessonId);
   const lesson = state.lessons.find((l) => l.id === asuvLessonId);
   $("asuvHeadline").textContent = "ASUV-Entwurf: " + (lesson ? lesson.title : "");
@@ -3341,8 +3362,14 @@ async function aiStoffplan() {
     blocks.forEach((x) => {
       const tr = document.createElement("tr");
       tr.innerHTML = `<td>${esc(x.code)}</td><td>${esc(x.title)}</td><td>${esc(x.ustd)}</td>` +
-        `<td>${esc(x.weeks)}</td><td>—</td><td>${esc(x.note || "")}</td>`;
+        `<td>${esc(x.weeks)}</td><td>—</td>`;
       b.appendChild(tr);
+      if (x.note) {
+        const noteTr = document.createElement("tr");
+        noteTr.className = "stoff-note-row";
+        noteTr.innerHTML = `<td colspan="5" class="stoff-note-cell"><span class="stoff-note-label">Hinweis:</span> ${esc(x.note)}</td>`;
+        b.appendChild(noteTr);
+      }
     });
     // Vorschau für „Plan speichern" merken (U12) – KI liefert keine Zeiträume.
     state.stoffPreview = blocks.map((x) => ({
@@ -3674,7 +3701,40 @@ function showView(view) {
   if (view === "notizen") renderNotizen();
   if (view === "material") renderArchivPanel(archivTab);
   closeMobileNav();
+  syncHash(view);
 }
+
+// U28: URL-Hash spiegelt die aktuelle Ansicht, damit ein zweiter Browser-Tab
+// (oder ein neu geöffnetes Fenster der installierten App) direkt dort landet.
+// history.replaceState statt location.hash, damit kein eigener Verlaufseintrag
+// entsteht und kein hashchange-Loop ausgelöst wird.
+function syncHash(view) {
+  let seg = view;
+  if (view === "klasse-detail" && detailClassId) seg += "/" + detailClassId;
+  else if (view === "stunde" && editingLessonId) seg += "/" + editingLessonId;
+  else if (view === "asuv" && asuvLessonId) seg += "/" + asuvLessonId;
+  const hash = "#" + seg;
+  if (location.hash !== hash) history.replaceState(null, "", hash);
+}
+
+// Löst einen eingehenden Hash auf (initialer Aufruf, neuer Tab, Zurück/Vor, manuelle URL).
+function routeFromHash() {
+  const raw = decodeURIComponent(location.hash.slice(1));
+  if (!raw) return;
+  const [view, rawId] = raw.split("/");
+  if (!titles[view]) return;
+  const id = rawId ? Number(rawId) : null;
+  if (view === "klasse-detail" && id) { openClassDetail(id); return; }
+  if (view === "stunde" && id) {
+    const l = state.lessons.find((x) => x.id === id);
+    showView("stunde");
+    if (l) loadLessonIntoForm(l);
+    return;
+  }
+  if (view === "asuv" && id) { showView("asuv"); loadAsuv(id); return; }
+  showView(view);
+}
+window.addEventListener("hashchange", routeFromHash);
 function closeMobileNav() { $("sidebarNav").classList.remove("open"); $("navBackdrop").classList.remove("open"); }
 
 /* Sidebar am Desktop ein-/ausklappen (M10 U3) */
@@ -4103,6 +4163,7 @@ async function startApp() {
   $("sidebarDate").textContent = now.toLocaleDateString("de-DE", { weekday: "long", day: "2-digit", month: "long" });
   $("sidebarKW").textContent = "Kalenderwoche " + isoWeek(now);
   await refresh();
+  if (location.hash) routeFromHash();  // U28: Deep-Link aus URL (neuer Tab/Fenster, Reload)
   await refreshAiStatus();
   startGoogleAutoSync();  // U24: periodischer Auto-Sync (B), solange die App offen ist
 }
@@ -4154,7 +4215,8 @@ function wireEvents() {
     if (e.key === "Escape" && !$("screensaver").classList.contains("hidden")) closeScreensaver();
   });
 
-  document.querySelectorAll(".nav-btn").forEach((btn) => (btn.onclick = () => showView(btn.dataset.view)));
+  // .nav-btn sind jetzt <a href="#view"> (U28) – Klick/Strg-Klick/Mittelklick übernimmt der Browser nativ,
+  // die eigentliche Ansicht wird über den hashchange-Listener (routeFromHash) aktiviert.
   document.querySelectorAll("[data-view-target]").forEach((el) => (el.onclick = () => showView(el.dataset.viewTarget)));
   document.querySelectorAll(".bn-item, .mehr-item").forEach((btn) => (btn.onclick = () => showView(btn.dataset.view)));
 

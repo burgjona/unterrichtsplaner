@@ -34,7 +34,7 @@ aside { background: var(--sidebar); color:white; padding:22px 16px; }
 .avatar-upload-btn { position:absolute; bottom:-4px; right:-4px; width:18px; height:18px; border-radius:50%; background:var(--yellow); border:2px solid var(--sidebar); font-size:10px; display:flex; align-items:center; justify-content:center; cursor:pointer; color:#14261a; }
 .brand { font-size:19px; font-weight:var(--fw-heavy); } .sub { font-size:12px; color:var(--sidebar-sub, #bbf7d0); margin-bottom:22px; }
 .section-label { font-size:11px; text-transform:uppercase; letter-spacing:.07em; color:var(--sidebar-label, #86efac); margin:16px 8px 6px; }
-.nav-btn { width:100%; text-align:left; border:0; cursor:pointer; background:transparent; color:var(--sidebar-text, #dcfce7); padding:11px 13px; border-radius:10px; margin-bottom:4px; font-size:14px; font-family:inherit; transition:.15s; }
+.nav-btn { display:block; width:100%; text-align:left; text-decoration:none; border:0; cursor:pointer; background:transparent; color:var(--sidebar-text, #dcfce7); padding:11px 13px; border-radius:10px; margin-bottom:4px; font-size:14px; font-family:inherit; transition:.15s; }
 .nav-btn.active, .nav-btn:hover { background: rgba(255,255,255,0.14); color:white; }
 .nav-footer { margin-top:20px; padding:13px; border-radius:14px; background:rgba(255,255,255,0.10); font-size:12px; color:var(--sidebar-text, #dcfce7); }
 main { padding:26px 30px; }
@@ -323,6 +323,14 @@ tbody tr td:first-child { border-radius:10px 0 0 10px; } tbody tr td:last-child 
 .stoff-plan-edit-inner { margin-top:12px; padding-top:12px; border-top:1px dashed var(--line); }
 .stoff-edit-table input { width:100%; padding:4px 6px; box-sizing:border-box; }
 .stoff-edit-table th, .stoff-edit-table td { padding:4px 6px; }
+/* Hinweis/Bemerkung als volle Breite unter dem jeweiligen Lernbereich statt gequetscht in einer Spalte. */
+.stoff-note-row td { padding:2px 6px 10px; border-top:none; }
+.stoff-note-cell { width:100%; }
+.stoff-note-label { display:block; color:var(--muted); margin-bottom:2px; }
+.stoff-note-textarea {
+  width:100%; box-sizing:border-box; min-height:2.4em; resize:vertical;
+  padding:6px 8px; font-family:inherit; font-size:inherit;
+}
 @media (max-width: 600px) {
   .stoff-plan-head { flex-direction:column; }
   .stoff-plan-actions { width:100%; }
