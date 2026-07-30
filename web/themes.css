@@ -17,6 +17,10 @@
 /* ============================ Schriftart ============================ */
 :root[data-font="standard"] {
   --font-family: -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  /* Echte Systemschrift hat einen kräftigen Fettschnitt; dieselben Gewichte wirken hier
+     deutlich schwerer als in der verspielten Standardschrift (kein echtes Bold). Eine Stufe
+     leichter, damit Nav/Labels/Badges nicht überall "fett" wirken. */
+  --fw-bold: 600; --fw-heavy: 700;
 }
 
 /* ============================ FRÜHLING (grün) ============================ */
