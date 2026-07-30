@@ -1,9 +1,9 @@
 /* U27b — Bereich „Mein Stundenplan": persönliches Wochenraster mit A/B-Wochen,
    editierbaren Klingelzeiten, Eintragstypen und Plänen.
 
-   Eigenständiges Modul: app.js wird NICHT angefasst. Registrierung zur Laufzeit über
-   die script-übergreifend geteilte `titles`-Registry und einen Klick-Listener auf den
-   Nav-Button (läuft NACH app.js' generischem showView-Handler → Section ist sichtbar).
+   Eigenständiges Modul, bis auf einen Aufruf in app.js' showView() (U28: `ttShow()`
+   wird dort wie bei anderen Ansichten aufgerufen, sobald die Section sichtbar ist —
+   nötig, weil das Hash-Routing sonst vor dem Sichtbarwerden der Section auslösen würde).
    ALLE Top-Level-Bezeichner tragen das Präfix `tt`/`ttState`, weil app.js (und U27c)
    sich denselben globalen Scope teilen — Namenskollision = Laufzeit-SyntaxError.
    Wiederverwendete Helfer aus app.js/api.js: esc, $, toast, state, API, titles. */
@@ -614,8 +614,3 @@ function ttWireParityEditor(wrap) {
   };
 }
 
-/* ---------- Registrierung: Klick auf den Nav-Button (nach app.js' showView) ---------- */
-document.addEventListener("DOMContentLoaded", () => {
-  const btn = document.querySelector('.nav-btn[data-view="stundenplan"]');
-  if (btn) btn.addEventListener("click", ttShow);
-});

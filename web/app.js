@@ -3695,6 +3695,7 @@ function showView(view) {
   if (view !== "klassen" && editingClassId) resetClassForm();
   if (view === "settings") loadSettings();
   if (view === "kalender") { ensureGoogleStatus(); maybeAutoSyncOnOpen(); }  // U21/U24: Status + Auto-Sync (A)
+  if (view === "stundenplan") ttShow();  // U28: vormals eigener Klick-Listener in stundenplan.js
   if (view === "asuv" && state.lessons.length) loadAsuv(asuvLessonId || state.lessons[0].id);
   if (view === "stoff") loadStoffPlans();
   if (view === "praesentation") renderPraesentation();
