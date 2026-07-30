@@ -407,3 +407,103 @@ def test_resolved_tropentag_overrides_times(client, auth):
     mon2 = r2["days"][0]
     assert mon2["isTropentag"] is False
     assert next(it for it in mon2["items"] if it["entryId"] == e_first["id"])["timeRange"] == "07:30–08:15"
+
+
+# ---------------------------------------------------------------- 16) Overrides (U30: Vertretung)
+def test_override_requires_login(client):
+    assert client.post(f"{BASE}/overrides", json={
+        "date": "2026-01-12", "slotId": 1, "kindId": 1,
+    }).status_code == 401
+    assert client.delete(f"{BASE}/overrides/1").status_code == 401
+
+
+def test_override_scoping_unknown_refs(client, auth):
+    _, slots, plans = _seed(client)
+    kinds = client.get(f"{BASE}/kinds").json()
+    good = {"date": "2026-01-12", "slotId": slots[1]["id"], "kindId": kinds[0]["id"]}
+
+    assert client.post(f"{BASE}/overrides", json={**good, "slotId": 99999}).status_code == 404
+    assert client.post(f"{BASE}/overrides", json={**good, "kindId": 99999}).status_code == 404
+    assert client.post(f"{BASE}/overrides", json={**good, "classId": 99999}).status_code == 404
+    assert client.post(f"{BASE}/overrides", json={**good, "date": "not-a-date"}).status_code == 400
+    assert client.delete(f"{BASE}/overrides/99999").status_code == 404
+
+
+def test_override_span_validation(client, auth):
+    _, slots, plans = _seed(client)
+    kinds = client.get(f"{BASE}/kinds").json()
+    over = client.post(f"{BASE}/overrides", json={
+        "date": "2026-01-12", "slotId": slots[-1]["id"], "kindId": kinds[0]["id"], "spanSlots": 2,
+    })
+    assert over.status_code == 400
+
+
+def test_override_appears_only_in_its_own_week_and_is_deletable(client, auth):
+    _, slots, plans = _seed(client)
+    kinds = client.get(f"{BASE}/kinds").json()
+    kind_id = kinds[0]["id"]
+
+    cls = client.post("/api/classes", json={"name": "8a", "subject": "Deutsch", "grade": 8})
+    assert cls.status_code == 201
+    class_id = cls.json()["id"]
+
+    monday = _this_monday()
+    monday_str = monday.isoformat()
+    tuesday_str = (monday + datetime.timedelta(days=1)).isoformat()
+    next_monday_str = (monday + datetime.timedelta(days=7)).isoformat()
+
+    created = client.post(f"{BASE}/overrides", json={
+        "date": tuesday_str, "slotId": slots[1]["id"], "kindId": kind_id,
+        "classId": class_id, "room": "204",
+    })
+    assert created.status_code == 201
+    oid = created.json()["id"]
+    assert created.json()["date"] == tuesday_str
+
+    # Erscheint in der betroffenen Woche, am richtigen Wochentag, mit source="override".
+    week = client.get(f"{BASE}/resolved", params={"start": monday_str}).json()
+    tue_items = week["days"][1]["items"]
+    assert week["days"][1]["date"] == tuesday_str
+    assert len(tue_items) == 1
+    item = tue_items[0]
+    assert item["entryId"] == oid
+    assert item["source"] == "override"
+    assert item["title"].endswith("Deutsch")
+    assert item["subtitle"] == "204"
+    # Alle anderen Tage dieser Woche bleiben leer.
+    assert all(len(d["items"]) == 0 for d in week["days"] if d["date"] != tuesday_str)
+
+    # Erscheint NICHT in der Folgewoche (kein wiederkehrender Eintrag).
+    next_week = client.get(f"{BASE}/resolved", params={"start": next_monday_str}).json()
+    assert all(len(d["items"]) == 0 for d in next_week["days"])
+
+    # Löschen → verschwindet aus der Woche.
+    assert client.delete(f"{BASE}/overrides/{oid}").status_code == 204
+    week2 = client.get(f"{BASE}/resolved", params={"start": monday_str}).json()
+    assert all(len(d["items"]) == 0 for d in week2["days"])
+    assert client.delete(f"{BASE}/overrides/{oid}").status_code == 404
+
+
+def test_override_and_plan_entry_merge_same_day(client, auth):
+    """Ein Override an einem Tag mit bestehendem wiederkehrendem Eintrag ergänzt (verdrängt nicht)."""
+    _, slots, plans = _seed(client)
+    plan_id = plans[0]["id"]
+    kinds = client.get(f"{BASE}/kinds").json()
+    kind_id = kinds[0]["id"]
+
+    monday_str = _this_monday().isoformat()
+    entry = client.post(f"{BASE}/entries", json={
+        "planId": plan_id, "slotId": slots[1]["id"], "kindId": kind_id, "weekday": 0,
+    }).json()
+    override = client.post(f"{BASE}/overrides", json={
+        "date": monday_str, "slotId": slots[4]["id"], "kindId": kind_id, "label": "Vertretung Bio",
+    }).json()
+
+    mon_items = client.get(f"{BASE}/resolved", params={"start": monday_str}).json()["days"][0]["items"]
+    assert len(mon_items) == 2
+    by_source = {it["source"]: it for it in mon_items}
+    assert by_source["plan"]["entryId"] == entry["id"]
+    assert by_source["override"]["entryId"] == override["id"]
+    assert by_source["override"]["title"] == "Vertretung Bio"
+    # Nach Slot-Position sortiert (1. vor 3.).
+    assert [it["source"] for it in mon_items] == ["plan", "override"]

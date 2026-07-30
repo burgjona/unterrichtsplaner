@@ -114,19 +114,22 @@
         <div class="ql-cell"><button type="button" class="ql-pill" id="qlNoteBtn"><span class="ql-ic">✎</span>Notiz anlegen</button></div>
         <div class="ql-cell"><button type="button" class="ql-pill" id="qlCalendarBtn"><span class="ql-ic">📅</span>Kalendereintrag</button></div>
         <div class="ql-cell"><button type="button" class="ql-pill" id="qlUploadBtn"><span class="ql-ic">⇧</span>Datei hochladen</button></div>
+        <div class="ql-cell"><button type="button" class="ql-pill" id="qlVertretungBtn"><span class="ql-ic">🔁</span>Vertretung hinzufügen</button></div>
+      </div>
+
+      <div class="dash-bottom-row">
+        <div class="card soft">
+          <h3>Aufgaben &amp; To-dos</h3>
+          <div id="todoList"></div>
+          <div class="row" style="margin-top:9px;">
+            <div style="grid-column: span 2;"><input id="newTodoInput" placeholder="Neue Aufgabe eintragen und Enter drücken ..." /></div>
+          </div>
+        </div>
         <div class="spruch-card" id="spruchCard" tabindex="0" role="button" aria-label="Spruch des Tages, Vollbild öffnen">
           <div class="qmark">&quot;</div>
           <div class="eyebrow">Spruch des Tages</div>
           <blockquote id="spruchText"></blockquote>
           <div class="expand-hint">↗ Klicken zum Vergrößern</div>
-        </div>
-      </div>
-
-      <div class="card soft" style="margin-top:16px;">
-        <h3>Aufgaben &amp; To-dos</h3>
-        <div id="todoList"></div>
-        <div class="row" style="margin-top:9px;">
-          <div style="grid-column: span 2;"><input id="newTodoInput" placeholder="Neue Aufgabe eintragen und Enter drücken ..." /></div>
         </div>
       </div>
     </section>

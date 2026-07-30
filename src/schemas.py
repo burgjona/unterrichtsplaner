@@ -935,6 +935,31 @@ class TimetableEntryOut(Base):
     updated_at: str
 
 
+# --- Overrides (U30): einmalige, datumsgebundene Einträge (z. B. Vertretung) ---
+class TimetableOverrideCreate(Base):
+    date: str
+    slot_id: int
+    kind_id: int
+    class_id: Optional[int] = None
+    span_slots: int = Field(default=1, ge=1, le=12)
+    label: Optional[str] = None
+    room: Optional[str] = None
+    color: Optional[str] = None
+
+
+class TimetableOverrideOut(Base):
+    id: int
+    date: str
+    slot_id: int
+    kind_id: int
+    class_id: Optional[int] = None
+    span_slots: int
+    label: Optional[str] = None
+    room: Optional[str] = None
+    color: Optional[str] = None
+    created_at: str
+
+
 # --- Einstellungen (A/B-Wochen-Parität) ---
 class TimetableSettingsUpdate(Base):
     week_a_parity: Literal["odd", "even"]
@@ -948,7 +973,7 @@ class TimetableSettingsOut(Base):
 
 # --- Aufgelöste Wochenansicht (A/B serverseitig aufgelöst) ---
 class TimetableResolvedItem(Base):
-    entry_id: int
+    entry_id: int                # bei source="override": id in timetable_overrides
     slot_id: int
     slot_label: str
     time_range: str              # "07:30–09:10" (en-dash)
@@ -960,7 +985,7 @@ class TimetableResolvedItem(Base):
     class_id: Optional[int] = None
     week_type: str
     span_slots: int
-    source: str                  # immer "plan" (Einsteckpunkt für spätere Overrides)
+    source: str                  # "plan" (wiederkehrend) | "override" (einmalig, z. B. Vertretung)
 
 
 class TimetableResolvedDay(Base):

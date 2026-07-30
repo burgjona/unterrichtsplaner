@@ -1892,12 +1892,32 @@ function calTtApplyToCells(data) {
     strip.innerHTML = day.items.map((it) => {
       const color = calTtSafeColor(it.color);            // nur Hex → im style-Attribut abgesichert
       const tip = [it.timeRange, it.subtitle].filter(Boolean).join(" · ");
+      // U30: Vertretungen (source="override") sind einmalig und per Klick auf das „×" wieder entfernbar.
+      const delBtn = it.source === "override"
+        ? '<button type="button" class="cal-tt-chip-del" data-tt-override-del="' + it.entryId + '" ' +
+          'title="Vertretung entfernen" aria-label="Vertretung entfernen">×</button>'
+        : "";
       return '<span class="cal-tt-chip" style="--cal-tt-c:' + esc(color) + '" title="' + esc(tip) + '">' +
         '<span class="cal-tt-dot"></span>' +
-        '<span class="cal-tt-title">' + esc(it.title) + '</span></span>';
+        '<span class="cal-tt-title">' + esc(it.title) + '</span>' + delBtn + '</span>';
     }).join("");
     cell.insertBefore(strip, toggle.nextSibling);
+    strip.querySelectorAll("[data-tt-override-del]").forEach((btn) => {
+      btn.onclick = (ev) => { ev.stopPropagation(); calTtDeleteOverride(Number(btn.dataset.ttOverrideDel)); };
+    });
   });
+}
+// U30: Vertretung aus der blassen Stundenplan-Ebene löschen (Cache invalidieren + Woche neu einspielen).
+async function calTtDeleteOverride(overrideId) {
+  if (!confirm("Diese Vertretung wirklich entfernen?")) return;
+  try {
+    await API.del("/stundenplan/overrides/" + overrideId);
+    calTtCache.clear();
+    await renderTodayList();
+    await renderWeekOverview();
+    renderCalendar();
+    toast("Vertretung entfernt.");
+  } catch (e) { toast(e.message, false); }
 }
 // U27d: Tropentag umschalten (PUT + Cache invalidieren + Woche neu einspielen).
 async function calTtToggleTropentag(dateStr, active) {
@@ -2218,6 +2238,66 @@ async function deleteCalendarEventModal(id) {
     closeModal();
     await refresh(); toast("Termin gelöscht.");
   } catch (err) { toast(err.message, false); }
+}
+
+/* ---------- U30: Vertretung (einmaliger Stundenplan-Eintrag) über den Dashboard-Quicklink ----------
+   Eine Vertretung ist meist ein FREMDES Fach/eine fremde Klasse (nicht zwingend eine der
+   eigenen state.classes) – daher Freitext statt Klassen-Dropdown; class_id bleibt leer. */
+async function openVertretungModal() {
+  let slots, kinds;
+  try {
+    [slots, kinds] = await Promise.all([
+      API.get("/stundenplan/slots"),
+      API.get("/stundenplan/kinds"),
+    ]);
+  } catch (e) { toast(e.message, false); return; }
+  const lessonSlots = slots.filter((s) => s.slotType === "lesson");
+  const defKind = kinds.find((k) => k.isDefault) || kinds[0];
+  if (!lessonSlots.length || !defKind) { toast("Bitte zuerst im Stundenplan Klingelzeiten und Typen anlegen.", false); return; }
+
+  const slotOpts = lessonSlots.map((s) =>
+    `<option value="${s.id}">${esc(s.label)} · ${esc(s.startTime)}–${esc(s.endTime)}</option>`).join("");
+
+  $("modalRoot").innerHTML =
+    `<div class="modal-overlay" id="vtModalOverlay"><div class="modal-box" style="max-width:460px;">
+      <button class="modal-close" id="vtModalClose">Schließen</button>
+      <h2>Vertretung hinzufügen</h2>
+      <div class="modal-section">
+        <label>Fach / Klasse</label>
+        <input id="vtLabel" placeholder="z. B. 7b Biologie" />
+        <div class="row" style="margin-top:8px;">
+          <div><label>Datum</label><input id="vtDate" type="date" value="${esc(isoDate(new Date()))}" /></div>
+          <div><label>Stunde</label><select id="vtSlot">${slotOpts}</select></div>
+        </div>
+        <p class="muted small" style="margin-top:8px;">Gilt nur für diesen einen Termin – kein wiederkehrender Eintrag.</p>
+      </div>
+      <div style="margin-top:14px; display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn" id="vtSaveBtn">Vertretung eintragen</button>
+        <button class="btn secondary" id="vtCancelBtn">Abbrechen</button>
+      </div>
+    </div></div>`;
+  $("vtModalOverlay").onclick = (ev) => { if (ev.target.id === "vtModalOverlay") closeModal(); };
+  $("vtModalClose").onclick = closeModal;
+  $("vtCancelBtn").onclick = closeModal;
+  $("vtSaveBtn").onclick = () => saveVertretung(defKind.id);
+  $("vtLabel").focus();
+}
+
+async function saveVertretung(kindId) {
+  const label = $("vtLabel").value.trim();
+  const date = $("vtDate").value;
+  const slotId = Number($("vtSlot").value);
+  if (!label) { toast("Bitte Fach/Klasse angeben.", false); return; }
+  if (!date) { toast("Bitte ein Datum angeben.", false); return; }
+  try {
+    await API.post("/stundenplan/overrides", { date, slotId, kindId, label });
+    closeModal();
+    calTtCache.clear();               // Woche(n) neu vom Server holen (Override eingerechnet)
+    await renderTodayList();
+    await renderWeekOverview();
+    renderCalendar();                 // blasse Stundenplan-Ebene im Planungskalender aktualisieren
+    toast("Vertretung eingetragen.");
+  } catch (e) { toast(e.message, false); }
 }
 
 /* ---------- Kalender-Kategorien (U11) ---------- */
@@ -2553,14 +2633,15 @@ async function renderStoffPlanEditor(id) {
       <td><input type="number" data-f="ustd" min="0" value="${esc(b.ustd ?? "")}" style="width:70px;" /></td>
       <td><input type="text" readonly class="date-picker-input" data-f="startDate" value="${esc(b.startDate || "")}" placeholder="jjjj-mm-tt" /></td>
       <td><input type="text" readonly class="date-picker-input" data-f="endDate" value="${esc(b.endDate || "")}" placeholder="jjjj-mm-tt" /></td>
+      <td><input type="text" data-f="conflictNote" value="${esc(b.conflictNote || "")}" style="width:100%;" /></td>
     </tr>`).join("");
   box.innerHTML = `
     <div class="stoff-plan-edit-inner">
       <label class="small">Titel</label>
       <input type="text" data-edit-title value="${esc(p.title)}" style="width:100%; margin-bottom:8px;" />
       <div class="table-scroll"><table class="stoff-edit-table">
-        <thead><tr><th>LB</th><th>Thema</th><th>Ustd.</th><th>Beginn</th><th>Ende</th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="5" class="muted small">Keine Blöcke.</td></tr>'}</tbody>
+        <thead><tr><th>LB</th><th>Thema</th><th>Ustd.</th><th>Beginn</th><th>Ende</th><th>Hinweis</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="6" class="muted small">Keine Blöcke.</td></tr>'}</tbody>
       </table></div>
       <div style="margin-top:10px;">
         <button class="btn small" data-sp-save="${id}">Änderungen speichern</button>
@@ -2611,6 +2692,7 @@ async function saveStoffPlanEdits(id) {
       ustd: get("ustd") === "" ? null : Number(get("ustd")),
       startDate: get("startDate") || null,
       endDate: get("endDate") || null,
+      conflictNote: get("conflictNote") || null,
     };
   });
   try {
@@ -4062,6 +4144,7 @@ function wireEvents() {
     const el = $("matFile");
     if (el) { el.scrollIntoView({ behavior: "smooth", block: "center" }); el.click(); }
   };
+  $("qlVertretungBtn").onclick = openVertretungModal;
 
   // Spruch des Tages: Kachel öffnet Vollbild-Vorschau (Klick/Enter/Leertaste); Schließen per „×"/Esc.
   $("spruchCard").onclick = openScreensaver;

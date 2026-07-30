@@ -21,6 +21,7 @@ from ..deps import get_db, get_user_id, row_or_404
 from ..schemas import (
     TimetableEntryCreate, TimetableEntryOut, TimetableEntryUpdate,
     TimetableKindCreate, TimetableKindOut, TimetableKindUpdate,
+    TimetableOverrideCreate, TimetableOverrideOut,
     TimetablePlanCreate, TimetablePlanOut, TimetablePlanUpdate,
     TimetableResolved, TimetableResolvedDay, TimetableResolvedItem,
     TimetableSettingsOut, TimetableSettingsUpdate,
@@ -482,6 +483,44 @@ def delete_entry(eid: int, conn=Depends(get_db), user_id: int = Depends(get_user
         raise HTTPException(status_code=404, detail="Eintrag nicht gefunden.")
 
 
+# ---------------------------------------------------------------- Overrides (U30: Vertretung)
+def _get_override(conn, user_id, oid):
+    row = conn.execute(
+        "SELECT * FROM timetable_overrides WHERE id = ? AND user_id = ?", (oid, user_id)
+    ).fetchone()
+    return TimetableOverrideOut(**dict(row)) if row else None
+
+
+@router.post("/overrides", response_model=TimetableOverrideOut, status_code=201)
+def create_override(body: TimetableOverrideCreate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+    _require_owned(conn, "timetable_slots", body.slot_id, user_id, "Slot")
+    _require_owned(conn, "timetable_kinds", body.kind_id, user_id, "Typ")
+    if body.class_id is not None:
+        _require_owned(conn, "classes", body.class_id, user_id, "Klasse")
+    try:
+        date.fromisoformat(body.date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Ungültiges Datum (YYYY-MM-DD erwartet).")
+    _validate_span(conn, user_id, body.slot_id, body.span_slots)
+    cur = conn.execute(
+        "INSERT INTO timetable_overrides"
+        "(user_id, date, slot_id, kind_id, class_id, span_slots, label, room, color) "
+        "VALUES (?,?,?,?,?,?,?,?,?)",
+        (user_id, body.date, body.slot_id, body.kind_id, body.class_id,
+         body.span_slots, body.label, body.room, body.color),
+    )
+    conn.commit()
+    return _get_override(conn, user_id, cur.lastrowid)
+
+
+@router.delete("/overrides/{oid}", status_code=204)
+def delete_override(oid: int, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+    cur = conn.execute("DELETE FROM timetable_overrides WHERE id = ? AND user_id = ?", (oid, user_id))
+    conn.commit()
+    if cur.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Vertretung nicht gefunden.")
+
+
 # ---------------------------------------------------------------- Settings
 @router.get("/settings", response_model=TimetableSettingsOut)
 def get_settings(conn=Depends(get_db), user_id: int = Depends(get_user_id)):
@@ -639,6 +678,49 @@ def resolved(
     # Tropenplan-Zeitmapping nur berechnen, wenn diese Woche überhaupt einen Tropentag hat.
     tropen_map = _tropen_time_map(conn, user_id) if tropen_dates else {}
 
+    def _resolved_item(row, weekday: int, week_type_label: str, source: str):
+        """Baut ein TimetableResolvedItem aus einer timetable_entries- oder
+        timetable_overrides-Zeile (beide tragen slot_id/kind_id/class_id/span_slots/
+        label/room/color) – Zeit-, Farb- und Titel-Herleitung ist für beide identisch."""
+        anchor = slot_by_id.get(row["slot_id"])
+        if anchor is None:                           # defensiv (Slot-CASCADE räumt sonst auf)
+            return None
+        end_idx = min(idx_by_id[row["slot_id"]] + row["span_slots"] - 1, len(ordered) - 1)
+        end_slot_id = ordered[end_idx]["id"]
+        # Tropentag: Zeiten aus dem Tropenplan-Raster statt dem normalen Klingelraster.
+        if days[weekday].is_tropentag and row["slot_id"] in tropen_map:
+            t_start, _ = tropen_map[row["slot_id"]]
+            _, t_end = tropen_map.get(end_slot_id, tropen_map[row["slot_id"]])
+            time_range = f'{t_start}–{t_end}'
+        else:
+            time_range = f'{anchor["start_time"]}–{ordered[end_idx]["end_time"]}'
+
+        cls = classes.get(row["class_id"]) if row["class_id"] is not None else None
+        kind = kinds.get(row["kind_id"])
+
+        # Farbe: Eintrags-Farbe → Fachfarbe (Klasse) → Typ-Farbe.
+        color = row["color"]
+        if not color and cls is not None:
+            color = SUBJECT_COLORS.get(cls["subject"])
+        if not color:
+            color = kind["color"] if kind else "#94a3b8"
+
+        # Titel: Label → "{Klasse} {Fach}" → Typ-Name.
+        if row["label"]:
+            title = row["label"]
+        elif cls is not None:
+            title = f'{cls["name"]} {cls["subject"]}'
+        else:
+            title = kind["name"] if kind else ""
+
+        return TimetableResolvedItem(
+            entry_id=row["id"], slot_id=row["slot_id"], slot_label=anchor["label"],
+            time_range=time_range, title=title, subtitle=row["room"] or "", color=color,
+            kind_id=row["kind_id"], kind_name=(kind["name"] if kind else ""),
+            class_id=row["class_id"], week_type=week_type_label, span_slots=row["span_slots"],
+            source=source,
+        )
+
     entries = conn.execute(
         "SELECT e.* FROM timetable_entries e "
         "JOIN timetable_slots s ON s.id = e.slot_id "
@@ -646,46 +728,27 @@ def resolved(
         "ORDER BY e.weekday, s.position, e.id",
         (plan["id"], user_id, week_type),
     ).fetchall()
-
     for e in entries:
-        anchor = slot_by_id.get(e["slot_id"])
-        if anchor is None:                           # defensiv (Slot-CASCADE räumt sonst auf)
-            continue
-        end_idx = min(idx_by_id[e["slot_id"]] + e["span_slots"] - 1, len(ordered) - 1)
-        end_slot_id = ordered[end_idx]["id"]
-        # Tropentag: Zeiten aus dem Tropenplan-Raster statt dem normalen Klingelraster.
-        if days[e["weekday"]].is_tropentag and e["slot_id"] in tropen_map:
-            t_start, _ = tropen_map[e["slot_id"]]
-            _, t_end = tropen_map.get(end_slot_id, tropen_map[e["slot_id"]])
-            time_range = f'{t_start}–{t_end}'
-        else:
-            time_range = f'{anchor["start_time"]}–{ordered[end_idx]["end_time"]}'
+        item = _resolved_item(e, e["weekday"], e["week_type"], "plan")
+        if item is not None:
+            days[e["weekday"]].items.append(item)
 
-        cls = classes.get(e["class_id"]) if e["class_id"] is not None else None
-        kind = kinds.get(e["kind_id"])
-
-        # Farbe: Eintrags-Farbe → Fachfarbe (Klasse) → Typ-Farbe.
-        color = e["color"]
-        if not color and cls is not None:
-            color = SUBJECT_COLORS.get(cls["subject"])
-        if not color:
-            color = kind["color"] if kind else "#94a3b8"
-
-        # Titel: Label → "{Klasse} {Fach}" → Typ-Name.
-        if e["label"]:
-            title = e["label"]
-        elif cls is not None:
-            title = f'{cls["name"]} {cls["subject"]}'
-        else:
-            title = kind["name"] if kind else ""
-
-        days[e["weekday"]].items.append(TimetableResolvedItem(
-            entry_id=e["id"], slot_id=e["slot_id"], slot_label=anchor["label"],
-            time_range=time_range, title=title, subtitle=e["room"] or "", color=color,
-            kind_id=e["kind_id"], kind_name=(kind["name"] if kind else ""),
-            class_id=e["class_id"], week_type=e["week_type"], span_slots=e["span_slots"],
-            source="plan",
-        ))
+    # U30: einmalige Vertretungen dieser Woche (datumsgebunden statt Wochentag/A-B).
+    overrides = conn.execute(
+        "SELECT o.* FROM timetable_overrides o "
+        "JOIN timetable_slots s ON s.id = o.slot_id "
+        "WHERE o.user_id = ? AND o.date IN (?,?,?,?,?) "
+        "ORDER BY o.date, s.position, o.id",
+        (user_id, *week_dates),
+    ).fetchall()
+    date_to_weekday = {d: i for i, d in enumerate(week_dates)}
+    for o in overrides:
+        weekday = date_to_weekday[o["date"]]
+        item = _resolved_item(o, weekday, week_type, "override")
+        if item is not None:
+            days[weekday].items.append(item)
+    for day in days:
+        day.items.sort(key=lambda it: idx_by_id.get(it.slot_id, 0))
 
     return TimetableResolved(
         week_start=monday.isoformat(), iso_week=iso_week, week_type=week_type,
