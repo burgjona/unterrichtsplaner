@@ -156,7 +156,7 @@ def stoffplan(body: StoffplanIn, conn: sqlite3.Connection = Depends(get_db),
                      "thematischen Lernbereiche 3–6 integrieren und in den Blocknotizen erwähnen.")
     parts.append("Lernbereiche:\n" + lb_text)
     user_text = "\n\n".join(parts)
-    data, cached = _run_json(conn, user_id, "stoffplan", _STOFF_SYSTEM, user_text, _STOFF_SCHEMA, max_tokens=2500)
+    data, cached = _run_json(conn, user_id, "stoffplan", _STOFF_SYSTEM, user_text, _STOFF_SCHEMA, max_tokens=4000)
     return {"suggestion": data, "cached": cached}
 
 
