@@ -98,7 +98,7 @@ def lesson_suggestion(body: LessonSuggestIn, conn: sqlite3.Connection = Depends(
         lines.append(f"Datum der Stunde: {body.date}")
     lines.append(f"Ideen/Impulse der Lehrkraft:\n{body.ideas.strip() or '-'}")
     user_text = "\n".join(lines) + f"\n\n{_ctx_block(ctx)}"
-    data, cached = _run_json(conn, user_id, "lesson_suggestion", _LESSON_SYSTEM, user_text, _LESSON_SCHEMA)
+    data, cached = _run_json(conn, user_id, "lesson_suggestion", _LESSON_SYSTEM, user_text, _LESSON_SCHEMA, max_tokens=4000)
     return {"suggestion": data, "cached": cached}
 
 
@@ -180,7 +180,7 @@ def _run_asuv_job(db_path: str, job_id: int, user_id: int, user_text: str):
     try:
         status, result_json, error = "error", None, None
         try:
-            result = ai.run(conn, user_id, "asuv", _ASUV_SYSTEM, user_text, _ASUV_SCHEMA, max_tokens=3000)
+            result = ai.run(conn, user_id, "asuv", _ASUV_SYSTEM, user_text, _ASUV_SCHEMA, max_tokens=4000)
             data = json.loads(result["text"])
         except ai.NoApiKey:
             error = "Kein API-Key hinterlegt – bitte in den Einstellungen eintragen."
@@ -322,7 +322,7 @@ def lernziele_suggestion(lesson_id: int, conn: sqlite3.Connection = Depends(get_
         f"Phasen: {phase_text}\n"
         f"{lb_text}\n\n{regel}"
     )
-    data, cached = _run_json(conn, user_id, "lernziele", _LERNZIELE_SYSTEM, user_text, _LERNZIELE_SCHEMA)
+    data, cached = _run_json(conn, user_id, "lernziele", _LERNZIELE_SYSTEM, user_text, _LERNZIELE_SCHEMA, max_tokens=4000)
     return {"suggestion": data, "cached": cached}
 
 
@@ -392,5 +392,5 @@ def einordnung_suggestion(lesson_id: int, conn: sqlite3.Connection = Depends(get
         f"Stundentyp {l['lesson_type'] or '-'}\n\n"
         "Kandidaten-Lernbereiche:\n" + "\n".join(lb_lines)
     )
-    data, cached = _run_json(conn, user_id, "einordnung", _EINORDNUNG_SYSTEM, user_text, _EINORDNUNG_SCHEMA)
+    data, cached = _run_json(conn, user_id, "einordnung", _EINORDNUNG_SYSTEM, user_text, _EINORDNUNG_SCHEMA, max_tokens=4000)
     return {"suggestion": data, "cached": cached}
