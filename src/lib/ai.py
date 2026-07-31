@@ -103,7 +103,7 @@ def run(conn, user_id, function, system, user_text, schema=None, max_tokens=2000
         messages=[{"role": "user", "content": user_text}],
     )
     if schema:
-        kwargs["output_config"] = {"format": {"type": "strict_json_schema", "schema": schema}}
+        kwargs["output_config"] = {"format": {"type": "json_schema", "schema": schema}}
     resp = client.messages.create(**kwargs)
 
     text = next((b.text for b in resp.content if getattr(b, "type", None) == "text"), "")
