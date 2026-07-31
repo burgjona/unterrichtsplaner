@@ -38,6 +38,12 @@ aside { background: var(--sidebar); color:white; padding:22px 16px; }
 .nav-btn.active, .nav-btn:hover { background: rgba(255,255,255,0.14); color:white; }
 .nav-ic { width:18px; height:18px; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
 .nav-ic svg { width:100%; height:100%; }
+.nav-tab-open {
+  margin-left:auto; flex-shrink:0; width:22px; height:22px; display:flex; align-items:center; justify-content:center;
+  border-radius:7px; opacity:.5; transition:.15s;
+}
+.nav-tab-open svg { width:14px; height:14px; }
+.nav-btn:hover .nav-tab-open, .nav-tab-open:hover, .nav-tab-open:focus-visible { opacity:1; background:rgba(255,255,255,0.18); }
 .nav-footer { margin-top:20px; padding:13px; border-radius:14px; background:rgba(255,255,255,0.10); font-size:12px; color:var(--sidebar-text, #dcfce7); }
 main { padding:26px 30px; }
 .topbar { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; margin-bottom:18px; flex-wrap:wrap; }
@@ -360,18 +366,19 @@ tbody tr td:first-child { border-radius:10px 0 0 10px; } tbody tr td:last-child 
 .class-name-link { color:var(--primary-dark); font-weight:var(--fw-bold); text-decoration:none; cursor:pointer; }
 .class-name-link:hover { text-decoration:underline; }
 .cd-row-actions { white-space:nowrap; }
-.cd-tabs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
-.cd-tab {
+.global-tabs { display:flex; gap:6px; flex-wrap:wrap; padding:0 4px 10px; }
+.global-tabs:empty { display:none; }
+.g-tab {
   display:flex; align-items:center; gap:8px; padding:7px 8px 7px 14px; border-radius:10px 10px 0 0;
   background:var(--surface-2); color:var(--muted); font-size:13px; font-weight:var(--fw-bold); cursor:pointer;
   border-bottom:2px solid transparent;
 }
-.cd-tab.active { background:var(--surface); color:var(--primary-dark); border-bottom-color:var(--primary); }
-.cd-tab-close {
+.g-tab.active { background:var(--surface); color:var(--primary-dark); border-bottom-color:var(--primary); }
+.g-tab-close {
   border:0; background:transparent; color:inherit; font-size:15px; line-height:1; cursor:pointer;
   padding:2px 4px; border-radius:6px; opacity:.6;
 }
-.cd-tab-close:hover { opacity:1; background:rgba(0,0,0,0.08); }
+.g-tab-close:hover { opacity:1; background:rgba(0,0,0,0.08); }
 .cd-head { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
 .cd-actions { display:flex; gap:8px; flex-wrap:wrap; }
 .cd-meta { display:flex; gap:10px; flex-wrap:wrap; margin-top:12px; }

@@ -446,55 +446,22 @@ function editClass(c) {
 }
 
 /* ---------- Klassen-Detailseite (U14) ---------- */
-// M6 U1: mehrere Klassen-Detailseiten als Tabs offenhalten (In-App-Tab-Leiste). Die Tabs
+// M6 U1: mehrere Klassen-Detailseiten offenhalten – ab M6 U2 Teil der globalen Tab-Leiste
+// (siehe registerActiveTab/tabKeyFor), die auch andere Views als Tabs verwaltet. Die Tabs
 // teilen sich denselben Datenbestand (state.classes etc.) – jeder Tab merkt sich nur, welche
 // classId gerade angezeigt wird; nicht aktive Tabs werden nicht separat im DOM gehalten.
 let detailClassId = null;
-let classDetailTabs = [];   // Reihenfolge der offenen Tabs (Array von classId)
 
 function openClassDetail(cid) {
-  cid = Number(cid);
-  if (!classDetailTabs.includes(cid)) classDetailTabs.push(cid);
-  detailClassId = cid;
+  detailClassId = Number(cid);
   openStoffPlanId = null;            // U19: kein Stoffplan aus einer anderen Klasse offen halten
   showView("klasse-detail");
   renderClassDetail();
 }
 
-function closeClassDetailTab(cid, ev) {
-  if (ev) ev.stopPropagation();
-  const idx = classDetailTabs.indexOf(cid);
-  if (idx === -1) return;
-  classDetailTabs.splice(idx, 1);
-  if (detailClassId === cid) {
-    const next = classDetailTabs[idx] ?? classDetailTabs[idx - 1];
-    if (next != null) { detailClassId = next; renderClassDetail(); }
-    else { detailClassId = null; showView("klassen"); return; }
-  }
-  renderClassDetailTabs();
-}
-
-function renderClassDetailTabs() {
-  const wrap = $("cdTabs");
-  if (!wrap) return;
-  if (classDetailTabs.length < 2) { wrap.innerHTML = ""; return; }   // ab 2 offenen Klassen sichtbar
-  wrap.innerHTML = classDetailTabs.map((cid) => {
-    const c = state.classes.find((x) => x.id === cid);
-    const label = c ? `${esc(c.name)} (${esc(c.subject)})` : `Klasse ${cid}`;
-    const active = cid === detailClassId ? " active" : "";
-    return `<div class="cd-tab${active}" data-cd-tab="${cid}">` +
-      `<span class="cd-tab-label">${label}</span>` +
-      `<button class="cd-tab-close" data-cd-tab-close="${cid}" aria-label="Tab schließen">×</button></div>`;
-  }).join("");
-  wrap.querySelectorAll("[data-cd-tab]").forEach((el) => el.onclick = () => openClassDetail(Number(el.dataset.cdTab)));
-  wrap.querySelectorAll("[data-cd-tab-close]").forEach((el) =>
-    el.onclick = (e) => closeClassDetailTab(Number(el.dataset.cdTabClose), e));
-}
-
 function renderClassDetail() {
   const c = state.classes.find((x) => String(x.id) === String(detailClassId));
   if (!c) { toast("Klasse nicht gefunden.", false); showView("klassen"); return; }
-  renderClassDetailTabs();
   $("cdTitle").textContent = `${c.name} (${c.subject})`;
   const meta = [
     ["Fach", c.subject], ["Klassenstufe", c.grade], ["Bildungsgang", c.track || "–"],
@@ -3916,6 +3883,84 @@ const titles = {
 };
 // Mobile Bottom-Nav: Views ohne eigenen Tab landen als "aktiv" auf dem Mehr-Tab.
 const BOTTOM_NAV_VIEWS = new Set(["stundenplan", "kalender", "heute", "stunde"]);
+
+/* ---------- M6 U2: globale In-App-Tab-Leiste (beliebige Views als Tabs offenhalten) ----------
+   Jeder Aufruf von showView() registriert automatisch einen Tab – kein Aufruf-Ort muss dafür
+   angepasst werden. "klasse-detail" bekommt pro Klasse einen eigenen Tab (wie bisher), alle
+   anderen Views sind Singleton-Tabs (ein Tab pro View-Typ, erneutes Navigieren aktiviert ihn
+   nur). Tabs teilen sich den bestehenden globalen State – hier wird nur gemerkt, WAS offen ist,
+   nicht wessen Daten dupliziert werden. */
+let openTabs = [];        // [{ key, view }] in Öffnungsreihenfolge
+let activeTabKey = null;
+
+function tabKeyFor(view) {
+  return view === "klasse-detail" && detailClassId != null ? `klasse-detail:${detailClassId}` : view;
+}
+
+function tabLabelFor(t) {
+  if (t.view === "klasse-detail") {
+    const cid = Number(t.key.split(":")[1]);
+    const c = state.classes.find((x) => x.id === cid);
+    return c ? `${c.name} (${c.subject})` : "Klasse";
+  }
+  return (titles[t.view] && titles[t.view][0]) || t.view;
+}
+
+function registerActiveTab(view) {
+  const key = tabKeyFor(view);
+  if (!openTabs.some((t) => t.key === key)) openTabs.push({ key, view });
+  activeTabKey = key;
+  renderGlobalTabs();
+}
+
+// Pfeil-Icon in der Navigation: öffnet den Tab im Hintergrund, ohne die aktuelle Ansicht zu
+// verlassen (wie „Link in neuem Tab öffnen"). Nur für Singleton-Views (Navigation verlinkt nie
+// direkt auf klasse-detail).
+function openTabInBackground(view) {
+  const key = tabKeyFor(view);
+  if (!openTabs.some((t) => t.key === key)) openTabs.push({ key, view });
+  renderGlobalTabs();
+  toast(`${(titles[view] && titles[view][0]) || view} als Tab geöffnet.`);
+}
+
+function renderGlobalTabs() {
+  const wrap = $("globalTabs");
+  if (!wrap) return;
+  if (openTabs.length < 2) { wrap.innerHTML = ""; return; }   // ab 2 offenen Tabs sichtbar
+  wrap.innerHTML = openTabs.map((t) => {
+    const active = t.key === activeTabKey ? " active" : "";
+    return `<div class="g-tab${active}" data-tab-key="${esc(t.key)}">` +
+      `<span class="g-tab-label">${esc(tabLabelFor(t))}</span>` +
+      `<button class="g-tab-close" data-tab-close="${esc(t.key)}" aria-label="Tab schließen">×</button></div>`;
+  }).join("");
+  wrap.querySelectorAll("[data-tab-key]").forEach((el) => el.onclick = () => activateTab(el.dataset.tabKey));
+  wrap.querySelectorAll("[data-tab-close]").forEach((el) =>
+    el.onclick = (e) => { e.stopPropagation(); closeTab(el.dataset.tabClose); });
+}
+
+function activateTab(key) {
+  const t = openTabs.find((x) => x.key === key);
+  if (!t) return;
+  if (t.view === "klasse-detail") {
+    detailClassId = Number(key.split(":")[1]);
+    showView("klasse-detail");
+    renderClassDetail();
+  } else {
+    showView(t.view);
+  }
+}
+
+function closeTab(key) {
+  const idx = openTabs.findIndex((t) => t.key === key);
+  if (idx === -1) return;
+  const wasActive = key === activeTabKey;
+  openTabs.splice(idx, 1);
+  if (!wasActive) { renderGlobalTabs(); return; }
+  const next = openTabs[idx] || openTabs[idx - 1];
+  if (next) activateTab(next.key);
+  else { activeTabKey = null; showView("heute"); }
+}
+
 function showView(view) {
   document.querySelectorAll(".nav-btn").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
   document.querySelectorAll(".bn-item").forEach((b) => {
@@ -3939,6 +3984,7 @@ function showView(view) {
   if (view === "material") renderArchivPanel(archivTab);
   closeMobileNav();
   syncHash(view);
+  registerActiveTab(view);
 }
 
 // U28: URL-Hash spiegelt die aktuelle Ansicht, damit ein zweiter Browser-Tab
@@ -4456,6 +4502,16 @@ function wireEvents() {
   // die eigentliche Ansicht wird über den hashchange-Listener (routeFromHash) aktiviert.
   document.querySelectorAll("[data-view-target]").forEach((el) => (el.onclick = () => showView(el.dataset.viewTarget)));
   document.querySelectorAll(".bn-item, .mehr-item").forEach((btn) => (btn.onclick = () => showView(btn.dataset.view)));
+
+  // Pfeil-Icon je Navigationspunkt: öffnet als Tab im Hintergrund, statt dorthin zu wechseln.
+  document.querySelectorAll("[data-tab-open]").forEach((el) => {
+    el.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); openTabInBackground(el.dataset.tabOpen); });
+    el.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault(); e.stopPropagation(); openTabInBackground(el.dataset.tabOpen);
+      }
+    });
+  });
 
   const burger = $("burgerBtn");
   burger.onclick = () => {
