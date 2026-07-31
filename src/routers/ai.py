@@ -157,6 +157,16 @@ def stoffplan(body: StoffplanIn, conn: sqlite3.Connection = Depends(get_db),
     parts.append("Lernbereiche:\n" + lb_text)
     user_text = "\n\n".join(parts)
     data, cached = _run_json(conn, user_id, "stoffplan", _STOFF_SYSTEM, user_text, _STOFF_SCHEMA, max_tokens=4000)
+
+    from ..lib.planning import assign_dates_from_weeks, _d
+    ferien = [(_d(r["start_date"]), _d(r["end_date"])) for r in conn.execute(
+        "SELECT start_date, end_date FROM school_dates WHERE school_year_id = ? AND user_id = ?",
+        (body.school_year_id, user_id))]
+    dated = assign_dates_from_weeks(_d(sy["start_date"]), _d(sy["end_date"]), ferien, data.get("blocks") or [])
+    for b, d_ in zip(data.get("blocks") or [], dated):
+        b["startDate"] = d_["start_date"]
+        b["endDate"] = d_["end_date"]
+
     return {"suggestion": data, "cached": cached}
 
 

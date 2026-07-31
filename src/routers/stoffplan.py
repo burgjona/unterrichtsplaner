@@ -50,11 +50,32 @@ def _insert_blocks(conn, plan_id, blocks):
         )
 
 
+def _weeks_for_blocks(conn, user_id, school_year_id, rows):
+    """Berechnet je Block die Anzahl Unterrichtswochen (Ferien abgezogen), sofern
+    Start-/Enddatum und Schuljahr bekannt sind. Sonst bleibt weeks=None."""
+    if school_year_id is None:
+        return [None] * len(rows)
+    from ..lib.planning import _d, teaching_weeks
+    ferien = [(r["start_date"], r["end_date"]) for r in conn.execute(
+        "SELECT start_date, end_date FROM school_dates WHERE school_year_id = ? AND user_id = ?",
+        (school_year_id, user_id))]
+    ferien_d = [(_d(s), _d(e)) for s, e in ferien]
+    out = []
+    for r in rows:
+        if r["start_date"] and r["end_date"]:
+            out.append(len(teaching_weeks(_d(r["start_date"]), _d(r["end_date"]), ferien_d)))
+        else:
+            out.append(None)
+    return out
+
+
 def _detail(conn, user_id, plan_id) -> StoffPlanDetail:
     row = row_or_404(_load_plan(conn, user_id, plan_id), "Stoffplan")
-    blocks = [StoffPlanBlockOut(**dict(r)) for r in conn.execute(
+    rows = conn.execute(
         "SELECT * FROM stoff_plan_blocks WHERE plan_id = ? ORDER BY sort_order, id", (plan_id,)
-    )]
+    ).fetchall()
+    weeks = _weeks_for_blocks(conn, user_id, row["school_year_id"], rows)
+    blocks = [StoffPlanBlockOut(**dict(r), weeks=w) for r, w in zip(rows, weeks)]
     return StoffPlanDetail(**dict(row), blocks=blocks)
 
 

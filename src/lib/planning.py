@@ -78,6 +78,26 @@ def teaching_weeks(start: date, end: date, ferien: List[Tuple[date, date]]) -> L
     return weeks
 
 
+def assign_dates_from_weeks(start: date, end: date, ferien: List[Tuple[date, date]],
+                             blocks: List[dict]) -> List[dict]:
+    """Reiht Blöcke mit vorgegebener Wochenzahl (z. B. KI-Vorschlag) nacheinander in die
+    Unterrichtswochen des Schuljahres ein (Ferien ausgespart) und setzt start_date/end_date.
+    Reicht das Schuljahr nicht für alle Wochen, bleiben die übrigen Blöcke ohne Datum."""
+    mondays = teaching_weeks(start, end, ferien)
+    out = []
+    idx = 0
+    for b in blocks:
+        n = max(int(b.get("weeks") or 0), 0)
+        chunk = mondays[idx:idx + n] if n else []
+        if not chunk:
+            out.append({**b, "start_date": None, "end_date": None})
+            continue
+        idx += n
+        block_end = min(chunk[-1] + timedelta(days=4), end)
+        out.append({**b, "start_date": chunk[0].isoformat(), "end_date": block_end.isoformat()})
+    return out
+
+
 def distribute_lernbereiche(
     start_date: str,
     end_date: str,

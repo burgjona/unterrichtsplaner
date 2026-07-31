@@ -114,7 +114,14 @@
 .praesent-step-title { font-size: 26px; font-weight:var(--fw-heavy); color: var(--primary-dark); }
 .praesent-step-meta { margin-top: 4px; font-size: 17px; font-weight:var(--fw-bold); color: var(--muted); }
 .praesent-step-goals { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
-.praesent-step-goal { font-size: 18px; font-weight:var(--fw-bold); color: var(--text); }
+.praesent-step-goal { font-size: 18px; font-weight:var(--fw-bold); color: var(--text); display: flex; align-items: center; gap: 10px; }
+.praesent-goal-editbtn { font-size: 12px; padding: 3px 9px; }
+.praesent-step-goal-edit { display: block; }
+.praesent-goal-edit-input {
+  width: 100%; font: inherit; font-size: 16px; padding: 8px; border-radius: 8px;
+  border: 1px solid var(--line); resize: vertical;
+}
+.praesent-goal-edit-actions { margin-top: 6px; display: flex; gap: 8px; }
 .praesent-here {
   display: inline-flex; align-items: center; gap: 6px; margin-left: 12px;
   font-size: 15px; font-weight:var(--fw-heavy); color: #fff; background: var(--orange);

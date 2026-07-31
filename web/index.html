@@ -127,7 +127,7 @@
         </div>
         <div class="spruch-card" id="spruchCard" tabindex="0" role="button" aria-label="Spruch des Tages, Vollbild öffnen">
           <div class="qmark">&quot;</div>
-          <div class="eyebrow">Spruch des Tages</div>
+          <div class="eyebrow">Spruch des Tages <span class="spruch-cat" id="spruchCat"></span></div>
           <blockquote id="spruchText"></blockquote>
           <div class="expand-hint">↗ Klicken zum Vergrößern</div>
         </div>
@@ -159,6 +159,7 @@
 
     <!-- KLASSEN-DETAIL (U14) -->
     <section id="klasse-detail" class="view hidden">
+      <div class="cd-tabs" id="cdTabs"></div>
       <div class="card">
         <div class="cd-head">
           <h3 id="cdTitle" style="margin:0;">Klasse</h3>
@@ -851,6 +852,7 @@
   <button class="ss-close" id="ssClose" aria-label="Schließen">×</button>
   <div class="ss-quote">
     <div class="qmark">&quot;</div>
+    <div class="ss-cat" id="ssCat"></div>
     <blockquote id="ssQuoteText"></blockquote>
   </div>
   <div class="ss-kbd">Esc zum Schließen</div>

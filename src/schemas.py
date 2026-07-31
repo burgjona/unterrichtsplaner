@@ -671,6 +671,7 @@ class StoffPlanBlockIn(Base):
 
 class StoffPlanBlockOut(StoffPlanBlockIn):
     id: int
+    weeks: Optional[int] = None          # berechnet (Ferien abgezogen), nicht gespeichert
 
 
 class StoffPlanCreate(Base):

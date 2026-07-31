@@ -446,16 +446,55 @@ function editClass(c) {
 }
 
 /* ---------- Klassen-Detailseite (U14) ---------- */
+// M6 U1: mehrere Klassen-Detailseiten als Tabs offenhalten (In-App-Tab-Leiste). Die Tabs
+// teilen sich denselben Datenbestand (state.classes etc.) – jeder Tab merkt sich nur, welche
+// classId gerade angezeigt wird; nicht aktive Tabs werden nicht separat im DOM gehalten.
 let detailClassId = null;
+let classDetailTabs = [];   // Reihenfolge der offenen Tabs (Array von classId)
+
 function openClassDetail(cid) {
+  cid = Number(cid);
+  if (!classDetailTabs.includes(cid)) classDetailTabs.push(cid);
   detailClassId = cid;
   openStoffPlanId = null;            // U19: kein Stoffplan aus einer anderen Klasse offen halten
   showView("klasse-detail");
   renderClassDetail();
 }
+
+function closeClassDetailTab(cid, ev) {
+  if (ev) ev.stopPropagation();
+  const idx = classDetailTabs.indexOf(cid);
+  if (idx === -1) return;
+  classDetailTabs.splice(idx, 1);
+  if (detailClassId === cid) {
+    const next = classDetailTabs[idx] ?? classDetailTabs[idx - 1];
+    if (next != null) { detailClassId = next; renderClassDetail(); }
+    else { detailClassId = null; showView("klassen"); return; }
+  }
+  renderClassDetailTabs();
+}
+
+function renderClassDetailTabs() {
+  const wrap = $("cdTabs");
+  if (!wrap) return;
+  if (classDetailTabs.length < 2) { wrap.innerHTML = ""; return; }   // ab 2 offenen Klassen sichtbar
+  wrap.innerHTML = classDetailTabs.map((cid) => {
+    const c = state.classes.find((x) => x.id === cid);
+    const label = c ? `${esc(c.name)} (${esc(c.subject)})` : `Klasse ${cid}`;
+    const active = cid === detailClassId ? " active" : "";
+    return `<div class="cd-tab${active}" data-cd-tab="${cid}">` +
+      `<span class="cd-tab-label">${label}</span>` +
+      `<button class="cd-tab-close" data-cd-tab-close="${cid}" aria-label="Tab schließen">×</button></div>`;
+  }).join("");
+  wrap.querySelectorAll("[data-cd-tab]").forEach((el) => el.onclick = () => openClassDetail(Number(el.dataset.cdTab)));
+  wrap.querySelectorAll("[data-cd-tab-close]").forEach((el) =>
+    el.onclick = (e) => closeClassDetailTab(Number(el.dataset.cdTabClose), e));
+}
+
 function renderClassDetail() {
   const c = state.classes.find((x) => String(x.id) === String(detailClassId));
   if (!c) { toast("Klasse nicht gefunden.", false); showView("klassen"); return; }
+  renderClassDetailTabs();
   $("cdTitle").textContent = `${c.name} (${c.subject})`;
   const meta = [
     ["Fach", c.subject], ["Klassenstufe", c.grade], ["Bildungsgang", c.track || "–"],
@@ -693,6 +732,7 @@ async function renderClassDupControl() {
 /* ---------- U19: Stoffpläne in der Klassen-Detailansicht ---------- */
 let detailStoffPlans = [];
 let openStoffPlanId = null;
+let editingCdStoffPlanId = null;
 
 async function renderClassDetailStoffPlans() {
   const wrap = $("cdStoffPlans");
@@ -713,15 +753,91 @@ async function renderClassDetailStoffPlans() {
         <div><strong>${esc(p.title)}</strong> ${badge}<br><span class="small muted">${meta}</span></div>
         <div class="cd-stoff-actions">
           <button class="btn small" data-cd-open="${p.id}">Öffnen</button>
+          <button class="btn small secondary" data-cd-edit="${p.id}">Bearbeiten</button>
           <button class="btn small secondary" data-cd-pdf="${p.id}">Als PDF</button>
         </div>
       </div>
       <div class="cd-stoff-blocks" data-cd-blocks="${p.id}"></div>
+      <div class="stoff-plan-editor" data-cd-editor="${p.id}"></div>
     </div>`;
   }).join("");
   wrap.querySelectorAll("[data-cd-open]").forEach((b) => b.onclick = () => toggleClassDetailStoffPlan(Number(b.dataset.cdOpen)));
+  wrap.querySelectorAll("[data-cd-edit]").forEach((b) => b.onclick = () => toggleClassDetailStoffPlanEditor(Number(b.dataset.cdEdit)));
   wrap.querySelectorAll("[data-cd-pdf]").forEach((b) => b.onclick = () => downloadStoffPlanPdf(Number(b.dataset.cdPdf)));
   if (openStoffPlanId != null) showClassDetailStoffBlocks(openStoffPlanId);
+  if (editingCdStoffPlanId != null) renderClassDetailStoffPlanEditor(editingCdStoffPlanId);
+}
+
+function toggleClassDetailStoffPlanEditor(id) {
+  editingCdStoffPlanId = (editingCdStoffPlanId === id) ? null : id;
+  renderClassDetailStoffPlans();
+}
+
+async function renderClassDetailStoffPlanEditor(id) {
+  const box = document.querySelector(`[data-cd-editor="${id}"]`);
+  if (!box) return;
+  let p;
+  try { p = await API.get(`/stoff-plans/${id}`); }
+  catch (e) { toast(e.message, false); return; }
+  const rows = (p.blocks || []).map((b, i) =>
+    `<tr data-i="${i}">
+      <td>${esc(b.lbCode || "")}</td>
+      <td><input type="text" data-f="title" value="${esc(b.title || "")}" /></td>
+      <td><input type="number" data-f="ustd" min="0" value="${esc(b.ustd ?? "")}" style="width:70px;" /></td>
+      <td><input type="text" readonly class="date-picker-input" data-f="startDate" value="${esc(b.startDate || "")}" placeholder="jjjj-mm-tt" /></td>
+      <td><input type="text" readonly class="date-picker-input" data-f="endDate" value="${esc(b.endDate || "")}" placeholder="jjjj-mm-tt" /></td>
+    </tr>
+    <tr class="stoff-note-row">
+      <td colspan="5" class="stoff-note-cell">
+        <label class="small stoff-note-label">Hinweis</label>
+        <textarea class="stoff-note-textarea" data-note-i="${i}" data-f="conflictNote" rows="2">${esc(b.conflictNote || "")}</textarea>
+      </td>
+    </tr>`).join("");
+  box.innerHTML = `
+    <div class="stoff-plan-edit-inner">
+      <label class="small">Titel</label>
+      <input type="text" data-edit-title value="${esc(p.title)}" style="width:100%; margin-bottom:8px;" />
+      <div class="table-scroll"><table class="stoff-edit-table">
+        <thead><tr><th>LB</th><th>Thema</th><th>Ustd.</th><th>Beginn</th><th>Ende</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="5" class="muted small">Keine Blöcke.</td></tr>'}</tbody>
+      </table></div>
+      <div style="margin-top:10px;">
+        <button class="btn small" data-cd-sp-save="${id}">Änderungen speichern</button>
+        <button class="btn small secondary" data-cd-sp-cancel="${id}">Schließen</button>
+      </div>
+    </div>`;
+  box.querySelector(`[data-cd-sp-save="${id}"]`).onclick = () => saveClassDetailStoffPlanEdits(id);
+  box.querySelector(`[data-cd-sp-cancel="${id}"]`).onclick = () => { editingCdStoffPlanId = null; renderClassDetailStoffPlans(); };
+  box.querySelectorAll(".date-picker-input").forEach((inp) => inp.addEventListener("click", () => openDatePicker(inp)));
+  box.querySelectorAll('[data-f="endDate"]').forEach((inp) => inp.addEventListener("change", (e) => {
+    const tr = e.target.closest("tr[data-i]");
+    if (tr) cascadeStoffPlanDates(box, Number(tr.dataset.i));
+  }));
+}
+
+async function saveClassDetailStoffPlanEdits(id) {
+  const box = document.querySelector(`[data-cd-editor="${id}"]`);
+  if (!box) return;
+  const title = box.querySelector("[data-edit-title]").value;
+  const blocks = [...box.querySelectorAll("tbody tr[data-i]")].map((tr) => {
+    const get = (f) => { const el = tr.querySelector(`[data-f="${f}"]`); return el ? el.value : ""; };
+    const noteEl = box.querySelector(`[data-note-i="${tr.dataset.i}"]`);
+    return {
+      lbCode: tr.children[0].textContent || null,
+      title: get("title") || null,
+      ustd: get("ustd") === "" ? null : Number(get("ustd")),
+      startDate: get("startDate") || null,
+      endDate: get("endDate") || null,
+      conflictNote: (noteEl ? noteEl.value : "") || null,
+    };
+  });
+  try {
+    await API.put(`/stoff-plans/${id}`, { title, blocks });
+    toast("Plan aktualisiert.");
+    editingCdStoffPlanId = null;
+    if (openStoffPlanId === id) await showClassDetailStoffBlocks(id);
+    await renderClassDetailStoffPlans();
+  } catch (e) { toast(e.message, false); }
 }
 
 async function toggleClassDetailStoffPlan(id) {
@@ -745,17 +861,18 @@ async function showClassDetailStoffBlocks(id) {
   const rows = blocks.map((b) => {
     const zeit = (b.startDate || b.endDate) ? `${esc(deDate(b.startDate) || "?")} – ${esc(deDate(b.endDate) || "?")}` : "—";
     const noteRow = b.conflictNote
-      ? `<tr class="stoff-note-row"><td colspan="4" class="stoff-note-cell"><span class="stoff-note-label">Bemerkung:</span> ${esc(b.conflictNote)}</td></tr>`
+      ? `<tr class="stoff-note-row"><td colspan="5" class="stoff-note-cell"><span class="stoff-note-label">Bemerkung:</span> ${esc(b.conflictNote)}</td></tr>`
       : "";
     return `<tr>
       <td>${esc(b.lbCode || "")}</td>
       <td>${esc(b.title || "")}</td>
       <td>${esc(b.ustd ?? "")}</td>
+      <td>${esc(b.weeks ?? "—")}</td>
       <td>${zeit}</td>
     </tr>${noteRow}`;
   }).join("");
   box.innerHTML = `<div class="table-scroll"><table class="cd-stoff-table">
-    <thead><tr><th>LB</th><th>Thema</th><th>Ustd.</th><th>Zeitraum</th></tr></thead>
+    <thead><tr><th>LB</th><th>Thema</th><th>Ustd.</th><th>Wochen</th><th>Zeitraum</th></tr></thead>
     <tbody>${rows}</tbody>
   </table></div>`;
 }
@@ -1196,40 +1313,56 @@ async function renderWeekOverview() {
   }
 }
 
-// Spruch des Tages: feste Liste, deterministisch nach Datum gewählt (bleibt über den Tag stabil).
+// Spruch des Tages: feste Liste in zwei Kategorien, deterministisch nach Datum gewählt
+// (bleibt über den Tag stabil). "spruch" = reflektierte Unterrichtsweisheit, "motivation" =
+// kurzer, energiegebender Impuls für den Tag.
+const SAYING_CAT_LABELS = { spruch: "Spruch", motivation: "Motivation" };
 const SAYINGS = [
-  "Guter Unterricht beginnt mit einer guten Frage.",
-  "Fehler sind Fußspuren auf dem Weg zum Verstehen.",
-  "Wer Fragen stellt, hat schon zugehört.",
-  "Ruhe im Klassenzimmer beginnt mit Ruhe am Pult.",
-  "Ein Lob zur rechten Zeit wirkt länger als jede Note.",
-  "Nicht jede Stunde muss perfekt sein – manche muss nur ehrlich sein.",
-  "Die beste Tafel ist die, die am Ende voller Ideen der Klasse ist.",
-  "Geduld ist das leiseste Unterrichtsprinzip – und das wirksamste.",
-  "Wer differenziert, sieht mehr als nur eine Klasse.",
-  "Ein Klassenraum ist immer auch ein Übungsraum für Vertrauen.",
-  "Motivation wächst dort, wo jemand zuerst geglaubt hat.",
-  "Die Pausenklingel unterbricht die Stunde, nicht das Lernen.",
-  "Kleine Rituale tragen große Klassen durch das Schuljahr.",
-  "Vorbereitung ist die Höflichkeit gegenüber der eigenen Klasse.",
-  "Wer zuhört, unterrichtet schon.",
-  "Jede Klasse hat ihr eigenes Tempo – finde es, bevor du planst.",
-  "Struktur gibt Freiheit, kein Korsett.",
-  "Ein gutes Beispiel erklärt mehr als drei gute Sätze.",
-  "Wer Fehler zulässt, macht Lernen erst möglich.",
-  "Der Stundenplan ist ein Gerüst, kein Gesetz.",
-  "Auch die leiseste Klasse hat etwas zu sagen.",
-  "Reflexion ist der Unterricht nach dem Unterricht.",
-  "Ein aufgeräumtes Pult macht noch keinen aufgeräumten Kopf – aber es hilft.",
-  "Wer differenziert plant, muss seltener improvisieren.",
-  "Interesse steckt an – auch das eigene.",
-  "Die beste Disziplin ist eine gute Aufgabe.",
-  "Manchmal ist die wichtigste Frage: Wie geht es dir heute?",
-  "Aus Kreide wird Kreidestaub, aus Mühe wird Können.",
-  "Ein Klassenzimmer wächst mit jedem Schuljahr ein Stück mit.",
-  "Wer plant, gewinnt Zeit für die Momente, die man nicht planen kann.",
-  "Verstehen braucht Zeit – auch wenn die Stunde nur 45 Minuten hat.",
-  "Der Unterricht endet mit der Stunde, das Lernen selten.",
+  { cat: "spruch", text: "Guter Unterricht beginnt mit einer guten Frage." },
+  { cat: "spruch", text: "Fehler sind Fußspuren auf dem Weg zum Verstehen." },
+  { cat: "spruch", text: "Wer Fragen stellt, hat schon zugehört." },
+  { cat: "spruch", text: "Ruhe im Klassenzimmer beginnt mit Ruhe am Pult." },
+  { cat: "spruch", text: "Ein Lob zur rechten Zeit wirkt länger als jede Note." },
+  { cat: "spruch", text: "Nicht jede Stunde muss perfekt sein – manche muss nur ehrlich sein." },
+  { cat: "spruch", text: "Die beste Tafel ist die, die am Ende voller Ideen der Klasse ist." },
+  { cat: "spruch", text: "Geduld ist das leiseste Unterrichtsprinzip – und das wirksamste." },
+  { cat: "spruch", text: "Wer differenziert, sieht mehr als nur eine Klasse." },
+  { cat: "spruch", text: "Ein Klassenraum ist immer auch ein Übungsraum für Vertrauen." },
+  { cat: "spruch", text: "Die Pausenklingel unterbricht die Stunde, nicht das Lernen." },
+  { cat: "spruch", text: "Kleine Rituale tragen große Klassen durch das Schuljahr." },
+  { cat: "spruch", text: "Vorbereitung ist die Höflichkeit gegenüber der eigenen Klasse." },
+  { cat: "spruch", text: "Wer zuhört, unterrichtet schon." },
+  { cat: "spruch", text: "Jede Klasse hat ihr eigenes Tempo – finde es, bevor du planst." },
+  { cat: "spruch", text: "Struktur gibt Freiheit, kein Korsett." },
+  { cat: "spruch", text: "Ein gutes Beispiel erklärt mehr als drei gute Sätze." },
+  { cat: "spruch", text: "Wer Fehler zulässt, macht Lernen erst möglich." },
+  { cat: "spruch", text: "Der Stundenplan ist ein Gerüst, kein Gesetz." },
+  { cat: "spruch", text: "Auch die leiseste Klasse hat etwas zu sagen." },
+  { cat: "spruch", text: "Reflexion ist der Unterricht nach dem Unterricht." },
+  { cat: "spruch", text: "Ein aufgeräumtes Pult macht noch keinen aufgeräumten Kopf – aber es hilft." },
+  { cat: "spruch", text: "Wer differenziert plant, muss seltener improvisieren." },
+  { cat: "spruch", text: "Die beste Disziplin ist eine gute Aufgabe." },
+  { cat: "spruch", text: "Manchmal ist die wichtigste Frage: Wie geht es dir heute?" },
+  { cat: "spruch", text: "Aus Kreide wird Kreidestaub, aus Mühe wird Können." },
+  { cat: "spruch", text: "Ein Klassenzimmer wächst mit jedem Schuljahr ein Stück mit." },
+  { cat: "spruch", text: "Wer plant, gewinnt Zeit für die Momente, die man nicht planen kann." },
+  { cat: "spruch", text: "Verstehen braucht Zeit – auch wenn die Stunde nur 45 Minuten hat." },
+  { cat: "spruch", text: "Der Unterricht endet mit der Stunde, das Lernen selten." },
+  { cat: "motivation", text: "Motivation wächst dort, wo jemand zuerst geglaubt hat." },
+  { cat: "motivation", text: "Interesse steckt an – auch das eigene." },
+  { cat: "motivation", text: "Heute reicht ein guter Moment – der Rest kommt von allein." },
+  { cat: "motivation", text: "Du musst nicht alles schaffen. Nur den nächsten Schritt." },
+  { cat: "motivation", text: "Ein einziges Aha-Erlebnis rechtfertigt eine ganze Stunde." },
+  { cat: "motivation", text: "Was du heute vorbereitest, trägt du morgen leichter." },
+  { cat: "motivation", text: "Auch ein durchwachsener Tag zählt zur Erfahrung." },
+  { cat: "motivation", text: "Kleine Fortschritte sind immer noch Fortschritte." },
+  { cat: "motivation", text: "Du bist nicht allein im Klassenzimmer – die Klasse trägt mit." },
+  { cat: "motivation", text: "Atme kurz durch. Dann weiter." },
+  { cat: "motivation", text: "Dein Einsatz heute wirkt länger nach, als du siehst." },
+  { cat: "motivation", text: "Es muss nicht glänzen – es muss nur weitergehen." },
+  { cat: "motivation", text: "Du hast heute schon mehr geschafft, als auf deiner Liste steht." },
+  { cat: "motivation", text: "Ein guter Tag beginnt mit einem kleinen Ziel." },
+  { cat: "motivation", text: "Auch die ruhigen Erfolge zählen." },
 ];
 function spruchIndexForToday() {
   const d = isoDate(new Date());
@@ -1238,8 +1371,10 @@ function spruchIndexForToday() {
   return h % SAYINGS.length;
 }
 function renderSpruchDesTages() {
-  const el = $("spruchText");
-  if (el) el.textContent = SAYINGS[spruchIndexForToday()];
+  const el = $("spruchText"), catEl = $("spruchCat");
+  const s = SAYINGS[spruchIndexForToday()];
+  if (el) el.textContent = s.text;
+  if (catEl) catEl.textContent = "· " + SAYING_CAT_LABELS[s.cat];
 }
 
 // Vollbild-„Bildschirmschoner": derselbe Spruch wie auf der Kachel, zufälliger Hintergrund.
@@ -1254,7 +1389,9 @@ const SS_BACKGROUNDS = [
   "linear-gradient(125deg, #0e2f1c 0%, #1a5c37 50%, #082414 100%)",
 ];
 function openScreensaver() {
-  $("ssQuoteText").textContent = SAYINGS[spruchIndexForToday()];
+  const s = SAYINGS[spruchIndexForToday()];
+  $("ssQuoteText").textContent = s.text;
+  $("ssCat").textContent = SAYING_CAT_LABELS[s.cat];
   $("ssBg").style.background = SS_BACKGROUNDS[Math.floor(Math.random() * SS_BACKGROUNDS.length)];
   $("screensaver").classList.remove("hidden");
   $("ssClose").focus();
@@ -2616,7 +2753,7 @@ async function loadStoffPlanIntoTable(id) {
       const tr = document.createElement("tr");
       const zeit = (b.startDate || b.endDate) ? `${esc(deDate(b.startDate) || "?")} – ${esc(deDate(b.endDate) || "?")}` : "—";
       tr.innerHTML = `<td>${esc(b.lbCode || "")}</td><td>${esc(b.title || "")}</td><td>${esc(b.ustd ?? "")}</td>` +
-        `<td>—</td><td>${zeit}</td>`;
+        `<td>${esc(b.weeks ?? "—")}</td><td>${zeit}</td>`;
       body.appendChild(tr);
       if (b.conflictNote) {
         const noteTr = document.createElement("tr");
@@ -3361,8 +3498,9 @@ async function aiStoffplan() {
     b.innerHTML = "";
     blocks.forEach((x) => {
       const tr = document.createElement("tr");
+      const zeit = (x.startDate || x.endDate) ? `${esc(deDate(x.startDate) || "?")} – ${esc(deDate(x.endDate) || "?")}` : "—";
       tr.innerHTML = `<td>${esc(x.code)}</td><td>${esc(x.title)}</td><td>${esc(x.ustd)}</td>` +
-        `<td>${esc(x.weeks)}</td><td>—</td>`;
+        `<td>${esc(x.weeks)}</td><td>${zeit}</td>`;
       b.appendChild(tr);
       if (x.note) {
         const noteTr = document.createElement("tr");
@@ -3371,10 +3509,11 @@ async function aiStoffplan() {
         b.appendChild(noteTr);
       }
     });
-    // Vorschau für „Plan speichern" merken (U12) – KI liefert keine Zeiträume.
+    // Vorschau für „Plan speichern" merken (U12) – Zeitraum wird serverseitig aus den
+    // KI-Wochen + Ferienkalender berechnet (assign_dates_from_weeks).
     state.stoffPreview = blocks.map((x) => ({
       code: x.code, title: x.title, ustd: x.ustd,
-      startDate: null, endDate: null, conflictNote: x.note || null,
+      startDate: x.startDate || null, endDate: x.endDate || null, conflictNote: x.note || null,
     }));
     // Direkt-Upload zu einem Lernbereich freischalten (vormals nur nach "Jahresplan vorschlagen" verfügbar).
     // Die KI-Antwort liefert nur den Code, keine lernbereichId – daher gegen die geladenen Lernbereiche der Klasse auflösen.
@@ -3499,21 +3638,63 @@ function renderPraesentControls() {
   const lesSel = $("praesentLesson");
   if (lesSel) {
     const prev = praesent.lessonId;
-    lesSel.innerHTML = state.lessons.length
-      ? state.lessons.map((l) => `<option value="${l.id}">${esc(lessonOptionLabel(l))}</option>`).join("")
+    const filtered = praesent.classId
+      ? state.lessons.filter((l) => String(l.classId) === String(praesent.classId))
+      : state.lessons;
+    lesSel.innerHTML = filtered.length
+      ? filtered.map((l) => `<option value="${l.id}">${esc(lessonOptionLabel(l))}</option>`).join("")
       : '<option value="">Keine Stunden</option>';
-    if (state.lessons.some((l) => String(l.id) === String(prev))) lesSel.value = String(prev);
-    praesent.lessonId = lesSel.value ? Number(lesSel.value) : (state.lessons[0] ? state.lessons[0].id : null);
+    if (filtered.some((l) => String(l.id) === String(prev))) lesSel.value = String(prev);
+    praesent.lessonId = lesSel.value ? Number(lesSel.value) : (filtered[0] ? filtered[0].id : null);
     if (praesent.lessonId != null) lesSel.value = String(praesent.lessonId);
   }
+}
+
+// Ermittelt die laut Stundenplan gerade laufende bzw. nächste Stunde (heute, optional auf die
+// gewählte Klasse eingeschränkt) und liefert die passende Lesson-ID, sonst die erste Stunde
+// des Tages bzw. null. Manuelle Auswahl im Select bleibt jederzeit möglich.
+async function suggestPraesentLessonId() {
+  let candidates = todayLessons();
+  if (praesent.classId) candidates = candidates.filter((l) => String(l.classId) === String(praesent.classId));
+  if (!candidates.length) return null;
+  const wd = new Date().getDay();
+  if (wd < 1 || wd > 5) return candidates[0].id;
+  try {
+    const monday = new Date();
+    monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+    const data = await calTtFetch(isoDate(monday));
+    const todayStr = isoDate(new Date());
+    const day = data.days.find((d) => d.date === todayStr);
+    if (!day) return candidates[0].id;
+    const now = String(new Date().getHours()).padStart(2, "0") + ":" + String(new Date().getMinutes()).padStart(2, "0");
+    const items = day.items
+      .filter((it) => !praesent.classId || String(it.classId) === String(praesent.classId))
+      .map((it) => { const [start, end] = (it.timeRange || "").split("–"); return { it, start, end }; })
+      .filter((x) => x.start && x.end)
+      .sort((a, b) => a.start.localeCompare(b.start));
+    const pick = items.find((x) => now >= x.start && now < x.end) || items.find((x) => x.start > now);
+    const match = pick && candidates.find((l) => l.classId === pick.it.classId);
+    return match ? match.id : candidates[0].id;
+  } catch (e) { return candidates[0].id; }   // kein Stundenplan hinterlegt o. Ä. → Fallback
+}
+
+async function applyPraesentLessonSuggestion() {
+  const id = await suggestPraesentLessonId();
+  if (id == null) return;
+  praesent.lessonId = id;
+  const sel = $("praesentLesson");
+  if (sel) sel.value = String(id);
+  praesent.phaseIdx = 0;
+  renderPraesentation();
 }
 
 function renderPraesentation() {
   praesentToken++;   // laufende async-Renderings entwerten
   const clsSel = $("praesentClass"), lesSel = $("praesentLesson");
   const prevBtn = $("praesentPrevBtn"), nextBtn = $("praesentNextBtn");
-  // Steuerungssichtbarkeit je Unteransicht
-  if (clsSel) clsSel.style.display = praesent.mode === "jahresplan" ? "" : "none";
+  // Steuerungssichtbarkeit je Unteransicht – Klassenfilter überall (schränkt Jahresplan-Klassen
+  // bzw. die Stundenauswahl der anderen beiden Modi ein), Stundenauswahl nur außerhalb Jahresplan.
+  if (clsSel) clsSel.style.display = "";
   if (lesSel) lesSel.style.display = (praesent.mode === "lernbereich" || praesent.mode === "ablauf") ? "" : "none";
   const showPhaseNav = praesent.mode === "ablauf";
   if (prevBtn) prevBtn.style.display = showPhaseNav ? "" : "none";
@@ -3581,6 +3762,52 @@ function renderPraesentLernbereich() {
     `<div class="praesent-goals">${goals || '<div class="praesent-empty">Für diese Stunde sind noch keine Lernziele hinterlegt.</div>'}</div>`;
 }
 
+let praesentEditZielId = null;   // Lernziel-ID, das gerade inline bearbeitet wird (nur außerhalb Vollbild)
+
+function isPraesentFullscreen() { return !!document.fullscreenElement; }
+
+// Lernziel-Zeile im Ablauf: außerhalb des echten Vollbildmodus gibt es einen kleinen
+// „bearbeiten"-Button (Vorbereitung/Kontrolle vor der Präsentation); im Vollbild selbst
+// (vor der Klasse) ist nur die reine Anzeige sichtbar.
+function renderPraesentGoalRow(z) {
+  if (praesentEditZielId === z.id) {
+    return `<div class="praesent-step-goal praesent-step-goal-edit">
+      <textarea class="praesent-goal-edit-input" data-goal-edit="${z.id}" rows="2">${esc(z.text)}</textarea>
+      <div class="praesent-goal-edit-actions">
+        <button class="btn small" data-goal-save="${z.id}">Speichern</button>
+        <button class="btn small secondary" data-goal-cancel="${z.id}">Abbrechen</button>
+      </div>
+    </div>`;
+  }
+  const editBtn = isPraesentFullscreen() ? "" :
+    `<button class="btn tiny secondary praesent-goal-editbtn" data-goal-edit-open="${z.id}" title="Lernziel bearbeiten">bearbeiten</button>`;
+  return `<div class="praesent-step-goal">🎯 ${esc(z.text)}${editBtn}</div>`;
+}
+
+async function savePraesentZiel(l, zielId) {
+  const box = document.querySelector(`[data-goal-edit="${zielId}"]`);
+  if (!box) return;
+  const text = box.value.trim();
+  if (!text) { toast("Lernziel darf nicht leer sein.", false); return; }
+  const lernziele = (l.lernziele || []).map((z) => ({
+    kind: z.kind, text: z.id === zielId ? text : z.text,
+    bloomStufe: z.bloomStufe || null, phaseSortOrder: z.phaseSortOrder, sortOrder: z.sortOrder,
+  }));
+  try {
+    const updated = await API.put("/lessons/" + l.id, {
+      title: l.title, subject: l.subject, grade: l.grade, lessonType: l.lessonType,
+      durationMinutes: l.durationMinutes, classId: l.classId, lernbereichId: l.lernbereichId,
+      date: l.date, klafki: l.klafki, meyerPlan: l.meyerPlan, diff: l.diff, selbstLernen: l.selbstLernen,
+      bibox: l.bibox, phases: l.phases, lernziele,
+    });
+    const idx = state.lessons.findIndex((x) => x.id === l.id);
+    if (idx !== -1) state.lessons[idx] = updated;
+    praesentEditZielId = null;
+    renderPraesentAblauf();
+    toast("Lernziel aktualisiert.");
+  } catch (e) { toast(e.message, false); }
+}
+
 function renderPraesentAblauf() {
   const stage = $("praesentStage");
   if (!stage) return;
@@ -3611,7 +3838,7 @@ function renderPraesentAblauf() {
     ].filter(Boolean).join(" · ");
     const stepZiele = ziele
       .filter((z) => z.kind === "fein" && z.phaseSortOrder != null && String(z.phaseSortOrder) === String(p.sortOrder))
-      .map((z) => `<div class="praesent-step-goal">🎯 ${esc(z.text)}</div>`).join("");
+      .map((z) => renderPraesentGoalRow(z)).join("");
     const here = active ? '<span class="praesent-here">📍 Wir sind hier</span>' : "";
     return `<div class="${cls}" data-phaseidx="${i}">` +
       `<div class="praesent-step-num">${i + 1}</div>` +
@@ -3622,7 +3849,19 @@ function renderPraesentAblauf() {
   }).join("");
   stage.innerHTML = `<h2 class="praesent-h">${esc(l.title)}</h2>${hint}<div class="praesent-steps">${steps}</div>`;
   stage.querySelectorAll("[data-phaseidx]").forEach((el) => {
-    el.onclick = () => { praesent.phaseIdx = Number(el.dataset.phaseidx); renderPraesentAblauf(); updatePraesentPhaseButtons(); };
+    el.onclick = (e) => {
+      if (e.target.closest("[data-goal-edit-open],[data-goal-save],[data-goal-cancel],.praesent-goal-edit-input")) return;
+      praesent.phaseIdx = Number(el.dataset.phaseidx); renderPraesentAblauf(); updatePraesentPhaseButtons();
+    };
+  });
+  stage.querySelectorAll("[data-goal-edit-open]").forEach((b) => b.onclick = (e) => {
+    e.stopPropagation(); praesentEditZielId = Number(b.dataset.goalEditOpen); renderPraesentAblauf();
+  });
+  stage.querySelectorAll("[data-goal-cancel]").forEach((b) => b.onclick = (e) => {
+    e.stopPropagation(); praesentEditZielId = null; renderPraesentAblauf();
+  });
+  stage.querySelectorAll("[data-goal-save]").forEach((b) => b.onclick = (e) => {
+    e.stopPropagation(); savePraesentZiel(l, Number(b.dataset.goalSave));
   });
   updatePraesentPhaseButtons();
 }
@@ -3637,17 +3876,14 @@ function updatePraesentPhaseButtons() {
 
 function setPraesentMode(mode) {
   praesent.mode = mode;
-  if (mode === "ablauf") {
-    // Standard: erste heutige Stunde, sonst aktuelle/erste
-    const today = todayLessons();
-    if (today.length && !today.some((l) => String(l.id) === String(praesent.lessonId))) {
-      praesent.lessonId = today[0].id;
-      const sel = $("praesentLesson");
-      if (sel) sel.value = String(praesent.lessonId);
-    }
-    praesent.phaseIdx = 0;
-  }
+  if (mode === "ablauf") praesent.phaseIdx = 0;
   renderPraesentation();
+  // Beim Wechsel in Lernbereich/Ablauf die laufende/nächste Stunde vorschlagen, sofern noch keine
+  // für heute passende Auswahl getroffen wurde – weitere Stunden bleiben über das Select wählbar.
+  if (mode === "lernbereich" || mode === "ablauf") {
+    const today = todayLessons();
+    if (!today.some((l) => String(l.id) === String(praesent.lessonId))) applyPraesentLessonSuggestion();
+  }
 }
 
 function praesentFullscreen() {
@@ -4317,7 +4553,13 @@ function wireEvents() {
   // Schüleransicht / Präsentationsmodus (M12 U8)
   document.querySelectorAll(".praesent-tab").forEach((btn) =>
     (btn.onclick = () => setPraesentMode(btn.dataset.praesent)));
-  $("praesentClass").addEventListener("change", (e) => { praesent.classId = e.target.value; renderPraesentation(); });
+  $("praesentClass").addEventListener("change", (e) => {
+    praesent.classId = e.target.value;
+    praesent.lessonId = null;
+    renderPraesentControls();   // Stundenauswahl auf die gewählte Klasse neu filtern
+    renderPraesentation();
+    if (praesent.mode === "lernbereich" || praesent.mode === "ablauf") applyPraesentLessonSuggestion();
+  });
   $("praesentLesson").addEventListener("change", (e) => {
     praesent.lessonId = e.target.value ? Number(e.target.value) : null;
     praesent.phaseIdx = 0;
@@ -4326,6 +4568,9 @@ function wireEvents() {
   $("praesentPrevBtn").onclick = () => { if (praesent.phaseIdx > 0) { praesent.phaseIdx--; renderPraesentAblauf(); } };
   $("praesentNextBtn").onclick = () => { praesent.phaseIdx++; renderPraesentAblauf(); };
   $("praesentFullscreenBtn").onclick = praesentFullscreen;
+  document.addEventListener("fullscreenchange", () => {
+    if (praesent.mode === "ablauf") renderPraesentAblauf();   // Bearbeiten-Buttons ein-/ausblenden
+  });
   document.addEventListener("keydown", (e) => {
     const view = $("praesentation");
     if (!view || view.classList.contains("hidden") || praesent.mode !== "ablauf") return;
