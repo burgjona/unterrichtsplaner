@@ -126,7 +126,8 @@ tbody tr td:first-child { border-radius:10px 0 0 10px; } tbody tr td:last-child 
 
 /* Spruch des Tages: Vollbild-„Bildschirmschoner" */
 .screensaver { position:fixed; inset:0; z-index:60; display:flex; align-items:center; justify-content:center; padding:40px; text-align:center; }
-.ss-bg { position:absolute; inset:0; z-index:-1; }
+.ss-bg { position:absolute; inset:0; z-index:-2; background-size:cover; background-position:center; }
+.ss-bg-overlay { position:absolute; inset:0; z-index:-1; background:linear-gradient(180deg, rgba(0,0,0,0.45) 0%, rgba(0,0,0,0.25) 45%, rgba(0,0,0,0.55) 100%); }
 .ss-close { position:absolute; top:22px; right:26px; width:42px; height:42px; border-radius:50%; border:1.5px solid rgba(255,255,255,0.45); background:rgba(0,0,0,0.15); color:#fff; font-size:19px; line-height:1; cursor:pointer; display:flex; align-items:center; justify-content:center; }
 .ss-close:hover { background:rgba(0,0,0,0.32); }
 .ss-close:focus-visible { outline:2px solid #fff; outline-offset:2px; }
@@ -366,7 +367,7 @@ tbody tr td:first-child { border-radius:10px 0 0 10px; } tbody tr td:last-child 
 .class-name-link { color:var(--primary-dark); font-weight:var(--fw-bold); text-decoration:none; cursor:pointer; }
 .class-name-link:hover { text-decoration:underline; }
 .cd-row-actions { white-space:nowrap; }
-.global-tabs { display:flex; gap:6px; flex-wrap:wrap; padding:0 4px 10px; }
+.global-tabs { display:flex; gap:6px; flex-wrap:wrap; padding:0 4px 10px; position:sticky; top:0; z-index:30; background:var(--bg); }
 .global-tabs:empty { display:none; }
 .g-tab {
   display:flex; align-items:center; gap:8px; padding:7px 8px 7px 14px; border-radius:10px 10px 0 0;
