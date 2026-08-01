@@ -1338,13 +1338,15 @@ function spruchIndexForToday() {
   return h % SAYINGS.length;
 }
 function renderSpruchDesTages() {
-  const el = $("spruchText"), catEl = $("spruchCat");
+  const el = $("spruchText"), catEl = $("spruchCat"), card = $("spruchCard");
   const s = SAYINGS[spruchIndexForToday()];
   if (el) el.textContent = s.text;
   if (catEl) catEl.textContent = "· " + SAYING_CAT_LABELS[s.cat];
+  if (card) card.style.backgroundImage =
+    `linear-gradient(155deg, rgba(11,47,26,0.88), rgba(12,56,32,0.82)), url("${ssBackgroundForToday()}")`;
 }
 
-// Vollbild-„Bildschirmschoner": derselbe Spruch wie auf der Kachel, zufälliges Foto als Hintergrund.
+// Spruch-Kachel und Vollbild teilen sich am selben Tag dasselbe Hintergrundfoto.
 const SS_BACKGROUNDS = [
   "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=1920&q=80", // Wald, Sonnenlicht
   "https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=1920&q=80", // Berge, Nebel
@@ -1355,12 +1357,17 @@ const SS_BACKGROUNDS = [
   "https://images.unsplash.com/photo-1508739773434-c26b3d09e071?w=1920&q=80", // Milchstraße, Berge
   "https://images.unsplash.com/photo-1500534623283-312aade485b7?w=1920&q=80", // Herbstwald
 ];
+function ssBackgroundForToday() {
+  const d = isoDate(new Date());
+  let h = 0;
+  for (let i = 0; i < d.length; i++) h = (h * 17 + d.charCodeAt(i)) >>> 0;
+  return SS_BACKGROUNDS[h % SS_BACKGROUNDS.length];
+}
 function openScreensaver() {
   const s = SAYINGS[spruchIndexForToday()];
   $("ssQuoteText").textContent = s.text;
   $("ssCat").textContent = SAYING_CAT_LABELS[s.cat];
-  const url = SS_BACKGROUNDS[Math.floor(Math.random() * SS_BACKGROUNDS.length)];
-  $("ssBg").style.backgroundImage = `url("${url}")`;
+  $("ssBg").style.backgroundImage = `url("${ssBackgroundForToday()}")`;
   $("screensaver").classList.remove("hidden");
   $("ssClose").focus();
 }
