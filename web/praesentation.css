@@ -29,6 +29,7 @@
 }
 .praesent-navbtn:hover { background: var(--surface-2); }
 .praesent-navbtn:disabled { opacity: .45; cursor: default; }
+#praesentEditBtn.active { background: var(--primary); color: #fff; }
 
 /* ---------- Bühne ---------- */
 .praesent-stage {
@@ -127,6 +128,13 @@
   font-size: 15px; font-weight:var(--fw-heavy); color: #fff; background: var(--orange);
   padding: 3px 12px; border-radius: 999px; vertical-align: middle;
 }
+.praesent-edit-settings {
+  margin: 10px 0 18px; padding: 10px 14px; border: 1px dashed var(--line);
+  border-radius: 10px; background: var(--surface-2);
+}
+.praesent-edit-check { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: var(--fw-bold); color: var(--text); cursor: pointer; }
+.praesent-time-edit { display: inline-flex; align-items: center; gap: 6px; }
+.praesent-time-input { width: 60px; font: inherit; font-size: 17px; padding: 3px 6px; border-radius: 6px; border: 1px solid var(--line); }
 
 /* ---------- Vollbild ---------- */
 :root:fullscreen .app { grid-template-columns: 1fr; }

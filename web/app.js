@@ -3588,7 +3588,16 @@ async function stundeEinordnungSuggest() {
    Read-only Ansicht für Beamer/Tafel mit drei Unteransichten:
    Jahresplan, Lernbereichsplanung, Unterrichtsablauf heute. */
 const PRAESENT_COLORS = ["#16a34a", "#eab308", "#f97316", "#0ea5e9", "#22c55e", "#a855f7"];
-const praesent = { mode: "jahresplan", classId: "", lessonId: null, phaseIdx: 0 };
+const praesent = { mode: "jahresplan", classId: "", lessonId: null, phaseIdx: 0, editMode: false };
+// Individuelle Anzeige-Einstellungen für "Unterrichtsablauf heute" (persistiert, gilt auch im
+// Vollbild) – nur im Bearbeitungsmodus änderbar.
+const praesentAblaufPrefs = (() => {
+  try { return { showZiele: true, ...JSON.parse(localStorage.getItem("praesentAblaufPrefs") || "{}") }; }
+  catch (e) { return { showZiele: true }; }
+})();
+function savePraesentAblaufPrefs() {
+  try { localStorage.setItem("praesentAblaufPrefs", JSON.stringify(praesentAblaufPrefs)); } catch (e) { /* ignore */ }
+}
 let praesentToken = 0;   // Guard gegen veraltete async-Renderings (Jahresplan lädt Lernbereiche)
 
 function lessonOptionLabel(l) {
@@ -3674,6 +3683,15 @@ function renderPraesentation() {
   const showPhaseNav = praesent.mode === "ablauf";
   if (prevBtn) prevBtn.style.display = showPhaseNav ? "" : "none";
   if (nextBtn) nextBtn.style.display = showPhaseNav ? "" : "none";
+  const editBtn = $("praesentEditBtn");
+  if (editBtn) {
+    // Bearbeiten-Button nur im Ablauf-Tab und nie im Vollbild.
+    const showEditBtn = showPhaseNav && !isPraesentFullscreen();
+    editBtn.style.display = showEditBtn ? "" : "none";
+    editBtn.classList.toggle("active", praesent.editMode);
+    editBtn.textContent = praesent.editMode ? "Fertig" : "Bearbeiten";
+  }
+  if (!showPhaseNav || isPraesentFullscreen()) praesent.editMode = false;
   document.querySelectorAll(".praesent-tab").forEach((b) =>
     b.classList.toggle("active", b.dataset.praesent === praesent.mode));
 
@@ -3754,8 +3772,8 @@ function renderPraesentGoalRow(z) {
       </div>
     </div>`;
   }
-  const editBtn = isPraesentFullscreen() ? "" :
-    `<button class="btn tiny secondary praesent-goal-editbtn" data-goal-edit-open="${z.id}" title="Lernziel bearbeiten">bearbeiten</button>`;
+  const editBtn = praesent.editMode ?
+    `<button class="btn tiny secondary praesent-goal-editbtn" data-goal-edit-open="${z.id}" title="Lernziel bearbeiten">bearbeiten</button>` : "";
   return `<div class="praesent-step-goal">🎯 ${esc(z.text)}${editBtn}</div>`;
 }
 
@@ -3783,6 +3801,23 @@ async function savePraesentZiel(l, zielId) {
   } catch (e) { toast(e.message, false); }
 }
 
+// Geplante Zeit einer Phase im Bearbeitungsmodus ändern oder entfernen (minutes = null).
+async function savePraesentPhaseMinutes(l, phaseIdx, minutes) {
+  const phases = (l.phases || []).map((p, i) => i === phaseIdx ? { ...p, minutes } : p);
+  try {
+    const updated = await API.put("/lessons/" + l.id, {
+      title: l.title, subject: l.subject, grade: l.grade, lessonType: l.lessonType,
+      durationMinutes: l.durationMinutes, classId: l.classId, lernbereichId: l.lernbereichId,
+      date: l.date, klafki: l.klafki, meyerPlan: l.meyerPlan, diff: l.diff, selbstLernen: l.selbstLernen,
+      bibox: l.bibox, phases, lernziele: l.lernziele || [],
+    });
+    const idx = state.lessons.findIndex((x) => x.id === l.id);
+    if (idx !== -1) state.lessons[idx] = updated;
+    renderPraesentAblauf();
+    toast("Geplante Zeit aktualisiert.");
+  } catch (e) { toast(e.message, false); }
+}
+
 function renderPraesentAblauf() {
   const stage = $("praesentStage");
   if (!stage) return;
@@ -3803,17 +3838,27 @@ function renderPraesentAblauf() {
   }
   if (praesent.phaseIdx >= phases.length) praesent.phaseIdx = phases.length - 1;
   if (praesent.phaseIdx < 0) praesent.phaseIdx = 0;
+  const showZiele = praesentAblaufPrefs.showZiele;
+  const settingsBar = praesent.editMode ? `<div class="praesent-edit-settings">
+    <label class="praesent-edit-check"><input type="checkbox" id="praesentShowZieleCheck" ${showZiele ? "checked" : ""}> Lernziele in dieser Ansicht anzeigen</label>
+  </div>` : "";
   const steps = phases.map((p, i) => {
     const active = i === praesent.phaseIdx;
     const cls = "praesent-step" + (active ? " active" : "") + (i < praesent.phaseIdx ? " done" : "");
+    const timeMeta = praesent.editMode
+      ? `<span class="praesent-time-edit">
+          <input type="number" min="0" class="praesent-time-input" data-phase-time="${i}" value="${p.minutes == null ? "" : esc(p.minutes)}" placeholder="Min."> Min.
+          ${p.minutes != null ? `<button class="btn tiny secondary" data-phase-time-clear="${i}" title="Geplante Zeit entfernen">×</button>` : ""}
+        </span>`
+      : (p.minutes != null ? `${esc(p.minutes)} Min.` : null);
     const meta = [
-      p.minutes != null ? `${esc(p.minutes)} Min.` : null,
+      timeMeta,
       p.socialForm ? esc(p.socialForm) : null,
       p.method ? esc(p.method) : null,
     ].filter(Boolean).join(" · ");
-    const stepZiele = ziele
+    const stepZiele = showZiele ? ziele
       .filter((z) => z.kind === "fein" && z.phaseSortOrder != null && String(z.phaseSortOrder) === String(p.sortOrder))
-      .map((z) => renderPraesentGoalRow(z)).join("");
+      .map((z) => renderPraesentGoalRow(z)).join("") : "";
     const here = active ? '<span class="praesent-here">📍 Wir sind hier</span>' : "";
     return `<div class="${cls}" data-phaseidx="${i}">` +
       `<div class="praesent-step-num">${i + 1}</div>` +
@@ -3822,10 +3867,10 @@ function renderPraesentAblauf() {
       (stepZiele ? `<div class="praesent-step-goals">${stepZiele}</div>` : "") +
       `</div></div>`;
   }).join("");
-  stage.innerHTML = `<h2 class="praesent-h">${esc(l.title)}</h2>${hint}<div class="praesent-steps">${steps}</div>`;
+  stage.innerHTML = `<h2 class="praesent-h">${esc(l.title)}</h2>${hint}${settingsBar}<div class="praesent-steps">${steps}</div>`;
   stage.querySelectorAll("[data-phaseidx]").forEach((el) => {
     el.onclick = (e) => {
-      if (e.target.closest("[data-goal-edit-open],[data-goal-save],[data-goal-cancel],.praesent-goal-edit-input")) return;
+      if (e.target.closest("[data-goal-edit-open],[data-goal-save],[data-goal-cancel],.praesent-goal-edit-input,.praesent-time-edit")) return;
       praesent.phaseIdx = Number(el.dataset.phaseidx); renderPraesentAblauf(); updatePraesentPhaseButtons();
     };
   });
@@ -3838,6 +3883,22 @@ function renderPraesentAblauf() {
   stage.querySelectorAll("[data-goal-save]").forEach((b) => b.onclick = (e) => {
     e.stopPropagation(); savePraesentZiel(l, Number(b.dataset.goalSave));
   });
+  stage.querySelectorAll("[data-phase-time]").forEach((el) => {
+    el.onclick = (e) => e.stopPropagation();
+    el.onchange = (e) => {
+      const val = e.target.value.trim();
+      savePraesentPhaseMinutes(l, Number(el.dataset.phaseTime), val ? Number(val) : null);
+    };
+  });
+  stage.querySelectorAll("[data-phase-time-clear]").forEach((b) => b.onclick = (e) => {
+    e.stopPropagation(); savePraesentPhaseMinutes(l, Number(b.dataset.phaseTimeClear), null);
+  });
+  const zieleCheck = $("praesentShowZieleCheck");
+  if (zieleCheck) zieleCheck.onchange = (e) => {
+    praesentAblaufPrefs.showZiele = e.target.checked;
+    savePraesentAblaufPrefs();
+    renderPraesentAblauf();
+  };
   updatePraesentPhaseButtons();
 }
 
@@ -4631,9 +4692,14 @@ function wireEvents() {
   });
   $("praesentPrevBtn").onclick = () => { if (praesent.phaseIdx > 0) { praesent.phaseIdx--; renderPraesentAblauf(); } };
   $("praesentNextBtn").onclick = () => { praesent.phaseIdx++; renderPraesentAblauf(); };
+  $("praesentEditBtn").onclick = () => {
+    praesent.editMode = !praesent.editMode;
+    if (!praesent.editMode) praesentEditZielId = null;
+    renderPraesentation();
+  };
   $("praesentFullscreenBtn").onclick = praesentFullscreen;
   document.addEventListener("fullscreenchange", () => {
-    if (praesent.mode === "ablauf") renderPraesentAblauf();   // Bearbeiten-Buttons ein-/ausblenden
+    if (praesent.mode === "ablauf") renderPraesentation();   // Bearbeiten-Buttons/-Modus ein-/ausblenden
   });
   document.addEventListener("keydown", (e) => {
     const view = $("praesentation");
