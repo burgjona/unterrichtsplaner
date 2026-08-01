@@ -1344,22 +1344,23 @@ function renderSpruchDesTages() {
   if (catEl) catEl.textContent = "· " + SAYING_CAT_LABELS[s.cat];
 }
 
-// Vollbild-„Bildschirmschoner": derselbe Spruch wie auf der Kachel, zufälliger Hintergrund.
+// Vollbild-„Bildschirmschoner": derselbe Spruch wie auf der Kachel, zufälliges Foto als Hintergrund.
 const SS_BACKGROUNDS = [
-  "radial-gradient(circle at 20% 20%, #1c6b3a 0%, #0b2f1a 55%, #071f11 100%)",
-  "linear-gradient(135deg, #14532d 0%, #0e3d21 45%, #1c6b3a 100%)",
-  "radial-gradient(circle at 80% 30%, #2c7a4a 0%, #0d2b18 60%, #06170c 100%)",
-  "linear-gradient(160deg, #0f3d22 0%, #1f7a44 60%, #0b2414 100%)",
-  "radial-gradient(circle at 50% 80%, #24623b 0%, #0a2213 55%, #050f0a 100%)",
-  "linear-gradient(200deg, #155e33 0%, #0a2013 65%, #041008 100%)",
-  "radial-gradient(circle at 30% 70%, #1d7043 0%, #0c2c18 55%, #05130a 100%)",
-  "linear-gradient(125deg, #0e2f1c 0%, #1a5c37 50%, #082414 100%)",
+  "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=1920&q=80", // Wald, Sonnenlicht
+  "https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=1920&q=80", // Berge, Nebel
+  "https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=1920&q=80", // Bergsee
+  "https://images.unsplash.com/photo-1518495973542-4542c06a5843?w=1920&q=80", // Sonnenaufgang Feld
+  "https://images.unsplash.com/photo-1447752875215-b2761acb3c5d?w=1920&q=80", // Wald von oben
+  "https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?w=1920&q=80", // Berge, weites Tal
+  "https://images.unsplash.com/photo-1508739773434-c26b3d09e071?w=1920&q=80", // Milchstraße, Berge
+  "https://images.unsplash.com/photo-1500534623283-312aade485b7?w=1920&q=80", // Herbstwald
 ];
 function openScreensaver() {
   const s = SAYINGS[spruchIndexForToday()];
   $("ssQuoteText").textContent = s.text;
   $("ssCat").textContent = SAYING_CAT_LABELS[s.cat];
-  $("ssBg").style.background = SS_BACKGROUNDS[Math.floor(Math.random() * SS_BACKGROUNDS.length)];
+  const url = SS_BACKGROUNDS[Math.floor(Math.random() * SS_BACKGROUNDS.length)];
+  $("ssBg").style.backgroundImage = `url("${url}")`;
   $("screensaver").classList.remove("hidden");
   $("ssClose").focus();
 }
