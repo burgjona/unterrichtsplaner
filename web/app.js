@@ -294,7 +294,9 @@ async function updateLessonLbOptions(preselectLbId) {
     return;
   }
   const cls = state.classes.find((c) => c.id === clsId);
-  const lbList = cls ? await getLernbereiche(cls) : [];
+  const lbList = cls
+    ? await getLernbereiche({ subject: cls.subject, grade: cls.grade, track: resolveTrack(cls.subject, cls.grade, cls.track) })
+    : [];
   const resolved = ap.blocks
     .map((b) => ({ block: b, lb: lbList.find((l) => l.code === b.lbCode) }))
     .filter((x) => x.lb);
@@ -1718,8 +1720,10 @@ function renderClassToggles() {
   });
 }
 
-// Effektiver Bildungsgang für die Anzeige (Deutsch 'gemischt' ab Kl. 7 → RS).
+// Effektiver Bildungsgang für die Anzeige (Deutsch 'gemischt' ab Kl. 7 → RS;
+// Deutsch Kl. 5/6 hat keinen HS/RS-Split im Lehrplan → immer 'gemischt', s. resolve_track()).
 function resolveTrack(subject, grade, track) {
+  if (subject === "Deutsch" && grade != null && grade < 7) return "gemischt";
   if (subject === "Deutsch" && track === "gemischt" && (grade || 0) >= 7) return "RS";
   return track;
 }
@@ -3493,7 +3497,9 @@ async function aiStoffplan() {
     // Direkt-Upload zu einem Lernbereich freischalten (vormals nur nach "Jahresplan vorschlagen" verfügbar).
     // Die KI-Antwort liefert nur den Code, keine lernbereichId – daher gegen die geladenen Lernbereiche der Klasse auflösen.
     const cls = state.classes.find((c) => c.id === clsId);
-    const lbList = cls ? await getLernbereiche(cls) : [];
+    const lbList = cls
+      ? await getLernbereiche({ subject: cls.subject, grade: cls.grade, track: resolveTrack(cls.subject, cls.grade, cls.track) })
+      : [];
     const card = $("stoffUploadCard");
     $("stoffLb").innerHTML = blocks
       .map((x) => ({ x, lb: lbList.find((l) => l.code === x.code) }))

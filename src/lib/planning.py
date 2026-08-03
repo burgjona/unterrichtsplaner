@@ -16,9 +16,16 @@ def resolve_track(subject: str, grade, track):
 
     Deutsch ist ab Kl. 7 in HS/RS gesplittet; eine Klasse mit Bildungsgang
     'gemischt' (grade >= 7) findet daher keine eigenen Lernbereiche. Sie wird auf
-    dem Realschulbildungsgang geplant (mit Differenzierung nach unten). Kl. 5/6 und
-    WTH ('gemischt') sowie reine HS/RS-Klassen bleiben unverändert.
+    dem Realschulbildungsgang geplant (mit Differenzierung nach unten).
+
+    Kl. 5/6 (Orientierungsstufe) hat im Lehrplan keinen HS/RS-Split – auch wenn
+    einer Klasse dort explizit RS oder HS als Bildungsgang zugeordnet ist (reale
+    Bildungsempfehlung), gibt es dafür keine eigenen Lehrplan-Absätze. Sie wird
+    daher immer auf 'gemischt' geplant. WTH ('gemischt') sowie reine HS/RS-Klassen
+    ab Kl. 7 bleiben unverändert.
     """
+    if subject == "Deutsch" and grade is not None and grade < 7:
+        return "gemischt"
     if subject == "Deutsch" and track == "gemischt" and (grade or 0) >= 7:
         return "RS"
     return track

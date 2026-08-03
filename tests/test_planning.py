@@ -39,6 +39,10 @@ def test_resolve_track():
     assert resolve_track("WTH", 8, "gemischt") == "gemischt"    # WTH immer gemischt
     assert resolve_track("Deutsch", 9, "RS") == "RS"           # reiner Bildungsgang unverändert
     assert resolve_track("Deutsch", 7, "HS") == "HS"
+    # Orientierungsstufe hat keinen HS/RS-Split im Lehrplan – auch bei explizit
+    # zugeordnetem Bildungsgang (Bildungsempfehlung) wird auf 'gemischt' geplant.
+    assert resolve_track("Deutsch", 5, "RS") == "gemischt"
+    assert resolve_track("Deutsch", 6, "HS") == "gemischt"
 
 
 # ---------- M11: LB1/LB2 (Deutsch) in die übrigen LB integrieren ----------

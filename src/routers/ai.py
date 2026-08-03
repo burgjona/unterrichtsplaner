@@ -107,7 +107,13 @@ _STOFF_SYSTEM = (
     "Du bist didaktische Assistenz und erstellst einen lehrplanbasierten Stoffverteilungsplan "
     "für ein Schuljahr. Ordne die vorgegebenen Lernbereiche sinnvoll über das Jahr, berücksichtige "
     "Stundenrichtwerte und Wochenstunden, und plane vor jeder Lernerfolgskontrolle eine Übungsstunde ein. "
-    "Aktualität/Alltagsrelevanz einbeziehen. Nur Vorschlag."
+    "Verplane das gesamte Schuljahr, also alle angegebenen verfügbaren Unterrichtswochen (Ferien sind "
+    "bereits abgezogen), sofern die Lehrer-Hinweise nichts anderes vorgeben. Reichen die "
+    "Richtwertstunden der Lernbereiche nicht aus, um alle Wochen zu füllen, verteile die übrige Zeit "
+    "als Puffer (Wiederholung, Vertiefung, Übung) auf die bestehenden Lernbereiche oder schlage darin "
+    "konkrete Exkursionen/außerschulische Lernorte vor – erhöhe dafür deren weeks entsprechend und "
+    "vermerke den Grund im note-Feld des jeweiligen Blocks. Keine zusätzlichen Blöcke ohne "
+    "Lernbereich-Code erzeugen. Aktualität/Alltagsrelevanz einbeziehen. Nur Vorschlag."
 )
 _STOFF_SCHEMA = {
     "type": "object", "additionalProperties": False, "required": ["blocks"],
@@ -126,7 +132,7 @@ def stoffplan(body: StoffplanIn, conn: sqlite3.Connection = Depends(get_db),
                                  (body.school_year_id, user_id)).fetchone(), "Schuljahr")
     cls = row_or_404(conn.execute("SELECT * FROM classes WHERE id=? AND user_id=?",
                                   (body.class_id, user_id)).fetchone(), "Klasse")
-    from ..lib.planning import effective_blocks, resolve_track
+    from ..lib.planning import effective_blocks, resolve_track, teaching_weeks, _d
     track = resolve_track(cls["subject"], cls["grade"], cls["track"])
     lbs = conn.execute(
         "SELECT code, title, richtwert_ustd FROM lernbereiche WHERE subject=? AND grade=? AND track=? ORDER BY sort_order",
@@ -135,15 +141,33 @@ def stoffplan(body: StoffplanIn, conn: sqlite3.Connection = Depends(get_db),
         raise HTTPException(status_code=404, detail="Keine Lernbereiche für diese Klasse gefunden.")
     blocks = effective_blocks(cls["subject"], [dict(r) for r in lbs])
     lb_text = "\n".join(f"- {b['code']}: {b['title']} ({b['richtwert_ustd']} Ustd.)" for b in blocks)
+    richtwert_sum = sum(b["richtwert_ustd"] or 0 for b in blocks)
 
     note_row = conn.execute(
         "SELECT text FROM plan_notes WHERE user_id=? AND class_id=? AND school_year_id=?",
         (user_id, body.class_id, body.school_year_id)).fetchone()
     note = (note_row["text"] if note_row else "").strip()
 
+    # Ferien kommen bereits automatisch aus der Sachsen-Ferien-API (school_dates, s.
+    # src/lib/holidays.py) – der KI hier mitgeben, damit sie die verfügbaren
+    # Unterrichtswochen kennt und das Schuljahr tatsächlich vollständig verplanen kann.
+    ferien_rows = conn.execute(
+        "SELECT start_date, end_date FROM school_dates WHERE school_year_id = ? AND user_id = ?",
+        (body.school_year_id, user_id)).fetchall()
+    ferien = [(r["start_date"], r["end_date"]) for r in ferien_rows]
+    weeks_total = len(teaching_weeks(_d(sy["start_date"]), _d(sy["end_date"]),
+                                     [(_d(s), _d(e)) for s, e in ferien]))
+    available_ustd = weeks_total * (cls["weekly_hours"] or 1)
+
     parts = [(f"Fach {cls['subject']}, Klassenstufe {cls['grade']}, Bildungsgang {cls['track']}, "
               f"{cls['weekly_hours']} Wochenstunden. Schuljahr {sy['label']} "
               f"({sy['start_date']} bis {sy['end_date']}).")]
+    if ferien:
+        parts.append("Ferien/unterrichtsfreie Zeiträume (bereits abgezogen):\n"
+                     + "\n".join(f"- {s} bis {e}" for s, e in ferien))
+    parts.append(f"Verfügbare Unterrichtswochen im Schuljahr: {weeks_total} "
+                f"(ca. {available_ustd} Unterrichtsstunden). Summe der Richtwertstunden aller "
+                f"Lernbereiche: {richtwert_sum} Ustd.")
     if note:
         parts.append("Hinweise/Ideen des Lehrers – diese haben Vorrang vor den Standardregeln:\n" + note)
     if cls["subject"] == "Deutsch" and cls["track"] == "gemischt" and (cls["grade"] or 0) >= 7:
@@ -158,11 +182,9 @@ def stoffplan(body: StoffplanIn, conn: sqlite3.Connection = Depends(get_db),
     user_text = "\n\n".join(parts)
     data, cached = _run_json(conn, user_id, "stoffplan", _STOFF_SYSTEM, user_text, _STOFF_SCHEMA, max_tokens=4000)
 
-    from ..lib.planning import assign_dates_from_weeks, _d
-    ferien = [(_d(r["start_date"]), _d(r["end_date"])) for r in conn.execute(
-        "SELECT start_date, end_date FROM school_dates WHERE school_year_id = ? AND user_id = ?",
-        (body.school_year_id, user_id))]
-    dated = assign_dates_from_weeks(_d(sy["start_date"]), _d(sy["end_date"]), ferien, data.get("blocks") or [])
+    from ..lib.planning import assign_dates_from_weeks
+    ferien_d = [(_d(s), _d(e)) for s, e in ferien]
+    dated = assign_dates_from_weeks(_d(sy["start_date"]), _d(sy["end_date"]), ferien_d, data.get("blocks") or [])
     for b, d_ in zip(data.get("blocks") or [], dated):
         b["startDate"] = d_["start_date"]
         b["endDate"] = d_["end_date"]
