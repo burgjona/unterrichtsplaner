@@ -203,3 +203,38 @@ def test_stoffplan_suggestion(client, auth, monkeypatch):
     r = client.post("/api/ai/stoffplan", json={"schoolYearId": sy["id"], "classId": cls["id"]})
     assert r.status_code == 200, r.text
     assert r.json()["suggestion"]["blocks"][0]["code"] == "LB1"
+
+
+def test_sequenzplan_suggestion(client, auth, monkeypatch):
+    cls = client.post("/api/classes", json={"name": "8a", "subject": "Deutsch", "grade": 8, "track": "RS"}).json()
+    plan = client.post("/api/stoff-plans", json={
+        "classId": cls["id"], "title": "P",
+        "blocks": [{"lbCode": "LB1", "title": "Gewusst wie", "ustd": 15}],
+    }).json()
+    block_id = plan["blocks"][0]["id"]
+    payload = json.dumps({"stunden": [
+        {"title": "Einstieg", "grobziel": "Erste Annäherung", "notenarten": []},
+        {"title": "Lernkontrolle", "grobziel": "Wissen prüfen", "notenarten": ["lk"]},
+    ]})
+    _install(monkeypatch, payload)
+    _set_key(client)
+    r = client.post("/api/ai/sequenzplan", json={"blockId": block_id, "ideas": "Bezug zu Alltagssprache", "wantLk": True})
+    assert r.status_code == 200, r.text
+    stunden = r.json()["suggestion"]["stunden"]
+    assert len(stunden) == 2
+    assert stunden[1]["notenarten"] == ["lk"]
+
+
+def test_sequenzplan_requires_api_key(client, auth):
+    cls = client.post("/api/classes", json={"name": "8a", "subject": "Deutsch", "grade": 8, "track": "RS"}).json()
+    plan = client.post("/api/stoff-plans", json={
+        "classId": cls["id"], "title": "P", "blocks": [{"lbCode": "LB1", "title": "X", "ustd": 5}],
+    }).json()
+    r = client.post("/api/ai/sequenzplan", json={"blockId": plan["blocks"][0]["id"]})
+    assert r.status_code == 400
+    assert "API-Key" in r.json()["detail"]
+
+
+def test_sequenzplan_foreign_block_rejected(client, auth):
+    r = client.post("/api/ai/sequenzplan", json={"blockId": 9999})
+    assert r.status_code == 404

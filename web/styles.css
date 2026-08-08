@@ -34,7 +34,20 @@ aside { background: var(--sidebar); color:white; padding:22px 16px; }
 .avatar-img { width:44px; height:44px; border-radius:12px; object-fit:cover; background:var(--avatar-bg, #a3e635); display:block; }
 .avatar-upload-btn { position:absolute; bottom:-4px; right:-4px; width:18px; height:18px; border-radius:50%; background:var(--yellow); border:2px solid var(--sidebar); font-size:10px; display:flex; align-items:center; justify-content:center; cursor:pointer; color:#14261a; }
 .brand { font-size:19px; font-weight:var(--fw-heavy); } .sub { font-size:12px; color:var(--sidebar-sub, #bbf7d0); margin-bottom:22px; }
-.section-label { font-size:11px; text-transform:uppercase; letter-spacing:.07em; color:var(--sidebar-label, #86efac); margin:16px 8px 6px; }
+.section-label {
+  display:flex; align-items:center; gap:8px; width:100%;
+  font-size:11px; text-transform:uppercase; letter-spacing:.07em;
+  color:var(--sidebar-label, #86efac); margin:16px 0 6px; padding:6px 8px;
+  background:transparent; border:0; border-radius:8px; font-family:inherit; cursor:pointer;
+}
+.section-label:hover { background: rgba(255,255,255,0.10); }
+.section-ic { width:15px; height:15px; flex-shrink:0; }
+.section-ic svg { width:100%; height:100%; }
+.section-label span { flex:1; text-align:left; }
+.section-chevron { width:13px; height:13px; flex-shrink:0; transition:transform .15s; }
+.section-label[aria-expanded="false"] .section-chevron { transform:rotate(-90deg); }
+.nav-section { display:flex; flex-direction:column; overflow:hidden; }
+.nav-section.collapsed { display:none; }
 .nav-btn { display:flex; align-items:center; gap:10px; width:100%; text-align:left; text-decoration:none; border:0; cursor:pointer; background:transparent; color:var(--sidebar-text, #dcfce7); padding:11px 13px; border-radius:10px; margin-bottom:4px; font-size:14px; font-family:inherit; transition:.15s; }
 .nav-btn.active, .nav-btn:hover { background: rgba(255,255,255,0.14); color:white; }
 .nav-ic { width:18px; height:18px; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
@@ -326,6 +339,16 @@ tbody tr td:first-child { border-radius:10px 0 0 10px; } tbody tr td:last-child 
 .cal-cat-row { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
 .cal-cat-row input[type="color"] { width:38px; height:34px; padding:2px; flex-shrink:0; cursor:pointer; }
 .cal-cat-row input[type="text"] { flex:1; min-width:0; }
+
+/* Sequenzplanung: editierbare Karten je Stunde. */
+.seq-cards { display:flex; flex-direction:column; gap:10px; }
+.seq-card { border:1px solid var(--line); border-radius:12px; padding:10px 12px; background:var(--surface); }
+.seq-card-head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px; }
+.seq-card-num { color:var(--muted); font-weight:700; flex-shrink:0; }
+.seq-card-title { flex:1; min-width:120px; }
+.seq-card-grobziel { width:100%; box-sizing:border-box; margin-bottom:6px; }
+.seq-card-notenarten { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+.seq-card-weitere { flex:1; min-width:160px; }
 
 /* U12: Gespeicherte Stoffverteilungspläne (Liste + Inline-Editor). Neue Klassen, Desktop unverändert. */
 .stoff-plans { display:flex; flex-direction:column; gap:10px; }

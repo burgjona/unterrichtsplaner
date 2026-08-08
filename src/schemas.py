@@ -737,6 +737,90 @@ class StoffPlanDuplicateIn(Base):
 # Forward-Refs der Lesson-Modelle auf Lernziel-Modelle auflösen (Definition folgt erst hier).
 LessonCreate.model_rebuild()
 LessonUpdate.model_rebuild()
+
+
+# ---------- Sequenzplan — Einzelstunden je Stoffplan-Block ----------
+class SequenzStundeCreate(Base):
+    block_id: int
+    title: str
+    grobziel: Optional[str] = None
+    notes: Optional[str] = None
+    is_lk: bool = False
+    is_referat: bool = False
+    is_komplexe_arbeit: bool = False
+    is_klassenarbeit: bool = False
+    weitere_notenart: Optional[str] = None
+    sort_order: Optional[int] = None   # None = ans Ende anhängen
+
+
+class SequenzStundeUpdate(Base):
+    title: Optional[str] = None
+    grobziel: Optional[str] = None
+    notes: Optional[str] = None
+    is_lk: Optional[bool] = None
+    is_referat: Optional[bool] = None
+    is_komplexe_arbeit: Optional[bool] = None
+    is_klassenarbeit: Optional[bool] = None
+    weitere_notenart: Optional[str] = None
+
+
+class SequenzStundeOut(Base):
+    id: int
+    block_id: int
+    sort_order: int
+    title: str
+    grobziel: Optional[str] = None
+    notes: Optional[str] = None
+    is_lk: bool
+    is_referat: bool
+    is_komplexe_arbeit: bool
+    is_klassenarbeit: bool
+    weitere_notenart: Optional[str] = None
+    lesson_id: Optional[int] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class SequenzStundeReorderIn(Base):
+    block_id: int
+    ordered_ids: List[int]
+
+
+class SequenzStundeLinkIn(Base):
+    lesson_id: Optional[int] = None   # None = Verknüpfung lösen
+
+
+class SequenzStundeShiftIn(Base):
+    with_calendar: bool = False
+
+
+class SequenzStundeShiftOut(Base):
+    over_budget: bool
+    planned_count: int
+    richtwert_ustd: Optional[int] = None
+
+
+_CALENDAR_ENTRY_TYPES = {"exam", "lu"}
+
+
+class SequenzStundeCalendarEntryIn(Base):
+    type: str
+
+    @field_validator("type")
+    @classmethod
+    def _valid_type(cls, v: str) -> str:
+        if v not in _CALENDAR_ENTRY_TYPES:
+            raise ValueError("type muss 'exam' oder 'lu' sein.")
+        return v
+
+
+class SequenzplanIn(Base):
+    block_id: int
+    ideas: str = ""
+    want_lk: bool = False
+    want_referat: bool = False
+    want_komplexe_arbeit: bool = False
+    want_klassenarbeit: bool = False
 LessonOut.model_rebuild()
 
 

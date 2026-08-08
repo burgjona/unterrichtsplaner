@@ -10,7 +10,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from ..db import connect
 from ..deps import get_db, get_user_id, row_or_404
 from ..lib import ai
-from ..schemas import AsuvSuggestIn, LessonSuggestIn, StoffplanIn
+from ..schemas import AsuvSuggestIn, LessonSuggestIn, SequenzplanIn, StoffplanIn
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
@@ -189,6 +189,81 @@ def stoffplan(body: StoffplanIn, conn: sqlite3.Connection = Depends(get_db),
         b["startDate"] = d_["start_date"]
         b["endDate"] = d_["end_date"]
 
+    return {"suggestion": data, "cached": cached}
+
+
+# ---------- 2b) Sequenzplan-Generierung (Einzelstunden je Stoffplan-Block) ----------
+_SEQUENZ_SYSTEM = (
+    "Du bist didaktische Assistenz für eine Referendarin an einer sächsischen Oberschule "
+    "(Fächer Deutsch und WTH). Zerlege einen Lernbereichs-Block eines Stoffverteilungsplans in "
+    "einzelne Unterrichtsstunden: Titel und ein knappes, konkretes Grobziel je Stunde. Die Anzahl "
+    "der Stunden soll dem Stundenrichtwert des Blocks entsprechen. Plane didaktisch sinnvoll "
+    "aufeinander aufbauend (Einführung, Erarbeitung, Übung, Sicherung/Lernkontrolle). Wenn die "
+    "Lehrkraft bestimmte Bewertungsformen wünscht (siehe Hinweise), ordne genau diese je einer "
+    "passenden Stunde zu (z. B. eine Übungsstunde vor einer Lernkontrolle). Nur Vorschlag – die "
+    "Lehrkraft prüft und ändert."
+)
+_SEQUENZ_NOTENART = {"lk", "referat", "komplexeArbeit", "klassenarbeit"}
+_SEQUENZ_SCHEMA = {
+    "type": "object", "additionalProperties": False, "required": ["stunden"],
+    "properties": {"stunden": {"type": "array", "items": {
+        "type": "object", "additionalProperties": False,
+        "required": ["title", "grobziel", "notenarten"],
+        "properties": {
+            "title": _STR, "grobziel": _STR,
+            "notenarten": {"type": "array", "items": {
+                "type": "string", "enum": ["lk", "referat", "komplexeArbeit", "klassenarbeit"]}},
+        },
+    }}},
+}
+
+
+@router.post("/sequenzplan")
+def sequenzplan(body: SequenzplanIn, conn: sqlite3.Connection = Depends(get_db),
+                user_id: int = Depends(get_user_id)):
+    block = conn.execute(
+        "SELECT b.*, p.class_id FROM stoff_plan_blocks b JOIN stoff_plans p ON p.id = b.plan_id "
+        "WHERE b.id = ? AND p.user_id = ?",
+        (body.block_id, user_id),
+    ).fetchone()
+    if block is None:
+        raise HTTPException(status_code=404, detail="Block nicht gefunden.")
+    cls = row_or_404(conn.execute("SELECT * FROM classes WHERE id = ? AND user_id = ?",
+                                  (block["class_id"], user_id)).fetchone(), "Klasse")
+
+    lb_detail = ""
+    if block["lb_code"]:
+        from ..lib.planning import resolve_track
+        track = resolve_track(cls["subject"], cls["grade"], cls["track"])
+        lb = conn.execute(
+            "SELECT detail_md FROM lernbereiche WHERE subject=? AND grade=? AND track=? AND code=?",
+            (cls["subject"], cls["grade"], track, block["lb_code"]),
+        ).fetchone()
+        lb_detail = (lb["detail_md"] or "") if lb else ""
+
+    existing = conn.execute(
+        "SELECT COUNT(*) AS n FROM sequenz_stunden WHERE block_id = ?", (body.block_id,)
+    ).fetchone()["n"]
+
+    ctx = ai.fts_context(conn, user_id, f"{block['title']} {body.ideas}", cls["subject"], cls["grade"])
+    lines = [f"Lernbereich {block['lb_code'] or '-'}: {block['title'] or '-'} "
+            f"({block['ustd'] or '?'} Stundenrichtwert), Klasse {cls['name']} "
+            f"({cls['subject']}, Klassenstufe {cls['grade']}, Bildungsgang {cls['track'] or '-'})."]
+    if lb_detail:
+        lines.append(f"Lehrplantext des Lernbereichs:\n{lb_detail}")
+    if existing:
+        lines.append(f"Es existieren bereits {existing} Sequenzstunden für diesen Block – "
+                     "erzeuge einen kompletten, in sich stimmigen Vorschlag (ersetzt die bisherigen).")
+    wanted = [n for n, flag in (("Lernkontrolle (LK)", body.want_lk), ("Referat", body.want_referat),
+                                ("komplexe Arbeit", body.want_komplexe_arbeit),
+                                ("Klassenarbeit", body.want_klassenarbeit)) if flag]
+    if wanted:
+        lines.append("Gewünschte Bewertungsformen, die im Verlauf vorkommen sollen: " + ", ".join(wanted) + ".")
+    if body.ideas.strip():
+        lines.append(f"Ideen/Hinweise der Lehrkraft:\n{body.ideas.strip()}")
+    user_text = "\n\n".join(lines) + f"\n\n{_ctx_block(ctx)}"
+
+    data, cached = _run_json(conn, user_id, "sequenzplan", _SEQUENZ_SYSTEM, user_text, _SEQUENZ_SCHEMA, max_tokens=3000)
     return {"suggestion": data, "cached": cached}
 
 

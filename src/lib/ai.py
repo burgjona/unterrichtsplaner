@@ -32,6 +32,7 @@ ROUTING = {
     "einordnung": "haiku",           # kurze Lernbereichs-/Lernziel-Verortung freier Stunden
     "sitzplan": "sonnet",            # KI-Sitzplan-Anordnung nach Freitext-Beschreibung (U18)
     "jahresplan_import": "sonnet",   # Termin-Erkennung aus dem Schul-Jahresplan (PDF) — U20
+    "sequenzplan": "sonnet",         # Sequenzstunden-Generierung aus einem Stoffplan-Block
 }
 
 _prompt_cache = {}  # sha256(prompt) -> Antworttext (lokal, prozessweit)

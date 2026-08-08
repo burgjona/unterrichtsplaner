@@ -215,6 +215,8 @@ function clearLessonForm() {
   renderLernziele();
   $("lueHint").classList.toggle("hidden", $("lessonType").value !== "Übungsstunde vor LUE");
   updateLessonLbOptions(null);
+  pendingSeqLinkId = null;
+  updateLessonSeqOptions();
 }
 
 /* ---------- Bearbeitungsmodus Unterrichtsplanung ---------- */
@@ -277,6 +279,7 @@ function loadLessonIntoForm(l) {
     h.classList.toggle("hidden", l.lernbereichId != null);
   }
   updateLessonLbOptions(l.lernbereichId ?? null);
+  updateLessonSeqOptions();
 }
 
 /* ---------- U29: LB-Zuordnung in der Unterrichtsplanung (aus aktivem Stoffverteilungsplan) ---------- */
@@ -327,6 +330,77 @@ function updateLessonLbProgress() {
     .filter((l) => l.classId === clsId && l.lernbereichId === lbId)
     .reduce((sum, l) => sum + (Number(l.durationMinutes) || 45) / 45, 0);
   out.textContent = `${planned % 1 === 0 ? planned : planned.toFixed(1)} von ${soll} Stunden verplant`;
+}
+
+// Sequenzstunde, die beim nächsten Speichern der Stunde verknüpft werden soll (gesetzt durch
+// Auswahl in #lessonSeq, verbraucht/zurückgesetzt in saveLesson()/clearLessonForm()).
+let pendingSeqLinkId = null;
+let seqOptionsCache = [];   // [{id, blockId, title, grobziel, lernbereichId, isLk, isReferat, isKomplexeArbeit, isKlassenarbeit}]
+
+// Befüllt #lessonSeq mit den noch unverknüpften Sequenzstunden aller Blöcke des aktiven
+// Stoffplans der gewählten Klasse (analog updateLessonLbOptions).
+async function updateLessonSeqOptions() {
+  const row = $("lessonSeqRow"), sel = $("lessonSeq");
+  if (!row || !sel) return;
+  const clsId = $("lessonClass").value ? Number($("lessonClass").value) : null;
+  const ap = clsId ? state.activePlans[clsId] : null;
+  seqOptionsCache = [];
+  if (!clsId || !ap || !ap.blocks.length) {
+    row.classList.add("hidden");
+    sel.innerHTML = '<option value="">– keine Sequenzstunde –</option>';
+    return;
+  }
+  const cls = state.classes.find((c) => c.id === clsId);
+  const lbList = cls
+    ? await getLernbereiche({ subject: cls.subject, grade: cls.grade, track: resolveTrack(cls.subject, cls.grade, cls.track) })
+    : [];
+  const perBlock = await Promise.all(ap.blocks.map(async (b) => {
+    try {
+      const rows = await API.get(`/sequenz-stunden?blockId=${b.id}`);
+      const lb = lbList.find((l) => l.code === b.lbCode);
+      return rows.filter((r) => r.lessonId == null)
+        .map((r) => ({ id: r.id, blockId: b.id, title: r.title, grobziel: r.grobziel,
+                       lernbereichId: lb ? lb.id : null, blockLabel: `${b.lbCode || ""} ${b.title || ""}`.trim(),
+                       isLk: r.isLk, isReferat: r.isReferat,
+                       isKomplexeArbeit: r.isKomplexeArbeit, isKlassenarbeit: r.isKlassenarbeit }));
+    } catch (e) { return []; }
+  }));
+  seqOptionsCache = perBlock.flat();
+  sel.innerHTML = '<option value="">– keine Sequenzstunde –</option>' +
+    seqOptionsCache.map((s) => `<option value="${s.id}">${esc(s.blockLabel)} – ${esc(s.title)}</option>`).join("");
+  row.classList.toggle("hidden", seqOptionsCache.length === 0);
+  sel.value = "";
+}
+
+function applyLessonSeqSelection() {
+  const id = $("lessonSeq").value ? Number($("lessonSeq").value) : null;
+  pendingSeqLinkId = id;
+  const s = seqOptionsCache.find((x) => x.id === id);
+  if (!s) return;
+  if (!$("lessonTitle").value.trim()) $("lessonTitle").value = s.title;
+  if (s.lernbereichId != null) { $("lessonLb").value = String(s.lernbereichId); updateLessonLbProgress(); }
+  if (s.grobziel && !lessonZiele.some((z) => z.kind === "grob" && z.text === s.grobziel)) {
+    lessonZiele.push({ kind: "grob", text: s.grobziel, bloomStufe: null, phaseSortOrder: null, sortOrder: lessonZiele.length });
+    renderLernziele();
+  }
+}
+
+// Bietet nach dem Verknüpfen einer Sequenzstunde mit Notenart-Flag an, den bereits
+// automatisch erzeugten Kalendereintrag entsprechend zu typisieren (nur wenn die Stunde ein
+// echtes Datum hat – ohne Datum existiert noch kein Kalendereintrag zum Anpassen).
+async function offerSeqCalendarEntry(seqId, seqInfo, lessonDate) {
+  if (!seqInfo || !lessonDate) return;
+  const isExam = seqInfo.isKlassenarbeit || seqInfo.isKomplexeArbeit;
+  const isLu = seqInfo.isLk || seqInfo.isReferat;
+  if (!isExam && !isLu) return;
+  const label = seqInfo.isKlassenarbeit ? "Klassenarbeit" : seqInfo.isKomplexeArbeit ? "komplexe Arbeit"
+    : seqInfo.isReferat ? "Referat" : "Lernkontrolle";
+  const wants = window.confirm(`Diese Stunde ist als ${label} markiert. Jetzt entsprechend im Kalender eintragen?`);
+  if (!wants) return;
+  try {
+    await API.post(`/sequenz-stunden/${seqId}/apply-calendar-entry`, { type: isExam ? "exam" : "lu" });
+    toast("Kalendereintrag aktualisiert.");
+  } catch (e) { toast(e.message, false); }
 }
 
 /* ---------- Laden & Rendern ---------- */
@@ -1455,6 +1529,8 @@ function renderClassSelects() {
   $("calEntryClass").innerHTML = opts;
   $("planClass").innerHTML = opts;
   $("planYear").innerHTML = state.schoolYears.map((s) => `<option value="${s.id}">${esc(s.label)}</option>`).join("");
+  renderSeqClassSelect();
+  renderSeqBlockSelect();
   $("matYear").innerHTML = '<option value="">– kein Schuljahr –</option>' +
     state.schoolYears.map((s) => `<option value="${s.id}">${esc(s.label)}</option>`).join("");
   loadPlanNotes();
@@ -2859,6 +2935,190 @@ async function deleteStoffPlan(id) {
   } catch (e) { toast(e.message, false); }
 }
 
+/* ---------- Sequenzplanung: Einzelstunden je Stoffplan-Block ---------- */
+// Karte = { id: number|null, title, grobziel, isLk, isReferat, isKomplexeArbeit,
+//           isKlassenarbeit, weitereNotenart }. id=null → noch nicht gespeichert (neu/KI).
+let seqCards = [];
+
+function seqNotenartenToFlags(notenarten) {
+  const set = new Set(notenarten || []);
+  return {
+    isLk: set.has("lk"), isReferat: set.has("referat"),
+    isKomplexeArbeit: set.has("komplexeArbeit"), isKlassenarbeit: set.has("klassenarbeit"),
+  };
+}
+
+function renderSeqClassSelect() {
+  const sel = $("seqClass");
+  if (!sel) return;
+  const prev = sel.value;
+  sel.innerHTML = state.classes.map((c) => `<option value="${c.id}">${esc(c.name)} (${esc(c.subject)})</option>`).join("");
+  if (state.classes.some((c) => String(c.id) === String(prev))) sel.value = prev;
+}
+
+function renderSeqBlockSelect() {
+  const sel = $("seqBlock"), warn = $("seqNoActivePlan");
+  if (!sel) return;
+  const clsId = Number($("seqClass").value);
+  const ap = clsId ? state.activePlans[clsId] : null;
+  if (warn) warn.style.display = clsId && !ap ? "" : "none";
+  const blocks = ap ? ap.blocks : [];
+  sel.innerHTML = blocks
+    .map((b) => `<option value="${b.id}">${esc(b.lbCode || "")} ${esc(b.title || "")}</option>`).join("");
+}
+
+async function loadSeqCardsFromServer() {
+  const blockId = Number($("seqBlock").value);
+  seqCards = [];
+  if (!blockId) { renderSeqCards(); return; }
+  try {
+    const rows = await API.get(`/sequenz-stunden?blockId=${blockId}`);
+    seqCards = rows.map((r) => ({
+      id: r.id, title: r.title, grobziel: r.grobziel || "",
+      isLk: r.isLk, isReferat: r.isReferat, isKomplexeArbeit: r.isKomplexeArbeit,
+      isKlassenarbeit: r.isKlassenarbeit, weitereNotenart: r.weitereNotenart || "",
+    }));
+  } catch (e) { toast(e.message, false); }
+  renderSeqCards();
+}
+
+function seqCardHtml(card, idx) {
+  const chk = (field, label) =>
+    `<label class="small"><input type="checkbox" data-seq-f="${field}" data-seq-i="${idx}" ${card[field] ? "checked" : ""}> ${label}</label>`;
+  return `<div class="seq-card" data-seq-card="${idx}">
+    <div class="seq-card-head">
+      <span class="seq-card-num">${idx + 1}.</span>
+      <input type="text" class="seq-card-title" data-seq-f="title" data-seq-i="${idx}" value="${esc(card.title)}" placeholder="Titel der Stunde" />
+      <button class="btn tiny secondary" data-seq-up="${idx}" ${idx === 0 ? "disabled" : ""} title="Nach vorn">↑</button>
+      <button class="btn tiny secondary" data-seq-down="${idx}" ${idx === seqCards.length - 1 ? "disabled" : ""} title="Nach hinten (Position)">↓</button>
+      <button class="btn tiny secondary" data-seq-shift="${idx}" ${card.id == null ? "disabled" : ""} title="Diese Stunde hat nicht gereicht – ganze Sequenz ab hier eine Position nach hinten schieben">Nicht gereicht</button>
+      <button class="btn tiny danger" data-seq-del="${idx}" title="Stunde entfernen">✕</button>
+    </div>
+    <textarea class="seq-card-grobziel" data-seq-f="grobziel" data-seq-i="${idx}" rows="2" placeholder="Grobziel">${esc(card.grobziel)}</textarea>
+    <div class="seq-card-notenarten">
+      ${chk("isLk", "LK")} ${chk("isReferat", "Referat")} ${chk("isKomplexeArbeit", "Komplexe Arbeit")} ${chk("isKlassenarbeit", "Klassenarbeit")}
+      <input type="text" class="seq-card-weitere" data-seq-f="weitereNotenart" data-seq-i="${idx}" value="${esc(card.weitereNotenart)}" placeholder="weitere Notenart (Freitext)" />
+    </div>
+  </div>`;
+}
+
+function renderSeqCards() {
+  const wrap = $("seqCards"), summary = $("seqSummary");
+  if (!wrap) return;
+  const blockId = Number($("seqBlock").value);
+  if (!blockId) {
+    wrap.innerHTML = '<p class="muted small">Bitte Klasse und Block wählen.</p>';
+    if (summary) summary.textContent = "";
+    return;
+  }
+  wrap.innerHTML = seqCards.length
+    ? seqCards.map((c, i) => seqCardHtml(c, i)).join("")
+    : '<p class="muted small">Noch keine Stunden – „✨ Vorschlag generieren" oder „+ Stunde hinzufügen".</p>';
+  if (summary) summary.textContent = seqCards.length ? `${seqCards.length} Stunden` : "";
+
+  wrap.querySelectorAll("[data-seq-f]").forEach((el) => {
+    const evt = el.tagName === "INPUT" && el.type === "checkbox" ? "change" : "input";
+    el.addEventListener(evt, () => {
+      const i = Number(el.dataset.seqI), f = el.dataset.seqF;
+      seqCards[i][f] = el.type === "checkbox" ? el.checked : el.value;
+      if (summary) summary.textContent = `${seqCards.length} Stunden`;   // Karten-Zahl unverändert, nur Refresh vermeiden
+    });
+  });
+  wrap.querySelectorAll("[data-seq-del]").forEach((b) => b.onclick = () => {
+    seqCards.splice(Number(b.dataset.seqDel), 1);
+    renderSeqCards();
+  });
+  wrap.querySelectorAll("[data-seq-up]").forEach((b) => b.onclick = () => seqMoveCard(Number(b.dataset.seqUp), -1));
+  wrap.querySelectorAll("[data-seq-down]").forEach((b) => b.onclick = () => seqMoveCard(Number(b.dataset.seqDown), 1));
+  wrap.querySelectorAll("[data-seq-shift]").forEach((b) => b.onclick = () => seqShiftCard(Number(b.dataset.seqShift)));
+}
+
+function seqMoveCard(idx, dir) {
+  const other = idx + dir;
+  if (other < 0 || other >= seqCards.length) return;
+  [seqCards[idx], seqCards[other]] = [seqCards[other], seqCards[idx]];
+  renderSeqCards();
+}
+
+async function seqShiftCard(idx) {
+  const card = seqCards[idx];
+  if (!card || card.id == null) return;
+  const withCalendar = window.confirm(
+    "Auch bereits terminierte, verknüpfte Kalendertermine dieser und nachfolgender Stunden automatisch nachrücken?"
+  );
+  try {
+    const res = await API.post(`/sequenz-stunden/${card.id}/shift`, { withCalendar });
+    if (res.overBudget) {
+      toast(`Achtung: ${res.plannedCount} Stunden geplant, Richtwert ${res.richtwertUstd ?? "?"} Ustd. – hier oder in einem anderen Lernbereich kürzen.`, false);
+    } else {
+      toast("Verschoben.");
+    }
+    await loadSeqCardsFromServer();
+  } catch (e) { toast(e.message, false); }
+}
+
+function seqAddCard() {
+  const blockId = Number($("seqBlock").value);
+  if (!blockId) { toast("Bitte zuerst einen Block wählen.", false); return; }
+  seqCards.push({
+    id: null, title: "", grobziel: "", isLk: false, isReferat: false,
+    isKomplexeArbeit: false, isKlassenarbeit: false, weitereNotenart: "",
+  });
+  renderSeqCards();
+}
+
+async function aiSequenzplan() {
+  const blockId = Number($("seqBlock").value);
+  if (!blockId) { toast("Bitte Klasse und Block wählen.", false); return; }
+  const btn = $("seqAiBtn"), label = btn.textContent;
+  btn.disabled = true; btn.textContent = "✨ generiere …";
+  try {
+    const res = await API.post("/ai/sequenzplan", {
+      blockId, ideas: $("seqIdeas").value,
+      wantLk: $("seqWantLk").checked, wantReferat: $("seqWantReferat").checked,
+      wantKomplexeArbeit: $("seqWantKomplexeArbeit").checked, wantKlassenarbeit: $("seqWantKlassenarbeit").checked,
+    });
+    const stunden = (res.suggestion && res.suggestion.stunden) || [];
+    seqCards = stunden.map((s) => ({
+      id: null, title: s.title, grobziel: s.grobziel || "", weitereNotenart: "",
+      ...seqNotenartenToFlags(s.notenarten),
+    }));
+    renderSeqCards();
+    toast(`Vorschlag mit ${stunden.length} Stunden erzeugt${res.cached ? " (aus Cache)" : ""} – bitte prüfen und speichern.`);
+  } catch (e) { toast(e.message, false); }
+  finally { btn.disabled = false; btn.textContent = label; }
+}
+
+async function saveSequenzplan() {
+  const blockId = Number($("seqBlock").value);
+  if (!blockId) { toast("Bitte Klasse und Block wählen.", false); return; }
+  if (seqCards.some((c) => !c.title.trim())) { toast("Jede Stunde braucht einen Titel.", false); return; }
+  let original = [];
+  try { original = await API.get(`/sequenz-stunden?blockId=${blockId}`); } catch (e) { /* best effort */ }
+  const keepIds = new Set(seqCards.filter((c) => c.id != null).map((c) => c.id));
+  try {
+    for (const o of original) {
+      if (!keepIds.has(o.id)) await API.del(`/sequenz-stunden/${o.id}`);
+    }
+    for (const c of seqCards) {
+      const body = {
+        blockId, title: c.title.trim(), grobziel: c.grobziel || null,
+        isLk: c.isLk, isReferat: c.isReferat, isKomplexeArbeit: c.isKomplexeArbeit,
+        isKlassenarbeit: c.isKlassenarbeit, weitereNotenart: c.weitereNotenart || null,
+      };
+      if (c.id == null) {
+        const created = await API.post("/sequenz-stunden", body);
+        c.id = created.id;
+      } else {
+        await API.put(`/sequenz-stunden/${c.id}`, body);
+      }
+    }
+    await API.post("/sequenz-stunden/reorder", { blockId, orderedIds: seqCards.map((c) => c.id) });
+    toast("Sequenzplan gespeichert.");
+    await loadSeqCardsFromServer();
+  } catch (e) { toast(e.message, false); }
+}
+
 /* ---------- Stunden-Detail-Modal ---------- */
 function openLessonModal(l) {
   const meyer = (l.meyerPlan || [])
@@ -2979,10 +3239,19 @@ async function saveLesson() {
     lernziele: readLernziele(),
   };
   try {
+    let saved;
     if (editingLessonId) {
-      await API.put("/lessons/" + editingLessonId, body);
+      saved = await API.put("/lessons/" + editingLessonId, body);
     } else {
-      await API.post("/lessons", { ...body, time: null });
+      saved = await API.post("/lessons", { ...body, time: null });
+    }
+    if (pendingSeqLinkId != null) {
+      const seqInfo = seqOptionsCache.find((x) => x.id === pendingSeqLinkId);
+      try {
+        await API.post(`/sequenz-stunden/${pendingSeqLinkId}/link`, { lessonId: saved.id });
+        await offerSeqCalendarEntry(pendingSeqLinkId, seqInfo, body.date);
+      }
+      catch (e) { toast("Stunde gespeichert, Verknüpfung mit der Sequenzstunde ist aber fehlgeschlagen: " + e.message, false); }
     }
     const updated = Boolean(editingLessonId);
     resetLessonEditState();
@@ -3381,7 +3650,7 @@ function exportAsuv(fmt) {
 
 /* ---------- KI (Meilenstein 7) ---------- */
 function applyAiGating(active) {
-  ["aiPlanBtn", "stoffAiBtn", "asuvAiBtn", "aiLernzieleBtn", "asuvEinordnungBtn", "stundeEinordnungBtn", "spAiBtn"].forEach((id) => {
+  ["aiPlanBtn", "stoffAiBtn", "seqAiBtn", "asuvAiBtn", "aiLernzieleBtn", "asuvEinordnungBtn", "stundeEinordnungBtn", "spAiBtn"].forEach((id) => {
     const b = $(id);
     if (b) { b.disabled = !active; b.title = active ? "" : "Kein API-Key hinterlegt – in den Einstellungen eintragen"; }
   });
@@ -3594,7 +3863,8 @@ async function stundeEinordnungSuggest() {
    Read-only Ansicht für Beamer/Tafel mit drei Unteransichten:
    Jahresplan, Lernbereichsplanung, Unterrichtsablauf heute. */
 const PRAESENT_COLORS = ["#16a34a", "#eab308", "#f97316", "#0ea5e9", "#22c55e", "#a855f7"];
-const praesent = { mode: "jahresplan", classId: "", lessonId: null, phaseIdx: 0, editMode: false };
+const praesent = { mode: "jahresplan", classId: "", lessonId: null, sequenzStundeId: null, phaseIdx: 0, editMode: false };
+let praesentSeqCache = [];   // aktuell im Lernbereich-Tab angezeigte Sequenzstunden (für Klick -> Ablauf)
 // Individuelle Anzeige-Einstellungen für "Unterrichtsablauf heute" (persistiert, gilt auch im
 // Vollbild) – nur im Bearbeitungsmodus änderbar.
 const praesentAblaufPrefs = (() => {
@@ -3691,8 +3961,10 @@ function renderPraesentation() {
   if (nextBtn) nextBtn.style.display = showPhaseNav ? "" : "none";
   const editBtn = $("praesentEditBtn");
   if (editBtn) {
-    // Bearbeiten-Button nur im Ablauf-Tab und nie im Vollbild.
-    const showEditBtn = showPhaseNav && !isPraesentFullscreen();
+    // Bearbeiten-Button nur im Ablauf-Tab, nie im Vollbild, und nur wenn eine echte
+    // Unterrichtsstunde verknüpft ist (bei einer noch nicht angelegten Sequenzstunde gibt es
+    // nichts zu bearbeiten).
+    const showEditBtn = showPhaseNav && !isPraesentFullscreen() && praesent.lessonId != null;
     editBtn.style.display = showEditBtn ? "" : "none";
     editBtn.classList.toggle("active", praesent.editMode);
     editBtn.textContent = praesent.editMode ? "Fertig" : "Bearbeiten";
@@ -3736,29 +4008,62 @@ async function renderPraesentJahresplan() {
   stage.innerHTML = '<h2 class="praesent-h">Jahresplan</h2><div class="praesent-jp">' + rows.join("") + "</div>";
 }
 
-function renderPraesentLernbereich() {
+// Ermittelt den "aktuellen" Block des aktiven Stoffplans einer Klasse: den, dessen Zeitraum
+// heute enthält, sonst den nächsten noch bevorstehenden, sonst schlicht den ersten Block.
+function activeBlockForClass(classId) {
+  const ap = classId ? state.activePlans[classId] : null;
+  if (!ap || !ap.blocks.length) return null;
+  const today = isoDate(new Date());
+  return ap.blocks.find((b) => b.startDate && b.endDate && b.startDate <= today && today <= b.endDate)
+    || ap.blocks.find((b) => b.endDate && b.endDate >= today)
+    || ap.blocks[0];
+}
+
+// Zeigt die Sequenzstunden (Themen + Grobziel) des aktuellen Lernbereichs-Blocks der gewählten
+// Klasse als Kacheln. Klick auf eine Kachel springt in die Ablauf-Ansicht dieser Stunde – mit
+// verknüpfter lessons-Zeile (voller Ablauf) oder, falls noch nicht angelegt, als Kurzvorschau.
+async function renderPraesentLernbereich() {
   const stage = $("praesentStage");
   if (!stage) return;
-  if (!state.lessons.length) {
-    stage.innerHTML = '<div class="praesent-empty">Noch keine Stunden geplant. Lege eine Stunde in der Unterrichtsplanung an.</div>';
+  const token = praesentToken;
+  const classId = praesent.classId ? Number(praesent.classId) : null;
+  const block = classId ? activeBlockForClass(classId) : null;
+  if (!classId || !block) {
+    praesentSeqCache = [];
+    stage.innerHTML = '<div class="praesent-empty">Bitte eine Klasse mit aktivem Stoffverteilungsplan wählen.</div>';
     return;
   }
-  const l = state.lessons.find((x) => String(x.id) === String(praesent.lessonId)) || state.lessons[0];
-  praesent.lessonId = l.id;
-  const ziele = l.lernziele || [];
-  const grob = ziele.filter((z) => z.kind === "grob");
-  const fein = ziele.filter((z) => z.kind === "fein");
-  const bloom = (z) => z.bloomStufe ? `<span class="praesent-goal-bloom">${esc(z.bloomStufe)}</span>` : "";
-  const phaseNote = (z) => z.phaseSortOrder != null
-    ? `<span class="praesent-goal-phase">Phase: ${esc(phaseNames[z.phaseSortOrder] || "–")}</span>` : "";
-  const goalHtml = (z, kind) =>
-    `<div class="praesent-goal ${kind}"><span class="praesent-goal-kind">${kind === "grob" ? "Grobziel" : "Feinziel"}</span>` +
-    `<span class="praesent-goal-text">${esc(z.text)}${bloom(z)}${phaseNote(z)}</span></div>`;
-  const goals = grob.map((z) => goalHtml(z, "grob")).concat(fein.map((z) => goalHtml(z, "fein"))).join("");
-  stage.innerHTML =
-    `<h2 class="praesent-h">${esc(l.title)}</h2>` +
-    `<div class="praesent-sub">${esc(l.subject)} · Klasse ${esc(l.grade || "?")}${l.lessonType ? " · " + esc(l.lessonType) : ""}</div>` +
-    `<div class="praesent-goals">${goals || '<div class="praesent-empty">Für diese Stunde sind noch keine Lernziele hinterlegt.</div>'}</div>`;
+  const heading = `${esc(block.lbCode || "")} ${esc(block.title || "")}`.trim();
+  stage.innerHTML = `<h2 class="praesent-h">${heading}</h2><div class="praesent-loading">Sequenzstunden werden geladen …</div>`;
+  let rows = [];
+  try { rows = await API.get(`/sequenz-stunden?blockId=${block.id}`); } catch (e) { /* ignore */ }
+  if (token !== praesentToken) return;   // Nutzer hat inzwischen umgeschaltet
+  praesentSeqCache = rows;
+  if (!rows.length) {
+    stage.innerHTML = `<h2 class="praesent-h">${heading}</h2>` +
+      '<div class="praesent-empty">Für diesen Lernbereich sind noch keine Sequenzstunden geplant.</div>';
+    return;
+  }
+  const tiles = rows.map((s, i) =>
+    `<div class="praesent-seq-tile" data-seq-tile="${s.id}">` +
+    `<span class="praesent-seq-num">${i + 1}.</span>` +
+    `<div class="praesent-seq-body"><span class="praesent-seq-title">${esc(s.title)}</span>` +
+    (s.grobziel ? `<span class="praesent-seq-goal">${esc(s.grobziel)}</span>` : "") + `</div></div>`
+  ).join("");
+  stage.innerHTML = `<h2 class="praesent-h">${heading}</h2><div class="praesent-seq-tiles">${tiles}</div>`;
+  stage.querySelectorAll("[data-seq-tile]").forEach((el) => {
+    el.onclick = () => {
+      const s = praesentSeqCache.find((x) => String(x.id) === el.dataset.seqTile);
+      if (!s) return;
+      praesent.mode = "ablauf";
+      praesent.sequenzStundeId = s.id;
+      praesent.lessonId = s.lessonId != null ? s.lessonId : null;
+      praesent.phaseIdx = 0;
+      const lesSel = $("praesentLesson");
+      if (lesSel) lesSel.value = s.lessonId != null ? String(s.lessonId) : "";
+      renderPraesentation();
+    };
+  });
 }
 
 let praesentEditZielId = null;   // Lernziel-ID, das gerade inline bearbeitet wird (nur außerhalb Vollbild)
@@ -3829,6 +4134,20 @@ function renderPraesentAblauf() {
   if (!stage) return;
   const l = state.lessons.find((x) => String(x.id) === String(praesent.lessonId));
   if (!l) {
+    // Über die Lernbereich-Kacheln kann eine Sequenzstunde ausgewählt sein, die noch mit
+    // keiner lessons-Zeile verknüpft ist – dann gibt es keinen Ablauf, nur eine Kurzvorschau.
+    if (praesent.sequenzStundeId != null) {
+      const s = praesentSeqCache.find((x) => x.id === praesent.sequenzStundeId);
+      if (s) {
+        stage.innerHTML =
+          `<h2 class="praesent-h">${esc(s.title)}</h2>` +
+          '<div class="praesent-sub" style="color:var(--orange);">Diese Sequenzstunde ist noch nicht in der Unterrichtsplanung angelegt.</div>' +
+          (s.grobziel
+            ? `<div class="praesent-goals"><div class="praesent-goal grob"><span class="praesent-goal-kind">Grobziel</span><span class="praesent-goal-text">${esc(s.grobziel)}</span></div></div>`
+            : '<div class="praesent-empty">Für diese Stunde ist noch kein Grobziel hinterlegt.</div>');
+        return;
+      }
+    }
     stage.innerHTML = '<div class="praesent-empty">Noch keine Stunden geplant. Lege eine Stunde in der Unterrichtsplanung an.</div>';
     return;
   }
@@ -3947,6 +4266,7 @@ const titles = {
   kalender: ["Planungskalender", "Monat, Woche und Lernbereichs-Zeitleiste (folgt in M4)."],
   praesentation: ["Schüleransicht", "Präsentationsmodus für Beamer/Tafel – Jahresplan, Lernbereich, heutiger Ablauf."],
   stoff: ["Stoffverteilungsplan", "Lehrplanbasierte Jahresplanung (folgt in M4)."],
+  sequenzplan: ["Sequenzplanung", "Einzelstunden je Block des Stoffverteilungsplans, mit Grobziel und Notenart."],
   stunde: ["Unterrichtsplanung", "Ideenfeld, Phasentabelle und abschließende Klafki-/Meyer-Reflexion."],
   reflexion: ["Reflexion", "Offene Reflexionen ansehen, überspringen oder erfassen."],
   notizen: ["Notizen", "Gedanken sammeln – allgemein oder je Klasse, mit Autosave."],
@@ -4036,7 +4356,23 @@ function closeTab(key) {
   else { activeTabKey = null; showView("heute"); }
 }
 
+// Klappt die Sektion auf, in der die Ziel-View liegt (falls sie zugeklappt war), damit der
+// aktive Menüpunkt sichtbar bleibt.
+function expandSidebarSectionFor(view) {
+  const btn = document.querySelector(`.nav-btn[data-view="${view}"]`);
+  const section = btn ? btn.closest(".nav-section") : null;
+  if (!section || !section.classList.contains("collapsed")) return;
+  const key = section.dataset.section;
+  section.classList.remove("collapsed");
+  const toggleBtn = document.querySelector(`[data-section-toggle="${key}"]`);
+  if (toggleBtn) toggleBtn.setAttribute("aria-expanded", "true");
+  const stateNow = loadSidebarCollapsed();
+  stateNow[key] = false;
+  saveSidebarCollapsed(stateNow);
+}
+
 function showView(view) {
+  expandSidebarSectionFor(view);
   document.querySelectorAll(".nav-btn").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
   document.querySelectorAll(".bn-item").forEach((b) => {
     const bv = b.dataset.view;
@@ -4054,6 +4390,7 @@ function showView(view) {
   if (view === "stundenplan") ttShow();  // U28: vormals eigener Klick-Listener in stundenplan.js
   if (view === "asuv" && state.lessons.length) loadAsuv(asuvLessonId || state.lessons[0].id);
   if (view === "stoff") loadStoffPlans();
+  if (view === "sequenzplan") { renderSeqClassSelect(); renderSeqBlockSelect(); loadSeqCardsFromServer(); }
   if (view === "praesentation") renderPraesentation();
   if (view === "notizen") renderNotizen();
   if (view === "material") renderArchivPanel(archivTab);
@@ -4257,6 +4594,7 @@ const CMD_ACTIONS = [
   { label: "Klassen", view: "klassen", kw: "klassen klasse schueler schüler" },
   { label: "Planungskalender", view: "kalender", kw: "kalender termine termin planung" },
   { label: "Stoffverteilungsplan", view: "stoff", kw: "stoff stoffverteilung jahresplan plan" },
+  { label: "Sequenzplanung", view: "sequenzplan", kw: "sequenz sequenzplan stunden grobziel" },
   { label: "Unterrichtsplanung", view: "stunde", kw: "stunde unterricht planen neue" },
   { label: "Reflexion", view: "reflexion", kw: "reflexion reflektieren journal ampel" },
   { label: "Notizen", view: "notizen", kw: "notiz notizen gedanken" },
@@ -4526,9 +4864,43 @@ async function startApp() {
   startGoogleAutoSync();  // U24: periodischer Auto-Sync (B), solange die App offen ist
 }
 
+// Sidebar-Sektionen ein-/ausklappbar (Burgermenü Variante B): Zustand je Sektion in
+// localStorage, Default = aufgeklappt (kein Eintrag = expanded).
+function loadSidebarCollapsed() {
+  try { return JSON.parse(localStorage.getItem("sidebarCollapsed") || "{}"); }
+  catch (e) { return {}; }
+}
+function saveSidebarCollapsed(state_) {
+  try { localStorage.setItem("sidebarCollapsed", JSON.stringify(state_)); } catch (e) { /* ignore */ }
+}
+function initSidebarSections() {
+  const collapsed = loadSidebarCollapsed();
+  const activeBtn = document.querySelector(".nav-btn.active");
+  const activeSection = activeBtn ? activeBtn.closest(".nav-section") : null;
+  document.querySelectorAll("[data-section-toggle]").forEach((btn) => {
+    const key = btn.dataset.sectionToggle;
+    const section = document.querySelector(`.nav-section[data-section="${key}"]`);
+    if (!section) return;
+    // Die Sektion der initial aktiven View bleibt immer aufgeklappt sichtbar, auch wenn sie
+    // zuvor zugeklappt gespeichert wurde.
+    const isCollapsed = section === activeSection ? false : Boolean(collapsed[key]);
+    section.classList.toggle("collapsed", isCollapsed);
+    btn.setAttribute("aria-expanded", String(!isCollapsed));
+    btn.onclick = () => {
+      const next = !section.classList.contains("collapsed");
+      section.classList.toggle("collapsed", next);
+      btn.setAttribute("aria-expanded", String(!next));
+      const stateNow = loadSidebarCollapsed();
+      stateNow[key] = next;
+      saveSidebarCollapsed(stateNow);
+    };
+  });
+}
+
 function wireEvents() {
   buildMeyerGrid("meyerPlanGrid");
   buildMeyerGrid("meyerReflectGrid");
+  initSidebarSections();
   buildPhases();
   renderLernziele();
   wireAppearance();
@@ -4626,7 +4998,8 @@ function wireEvents() {
   $("spAiBtn").onclick = aiArrangeSeats;
   $("saveLesson").onclick = saveLesson;
   $("cancelEditBtn").onclick = () => { resetLessonEditState(); clearLessonForm(); toast("Formular geleert – neue Stunde."); };
-  $("lessonClass").addEventListener("change", () => updateLessonLbOptions(null));
+  $("lessonClass").addEventListener("change", () => { updateLessonLbOptions(null); updateLessonSeqOptions(); });
+  $("lessonSeq").addEventListener("change", applyLessonSeqSelection);
   $("lessonLb").addEventListener("change", updateLessonLbProgress);
   $("saveReflect").onclick = saveReflect;
 
@@ -4673,6 +5046,11 @@ function wireEvents() {
   // KI (M7)
   $("aiPlanBtn").onclick = aiLessonSuggest;
   $("stoffAiBtn").onclick = aiStoffplan;
+  $("seqAiBtn").onclick = aiSequenzplan;
+  $("seqAddBtn").onclick = seqAddCard;
+  $("seqSaveBtn").onclick = saveSequenzplan;
+  $("seqClass").addEventListener("change", () => { renderSeqBlockSelect(); loadSeqCardsFromServer(); });
+  $("seqBlock").addEventListener("change", loadSeqCardsFromServer);
   $("asuvAiBtn").onclick = aiAsuvSuggest;
   $("addLernzielBtn").onclick = addLernziel;
   $("aiLernzieleBtn").onclick = aiLernzieleSuggest;
@@ -4687,12 +5065,14 @@ function wireEvents() {
   $("praesentClass").addEventListener("change", (e) => {
     praesent.classId = e.target.value;
     praesent.lessonId = null;
+    praesent.sequenzStundeId = null;
     renderPraesentControls();   // Stundenauswahl auf die gewählte Klasse neu filtern
     renderPraesentation();
     if (praesent.mode === "lernbereich" || praesent.mode === "ablauf") applyPraesentLessonSuggestion();
   });
   $("praesentLesson").addEventListener("change", (e) => {
     praesent.lessonId = e.target.value ? Number(e.target.value) : null;
+    praesent.sequenzStundeId = null;
     praesent.phaseIdx = 0;
     renderPraesentation();
   });

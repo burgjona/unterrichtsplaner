@@ -37,29 +37,66 @@
       <span class="nav-search-kbd" id="cmdOpenBtnKbd">⌘K</span>
     </button>
 
-    <div class="section-label">Übersicht</div>
+    <button type="button" class="section-label" data-section-toggle="uebersicht" aria-expanded="true">
+      <svg class="section-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9.5 12 3l9 6.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1V9.5Z"/></svg>
+      <span>Übersicht</span>
+      <svg class="section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+    <div class="nav-section" data-section="uebersicht">
     <a class="nav-btn active" href="#heute" data-view="heute"><span class="nav-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9h18M9 2v4m6-4v4M4 13h2m2 0h2m2 0h2m2 0h2m2 0h2M5 22h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2Z"/></svg></span><span>Schulalltag heute</span><span class="nav-tab-open" data-tab-open="heute" role="button" tabindex="0" title="Schulalltag heute als Tab im Hintergrund öffnen" aria-label="Schulalltag heute als Tab im Hintergrund öffnen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg></span></a>
     <a class="nav-btn" href="#klassen" data-view="klassen"><span class="nav-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M12 9a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></span><span>Klassen</span><span class="nav-tab-open" data-tab-open="klassen" role="button" tabindex="0" title="Klassen als Tab im Hintergrund öffnen" aria-label="Klassen als Tab im Hintergrund öffnen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg></span></a>
     <a class="nav-btn" href="#kalender" data-view="kalender"><span class="nav-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 9h18"/></svg></span><span>Planungskalender</span><span class="nav-tab-open" data-tab-open="kalender" role="button" tabindex="0" title="Planungskalender als Tab im Hintergrund öffnen" aria-label="Planungskalender als Tab im Hintergrund öffnen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg></span></a>
     <a class="nav-btn" href="#stundenplan" data-view="stundenplan"><span class="nav-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5Z"/><path d="M3 9h18M9 2v4m6-4v4"/></svg></span><span>Mein Stundenplan</span><span class="nav-tab-open" data-tab-open="stundenplan" role="button" tabindex="0" title="Mein Stundenplan als Tab im Hintergrund öffnen" aria-label="Mein Stundenplan als Tab im Hintergrund öffnen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg></span></a>
+    </div>
 
-    <div class="section-label">Präsentation</div>
+    <button type="button" class="section-label" data-section-toggle="praesentation" aria-expanded="true">
+      <svg class="section-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+      <span>Präsentation</span>
+      <svg class="section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+    <div class="nav-section" data-section="praesentation">
     <a class="nav-btn" href="#praesentation" data-view="praesentation"><span class="nav-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg></span><span>Schüleransicht</span><span class="nav-tab-open" data-tab-open="praesentation" role="button" tabindex="0" title="Schüleransicht als Tab im Hintergrund öffnen" aria-label="Schüleransicht als Tab im Hintergrund öffnen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg></span></a>
+    </div>
 
-    <div class="section-label">Planung</div>
+    <button type="button" class="section-label" data-section-toggle="planung" aria-expanded="true">
+      <svg class="section-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5V5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v14.5M6.5 20H18a2 2 0 0 0 2-2V5"/></svg>
+      <span>Planung</span>
+      <svg class="section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+    <div class="nav-section" data-section="planung">
     <a class="nav-btn" href="#stoff" data-view="stoff"><span class="nav-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg></span><span>Stoffverteilungsplan</span><span class="nav-tab-open" data-tab-open="stoff" role="button" tabindex="0" title="Stoffverteilungsplan als Tab im Hintergrund öffnen" aria-label="Stoffverteilungsplan als Tab im Hintergrund öffnen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg></span></a>
+    <a class="nav-btn" href="#sequenzplan" data-view="sequenzplan"><span class="nav-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg></span><span>Sequenzplanung</span><span class="nav-tab-open" data-tab-open="sequenzplan" role="button" tabindex="0" title="Sequenzplanung als Tab im Hintergrund öffnen" aria-label="Sequenzplanung als Tab im Hintergrund öffnen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg></span></a>
     <a class="nav-btn" href="#stunde" data-view="stunde"><span class="nav-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5V5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v14.5M7 7h10M7 11h10M7 15h10"/></svg></span><span>Unterrichtsplanung</span><span class="nav-tab-open" data-tab-open="stunde" role="button" tabindex="0" title="Unterrichtsplanung als Tab im Hintergrund öffnen" aria-label="Unterrichtsplanung als Tab im Hintergrund öffnen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg></span></a>
     <a class="nav-btn" href="#reflexion" data-view="reflexion"><span class="nav-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2Z"/><path d="M12 7v5l4 2.5"/></svg></span><span>Reflexion</span><span class="nav-tab-open" data-tab-open="reflexion" role="button" tabindex="0" title="Reflexion als Tab im Hintergrund öffnen" aria-label="Reflexion als Tab im Hintergrund öffnen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg></span></a>
     <a class="nav-btn" href="#notizen" data-view="notizen"><span class="nav-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5Z"/></svg></span><span>Notizen</span><span class="nav-tab-open" data-tab-open="notizen" role="button" tabindex="0" title="Notizen als Tab im Hintergrund öffnen" aria-label="Notizen als Tab im Hintergrund öffnen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg></span></a>
+    </div>
 
-    <div class="section-label">Referendariat</div>
+    <button type="button" class="section-label" data-section-toggle="referendariat" aria-expanded="true">
+      <svg class="section-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 10 12 5 2 10l10 5 10-5Z"/><path d="M6 12v5c0 1.5 2.5 3 6 3s6-1.5 6-3v-5"/></svg>
+      <span>Referendariat</span>
+      <svg class="section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+    <div class="nav-section" data-section="referendariat">
     <a class="nav-btn" href="#asuv" data-view="asuv"><span class="nav-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="11" x2="8" y2="11"/><line x1="12" y1="15" x2="8" y2="15"/></svg></span><span>ASUV-Entwürfe</span><span class="nav-tab-open" data-tab-open="asuv" role="button" tabindex="0" title="ASUV-Entwürfe als Tab im Hintergrund öffnen" aria-label="ASUV-Entwürfe als Tab im Hintergrund öffnen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg></span></a>
+    </div>
 
-    <div class="section-label">Material</div>
+    <button type="button" class="section-label" data-section-toggle="material" aria-expanded="true">
+      <svg class="section-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8H3v11a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8Z"/><path d="M1 5.5A1.5 1.5 0 0 1 2.5 4h19A1.5 1.5 0 0 1 23 5.5V8H1V5.5Z"/></svg>
+      <span>Material</span>
+      <svg class="section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+    <div class="nav-section" data-section="material">
     <a class="nav-btn" href="#material" data-view="material"><span class="nav-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5V5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v14.5M6 8h2M6 12h2M6 16h2"/></svg></span><span>Materialbibliothek</span><span class="nav-tab-open" data-tab-open="material" role="button" tabindex="0" title="Materialbibliothek als Tab im Hintergrund öffnen" aria-label="Materialbibliothek als Tab im Hintergrund öffnen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg></span></a>
+    </div>
 
-    <div class="section-label">System</div>
+    <button type="button" class="section-label" data-section-toggle="system" aria-expanded="true">
+      <svg class="section-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6M4.22 4.22l4.24 4.24m3.08 3.08l4.24 4.24M1 12h6m6 0h6M4.22 19.78l4.24-4.24m3.08-3.08l4.24-4.24M19.78 19.78l-4.24-4.24m-3.08-3.08l-4.24-4.24"/></svg>
+      <span>System</span>
+      <svg class="section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+    <div class="nav-section" data-section="system">
     <a class="nav-btn" href="#settings" data-view="settings"><span class="nav-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6M4.22 4.22l4.24 4.24m3.08 3.08l4.24 4.24M1 12h6m6 0h6M4.22 19.78l4.24-4.24m3.08-3.08l4.24-4.24M19.78 19.78l-4.24-4.24m-3.08-3.08l-4.24-4.24"/></svg></span><span>Einstellungen</span><span class="nav-tab-open" data-tab-open="settings" role="button" tabindex="0" title="Einstellungen als Tab im Hintergrund öffnen" aria-label="Einstellungen als Tab im Hintergrund öffnen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg></span></a>
+    </div>
 
     <div class="nav-footer"><div style="font-weight:700; margin-bottom:5px;">Angemeldet</div><span id="navUser">–</span></div>
   </aside>
@@ -415,6 +452,43 @@
       </div>
     </section>
 
+    <!-- SEQUENZPLANUNG -->
+    <section id="sequenzplan" class="view hidden">
+      <div class="card">
+        <h3>Sequenzplan</h3>
+        <p class="muted small">Zerlegt einen Block des aktiven Stoffverteilungsplans in einzelne Unterrichtsstunden mit Grobziel und Notenart.</p>
+        <div class="row">
+          <div><label>Klasse</label><select id="seqClass"></select></div>
+          <div><label>Block (aus aktivem Stoffplan)</label><select id="seqBlock"></select></div>
+        </div>
+        <div id="seqNoActivePlan" class="note-box" style="margin-top:12px; display:none;">Für diese Klasse gibt es keinen aktiven Stoffverteilungsplan. Bitte zuerst im Stoffverteilungsplan einen Plan aktiv setzen.</div>
+        <div style="margin-top:14px;">
+          <label for="seqIdeas">Ideen für diese Sequenz (KI berücksichtigt sie bei der Generierung)</label>
+          <textarea id="seqIdeas" rows="2" placeholder="z. B. Bezug zu einem aktuellen Jugendbuch, Stationenlernen in der Mitte …"></textarea>
+        </div>
+        <div style="margin-top:10px; display:flex; gap:16px; flex-wrap:wrap;">
+          <label class="small"><input type="checkbox" id="seqWantLk" /> Lernkontrolle einplanen</label>
+          <label class="small"><input type="checkbox" id="seqWantReferat" /> Referat einplanen</label>
+          <label class="small"><input type="checkbox" id="seqWantKomplexeArbeit" /> Komplexe Arbeit einplanen</label>
+          <label class="small"><input type="checkbox" id="seqWantKlassenarbeit" /> Klassenarbeit einplanen</label>
+        </div>
+        <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap;">
+          <button class="btn ai" id="seqAiBtn">✨ Vorschlag generieren</button>
+          <button class="btn small secondary" id="seqAddBtn">+ Stunde hinzufügen</button>
+        </div>
+        <div class="note-box" style="margin-top:12px;">„✨ Vorschlag generieren" ersetzt die unten angezeigten Karten durch einen neuen KI-Vorschlag (Claude Sonnet) – erst „Sequenzplan speichern" übernimmt ihn dauerhaft.</div>
+      </div>
+      <div class="card" style="margin-top:14px;">
+        <h3>Stunden dieser Sequenz</h3>
+        <div id="seqSummary" class="small muted" style="margin-bottom:8px;"></div>
+        <div id="seqCards" class="seq-cards"></div>
+        <div style="margin-top:12px;">
+          <button class="btn" id="seqSaveBtn">Sequenzplan speichern</button>
+          <span class="small muted" style="margin-left:8px;">Speichert Titel, Grobziele und Notenarten aller Karten.</span>
+        </div>
+      </div>
+    </section>
+
     <!-- STUNDE -->
     <section id="stunde" class="view hidden">
       <div class="ai-box">
@@ -455,6 +529,13 @@
             <select id="lessonLb"><option value="">– kein Lernbereich –</option></select>
           </div>
           <div id="lessonLbProgress" class="small muted" style="align-self:end;"></div>
+        </div>
+        <div id="lessonSeqRow" class="row hidden" style="margin-top:10px;">
+          <div>
+            <label>Aus Sequenzplan übernehmen (optional)</label>
+            <select id="lessonSeq"><option value="">– keine Sequenzstunde –</option></select>
+            <div class="hint">Übernimmt Titel, Lernbereich und Grobziel der gewählten Sequenzstunde und verknüpft sie mit dieser Stunde.</div>
+          </div>
         </div>
         <div id="lueHint" class="note-box hidden">Diese Stunde dient als Übungsstunde vor der Lernerfolgskontrolle – Fokus auf intelligentes Üben (Meyer-Merkmal 8) und Fehleranalyse legen.</div>
       </div>
@@ -672,6 +753,7 @@
           <button class="mehr-item" data-view="klassen">Klassen</button>
           <button class="mehr-item" data-view="praesentation">Schüleransicht</button>
           <button class="mehr-item" data-view="stoff">Stoffverteilungsplan</button>
+          <button class="mehr-item" data-view="sequenzplan">Sequenzplanung</button>
           <button class="mehr-item" data-view="reflexion">Reflexion</button>
           <button class="mehr-item" data-view="notizen">Notizen</button>
           <button class="mehr-item" data-view="asuv">ASUV-Entwürfe</button>
