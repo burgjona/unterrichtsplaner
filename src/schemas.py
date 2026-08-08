@@ -751,6 +751,7 @@ class SequenzStundeCreate(Base):
     is_klassenarbeit: bool = False
     weitere_notenart: Optional[str] = None
     sort_order: Optional[int] = None   # None = ans Ende anhängen
+    date: Optional[str] = None         # voraussichtliches Datum, ISO; unabhängig von lesson_id
 
 
 class SequenzStundeUpdate(Base):
@@ -762,6 +763,7 @@ class SequenzStundeUpdate(Base):
     is_komplexe_arbeit: Optional[bool] = None
     is_klassenarbeit: Optional[bool] = None
     weitere_notenart: Optional[str] = None
+    date: Optional[str] = None
 
 
 class SequenzStundeOut(Base):
@@ -776,6 +778,7 @@ class SequenzStundeOut(Base):
     is_komplexe_arbeit: bool
     is_klassenarbeit: bool
     weitere_notenart: Optional[str] = None
+    date: Optional[str] = None
     lesson_id: Optional[int] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
@@ -1126,3 +1129,12 @@ class TropentagUpdate(Base):
 class TropentagOut(Base):
     date: str
     active: bool
+
+
+# ---------- Kumulierte Ansicht: Stoffplan-Blöcke inkl. ihrer Sequenzstunden ----------
+class StoffPlanBlockCombinedOut(StoffPlanBlockOut):
+    stunden: List[SequenzStundeOut] = []
+
+
+class StoffPlanCombinedOut(StoffPlanOut):
+    blocks: List[StoffPlanBlockCombinedOut] = []

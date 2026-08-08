@@ -50,6 +50,64 @@ function esc(s) {
   return String(s == null ? "" : s).replace(/[&<>"]/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 }
+
+/* ---------- Rückgängig (ein Schritt zurück): Stoffplan-Bearbeitung + Sequenzplanung ----------
+   Nur die letzte Aktion wird gemerkt (lastUndo), kein mehrstufiger Verlauf. Jede neue
+   mutierende Aktion in diesen beiden Werkzeugen überschreibt den vorherigen Eintrag. */
+let lastUndo = null;   // { label, run: async () => void }
+
+function setUndo(label, run) {
+  lastUndo = { label, run };
+  renderUndoBar();
+}
+
+function renderUndoBar() {
+  let bar = $("undoBar");
+  if (!lastUndo) {
+    if (bar) bar.remove();
+    return;
+  }
+  if (!bar) {
+    bar = document.createElement("div");
+    bar.id = "undoBar";
+    bar.style.cssText =
+      "position:fixed;bottom:66px;left:50%;transform:translateX(-50%);z-index:200;" +
+      "display:flex;align-items:center;gap:10px;background:#1f2937;color:#fff;" +
+      "padding:9px 14px;border-radius:12px;font-size:13px;box-shadow:0 12px 30px rgba(0,0,0,.25);";
+    document.body.appendChild(bar);
+  }
+  bar.innerHTML = `<span>${esc(lastUndo.label)}</span>
+    <button class="btn tiny" id="undoBarBtn" style="white-space:nowrap;">Rückgängig</button>
+    <button class="btn tiny secondary" id="undoBarClose" style="white-space:nowrap;">✕</button>`;
+  bar.querySelector("#undoBarBtn").onclick = runUndo;
+  bar.querySelector("#undoBarClose").onclick = () => { lastUndo = null; renderUndoBar(); };
+}
+
+async function runUndo() {
+  if (!lastUndo) return;
+  const action = lastUndo;
+  lastUndo = null;
+  renderUndoBar();
+  try {
+    await action.run();
+    toast("Rückgängig gemacht.");
+  } catch (e) { toast(e.message, false); }
+}
+
+// Ersetzt alle Sequenzstunden eines Blocks 1:1 durch targetRows (löschen + neu anlegen –
+// einfacher und robuster als ein Diff, IDs müssen dabei nicht erhalten bleiben).
+async function restoreSequenzStunden(blockId, targetRows) {
+  const current = await API.get(`/sequenz-stunden?blockId=${blockId}`);
+  for (const r of current) await API.del(`/sequenz-stunden/${r.id}`);
+  for (const t of targetRows) {
+    await API.post("/sequenz-stunden", {
+      blockId, title: t.title, grobziel: t.grobziel || null,
+      isLk: t.isLk, isReferat: t.isReferat, isKomplexeArbeit: t.isKomplexeArbeit,
+      isKlassenarbeit: t.isKlassenarbeit, weitereNotenart: t.weitereNotenart || null,
+      date: t.date || null,
+    });
+  }
+}
 function isoWeek(d) {
   const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
   const dayNum = (date.getUTCDay() + 6) % 7;
@@ -2781,17 +2839,23 @@ function renderStoffPlans() {
           <button class="btn small" data-sp-load="${p.id}">Laden</button>
           <button class="btn small secondary" data-sp-edit="${p.id}">Bearbeiten</button>
           <button class="btn small secondary" data-sp-toggle="${p.id}">${toggleLbl}</button>
+          <button class="btn small secondary" data-sp-pdf="${p.id}">Als PDF</button>
+          <button class="btn small secondary" data-sp-kumuliert="${p.id}">Kumulierte Ansicht</button>
           <button class="btn small danger" data-sp-del="${p.id}">Löschen</button>
         </div>
       </div>
       <div class="stoff-plan-editor" data-editor="${p.id}"></div>
+      <div class="stoff-plan-kumuliert" data-kumuliert="${p.id}"></div>
     </div>`;
   }).join("");
   wrap.querySelectorAll("[data-sp-load]").forEach((b) => b.onclick = () => loadStoffPlanIntoTable(Number(b.dataset.spLoad)));
   wrap.querySelectorAll("[data-sp-edit]").forEach((b) => b.onclick = () => toggleStoffPlanEditor(Number(b.dataset.spEdit)));
   wrap.querySelectorAll("[data-sp-toggle]").forEach((b) => b.onclick = () => toggleStoffPlanStatus(Number(b.dataset.spToggle)));
+  wrap.querySelectorAll("[data-sp-pdf]").forEach((b) => b.onclick = () => downloadStoffPlanPdf(Number(b.dataset.spPdf)));
+  wrap.querySelectorAll("[data-sp-kumuliert]").forEach((b) => b.onclick = () => toggleKumulierteAnsicht(Number(b.dataset.spKumuliert)));
   wrap.querySelectorAll("[data-sp-del]").forEach((b) => b.onclick = () => deleteStoffPlan(Number(b.dataset.spDel)));
   if (editingStoffPlanId != null) renderStoffPlanEditor(editingStoffPlanId);
+  if (kumuliertPlanId != null) renderKumulierteAnsicht(kumuliertPlanId);
 }
 
 async function loadStoffPlanIntoTable(id) {
@@ -2907,11 +2971,25 @@ async function saveStoffPlanEdits(id) {
       conflictNote: (noteEl ? noteEl.value : "") || null,
     };
   });
+  let before = null;
+  try { before = await API.get(`/stoff-plans/${id}`); } catch (e) { /* best effort, Undo entfällt dann */ }
   try {
     await API.put(`/stoff-plans/${id}`, { title, blocks });
     toast("Plan aktualisiert.");
     editingStoffPlanId = null;
     await loadStoffPlans();
+    if (before) {
+      setUndo(`Stoffplan „${before.title}“ bearbeitet.`, async () => {
+        await API.put(`/stoff-plans/${id}`, {
+          title: before.title,
+          blocks: (before.blocks || []).map((b) => ({
+            lbCode: b.lbCode, title: b.title, ustd: b.ustd,
+            startDate: b.startDate, endDate: b.endDate, conflictNote: b.conflictNote,
+          })),
+        });
+        await loadStoffPlans();
+      });
+    }
   } catch (e) { toast(e.message, false); }
 }
 
@@ -2927,12 +3005,218 @@ async function toggleStoffPlanStatus(id) {
 
 async function deleteStoffPlan(id) {
   if (!window.confirm("Diesen Stoffplan wirklich löschen?")) return;
+  let snapshot = null;
+  try { snapshot = await API.get(`/stoff-plans/${id}/combined`); } catch (e) { /* best effort, Undo entfällt dann */ }
   try {
     await API.del(`/stoff-plans/${id}`);
     if (editingStoffPlanId === id) editingStoffPlanId = null;
     toast("Plan gelöscht.");
     await loadStoffPlans();
+    if (snapshot) {
+      setUndo(`Stoffplan „${snapshot.title}“ gelöscht.`, async () => {
+        const created = await API.post("/stoff-plans", {
+          classId: snapshot.classId, schoolYearId: snapshot.schoolYearId,
+          title: snapshot.title, status: snapshot.status,
+          blocks: (snapshot.blocks || []).map((b) => ({
+            lbCode: b.lbCode, title: b.title, ustd: b.ustd,
+            startDate: b.startDate, endDate: b.endDate, conflictNote: b.conflictNote,
+          })),
+        });
+        for (let i = 0; i < (snapshot.blocks || []).length; i++) {
+          const stunden = snapshot.blocks[i].stunden || [];
+          const newBlockId = created.blocks[i].id;
+          for (const s of stunden) {
+            await API.post("/sequenz-stunden", {
+              blockId: newBlockId, title: s.title, grobziel: s.grobziel || null,
+              isLk: s.isLk, isReferat: s.isReferat, isKomplexeArbeit: s.isKomplexeArbeit,
+              isKlassenarbeit: s.isKlassenarbeit, weitereNotenart: s.weitereNotenart || null,
+              date: s.date || null,
+            });
+          }
+        }
+        await loadStoffPlans();
+      });
+    }
   } catch (e) { toast(e.message, false); }
+}
+
+/* ---------- Kumulierte Ansicht: Stoffplan-Blöcke + ihre Sequenzstunden in einer Seite ---------- */
+// kumuliertBlocks = [{ id, lbCode, title, ustd, startDate, endDate, weeks,
+//                       cards: [{ id, title, grobziel, isLk, isReferat, isKomplexeArbeit,
+//                                 isKlassenarbeit, weitereNotenart, date }] }]
+// Block-Kopfdaten (Titel/Zeitraum/Ustd) sind hier nur Anzeige – ihr Speichern läuft weiter über
+// „Bearbeiten" oben, da ein Blöcke-Bulk-Save dort intern alle Block-IDs neu vergibt (Cascade
+// löscht dann verknüpfte Sequenzstunden). Editierbar sind hier nur die Sequenzstunden je Block.
+let kumuliertPlanId = null;
+let kumuliertBlocks = [];
+
+function toggleKumulierteAnsicht(id) {
+  kumuliertPlanId = (kumuliertPlanId === id) ? null : id;
+  renderStoffPlans();
+}
+
+async function renderKumulierteAnsicht(id) {
+  const box = document.querySelector(`[data-kumuliert="${id}"]`);
+  if (!box) return;
+  let p;
+  try { p = await API.get(`/stoff-plans/${id}/combined`); }
+  catch (e) { toast(e.message, false); return; }
+  kumuliertBlocks = (p.blocks || []).map((b) => ({
+    id: b.id, lbCode: b.lbCode, title: b.title, ustd: b.ustd,
+    startDate: b.startDate, endDate: b.endDate, weeks: b.weeks,
+    cards: (b.stunden || []).map((s) => ({
+      id: s.id, title: s.title, grobziel: s.grobziel || "",
+      isLk: s.isLk, isReferat: s.isReferat, isKomplexeArbeit: s.isKomplexeArbeit,
+      isKlassenarbeit: s.isKlassenarbeit, weitereNotenart: s.weitereNotenart || "",
+      date: s.date || "",
+    })),
+  }));
+  box.innerHTML = `<div class="stoff-plan-edit-inner">
+    <div class="ka-blocks"></div>
+    <div style="margin-top:10px;">
+      <button class="btn small" data-ka-save="${id}">Sequenzstunden speichern</button>
+      <button class="btn small secondary" data-ka-pdf="${id}">Als PDF</button>
+      <button class="btn small secondary" data-ka-close="${id}">Schließen</button>
+    </div>
+  </div>`;
+  renderKumulierteAnsichtFromState(box);
+  const saveBtn = box.querySelector(`[data-ka-save="${id}"]`);
+  if (saveBtn) saveBtn.onclick = () => saveKumulierteAnsicht(id);
+  const pdfBtn = box.querySelector(`[data-ka-pdf="${id}"]`);
+  if (pdfBtn) pdfBtn.onclick = () => downloadKumulierteAnsichtPdf(id);
+  const closeBtn = box.querySelector(`[data-ka-close="${id}"]`);
+  if (closeBtn) closeBtn.onclick = () => { kumuliertPlanId = null; renderStoffPlans(); };
+}
+
+function kumuliertBlockHtml(b, bi) {
+  const zeit = (b.startDate || b.endDate) ? `${esc(deDate(b.startDate) || "?")} – ${esc(deDate(b.endDate) || "?")}` : "—";
+  return `<div class="kumuliert-block">
+    <div class="kumuliert-block-head">
+      <strong>${esc(b.lbCode || "")} ${esc(b.title || "")}</strong>
+      <span class="small muted">${esc(b.ustd ?? "—")} Ustd. · ${zeit}${b.weeks != null ? ` · ${esc(b.weeks)} Wochen` : ""}</span>
+    </div>
+    <div class="seq-cards" data-ka-cards="${bi}">
+      ${b.cards.map((c, ci) => kumuliertCardHtml(c, bi, ci)).join("")
+        || '<p class="muted small">Noch keine Stunden.</p>'}
+    </div>
+    <button class="btn tiny secondary" data-ka-add="${bi}">+ Stunde hinzufügen</button>
+  </div>`;
+}
+
+function kumuliertCardHtml(card, bi, ci) {
+  const chk = (field, label) =>
+    `<label class="small"><input type="checkbox" data-ka-f="${field}" data-ka-bi="${bi}" data-ka-ci="${ci}" ${card[field] ? "checked" : ""}> ${label}</label>`;
+  return `<div class="seq-card" data-ka-card="${bi}-${ci}">
+    <div class="seq-card-head">
+      <span class="seq-card-num">${ci + 1}.</span>
+      <input type="text" class="seq-card-title" data-ka-f="title" data-ka-bi="${bi}" data-ka-ci="${ci}" value="${esc(card.title)}" placeholder="Titel der Stunde" />
+      <button class="btn tiny danger" data-ka-del="${bi}-${ci}" title="Stunde entfernen">✕</button>
+    </div>
+    <textarea class="seq-card-grobziel" data-ka-f="grobziel" data-ka-bi="${bi}" data-ka-ci="${ci}" rows="2" placeholder="Grobziel">${esc(card.grobziel)}</textarea>
+    <div class="seq-card-date">
+      <label class="small">voraussichtliches Datum
+        <input type="date" class="seq-card-date-input" data-ka-f="date" data-ka-bi="${bi}" data-ka-ci="${ci}" value="${esc(card.date || "")}" />
+      </label>
+      ${card.date ? `<button class="btn tiny secondary" data-ka-clear-date="${bi}-${ci}" title="Datum entfernen">✕ Datum</button>` : ""}
+    </div>
+    <div class="seq-card-notenarten">
+      ${chk("isLk", "LK")} ${chk("isReferat", "Referat")} ${chk("isKomplexeArbeit", "Komplexe Arbeit")} ${chk("isKlassenarbeit", "Klassenarbeit")}
+      <input type="text" class="seq-card-weitere" data-ka-f="weitereNotenart" data-ka-bi="${bi}" data-ka-ci="${ci}" value="${esc(card.weitereNotenart)}" placeholder="weitere Notenart (Freitext)" />
+    </div>
+  </div>`;
+}
+
+function wireKumulierteAnsichtBlocks(box) {
+  box.querySelectorAll("[data-ka-f]").forEach((el) => {
+    const evt = el.tagName === "INPUT" && el.type === "checkbox" ? "change" : "input";
+    el.addEventListener(evt, () => {
+      const bi = Number(el.dataset.kaBi), ci = Number(el.dataset.kaCi), f = el.dataset.kaF;
+      kumuliertBlocks[bi].cards[ci][f] = el.type === "checkbox" ? el.checked : el.value;
+    });
+  });
+  box.querySelectorAll("[data-ka-clear-date]").forEach((b) => b.onclick = () => {
+    const [bi, ci] = b.dataset.kaClearDate.split("-").map(Number);
+    kumuliertBlocks[bi].cards[ci].date = "";
+    renderKumulierteAnsichtFromState(box);
+  });
+  box.querySelectorAll("[data-ka-del]").forEach((b) => b.onclick = () => {
+    const [bi, ci] = b.dataset.kaDel.split("-").map(Number);
+    kumuliertBlocks[bi].cards.splice(ci, 1);
+    renderKumulierteAnsichtFromState(box);
+  });
+  box.querySelectorAll("[data-ka-add]").forEach((b) => b.onclick = () => {
+    const bi = Number(b.dataset.kaAdd);
+    kumuliertBlocks[bi].cards.push({
+      id: null, title: "", grobziel: "", isLk: false, isReferat: false,
+      isKomplexeArbeit: false, isKlassenarbeit: false, weitereNotenart: "", date: "",
+    });
+    renderKumulierteAnsichtFromState(box);
+  });
+}
+
+function renderKumulierteAnsichtFromState(box) {
+  box.querySelector(".ka-blocks").innerHTML =
+    kumuliertBlocks.map((b, bi) => kumuliertBlockHtml(b, bi)).join("")
+    || '<p class="muted small">Keine Blöcke erfasst.</p>';
+  wireKumulierteAnsichtBlocks(box);
+}
+
+async function saveKumulierteAnsicht(id) {
+  try {
+    for (const b of kumuliertBlocks) {
+      if (b.cards.some((c) => !c.title.trim())) {
+        toast("Jede Stunde braucht einen Titel.", false);
+        return;
+      }
+    }
+    const snapshots = [];   // { blockId, rows } je Block, für Rückgängig
+    for (const b of kumuliertBlocks) {
+      let original = [];
+      try { original = await API.get(`/sequenz-stunden?blockId=${b.id}`); } catch (e) { /* best effort */ }
+      snapshots.push({ blockId: b.id, rows: original });
+      const keepIds = new Set(b.cards.filter((c) => c.id != null).map((c) => c.id));
+      for (const o of original) {
+        if (!keepIds.has(o.id)) await API.del(`/sequenz-stunden/${o.id}`);
+      }
+      for (const c of b.cards) {
+        const body = {
+          blockId: b.id, title: c.title.trim(), grobziel: c.grobziel || null,
+          isLk: c.isLk, isReferat: c.isReferat, isKomplexeArbeit: c.isKomplexeArbeit,
+          isKlassenarbeit: c.isKlassenarbeit, weitereNotenart: c.weitereNotenart || null,
+          date: c.date || null,
+        };
+        if (c.id == null) {
+          const created = await API.post("/sequenz-stunden", body);
+          c.id = created.id;
+        } else {
+          await API.put(`/sequenz-stunden/${c.id}`, body);
+        }
+      }
+      if (b.cards.length) {
+        await API.post("/sequenz-stunden/reorder", { blockId: b.id, orderedIds: b.cards.map((c) => c.id) });
+      }
+    }
+    toast("Sequenzstunden gespeichert.");
+    await renderKumulierteAnsicht(id);
+    setUndo("Sequenzstunden (kumulierte Ansicht) gespeichert.", async () => {
+      for (const s of snapshots) {
+        await restoreSequenzStunden(s.blockId, s.rows.map((r) => ({
+          title: r.title, grobziel: r.grobziel, isLk: r.isLk, isReferat: r.isReferat,
+          isKomplexeArbeit: r.isKomplexeArbeit, isKlassenarbeit: r.isKlassenarbeit,
+          weitereNotenart: r.weitereNotenart, date: r.date,
+        })));
+      }
+      await renderKumulierteAnsicht(id);
+    });
+  } catch (e) { toast(e.message, false); }
+}
+
+function downloadKumulierteAnsichtPdf(id) {
+  const a = document.createElement("a");
+  a.href = `/api/stoff-plans/${id}/export-combined?format=pdf`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 }
 
 /* ---------- Sequenzplanung: Einzelstunden je Stoffplan-Block ---------- */
@@ -2977,6 +3261,7 @@ async function loadSeqCardsFromServer() {
       id: r.id, title: r.title, grobziel: r.grobziel || "",
       isLk: r.isLk, isReferat: r.isReferat, isKomplexeArbeit: r.isKomplexeArbeit,
       isKlassenarbeit: r.isKlassenarbeit, weitereNotenart: r.weitereNotenart || "",
+      date: r.date || "",
     }));
   } catch (e) { toast(e.message, false); }
   renderSeqCards();
@@ -2995,6 +3280,12 @@ function seqCardHtml(card, idx) {
       <button class="btn tiny danger" data-seq-del="${idx}" title="Stunde entfernen">✕</button>
     </div>
     <textarea class="seq-card-grobziel" data-seq-f="grobziel" data-seq-i="${idx}" rows="2" placeholder="Grobziel">${esc(card.grobziel)}</textarea>
+    <div class="seq-card-date">
+      <label class="small">voraussichtliches Datum
+        <input type="date" class="seq-card-date-input" data-seq-f="date" data-seq-i="${idx}" value="${esc(card.date || "")}" />
+      </label>
+      ${card.date ? `<button class="btn tiny secondary" data-seq-clear-date="${idx}" title="Datum entfernen">✕ Datum</button>` : ""}
+    </div>
     <div class="seq-card-notenarten">
       ${chk("isLk", "LK")} ${chk("isReferat", "Referat")} ${chk("isKomplexeArbeit", "Komplexe Arbeit")} ${chk("isKlassenarbeit", "Klassenarbeit")}
       <input type="text" class="seq-card-weitere" data-seq-f="weitereNotenart" data-seq-i="${idx}" value="${esc(card.weitereNotenart)}" placeholder="weitere Notenart (Freitext)" />
@@ -3026,6 +3317,10 @@ function renderSeqCards() {
   });
   wrap.querySelectorAll("[data-seq-del]").forEach((b) => b.onclick = () => {
     seqCards.splice(Number(b.dataset.seqDel), 1);
+    renderSeqCards();
+  });
+  wrap.querySelectorAll("[data-seq-clear-date]").forEach((b) => b.onclick = () => {
+    seqCards[Number(b.dataset.seqClearDate)].date = "";
     renderSeqCards();
   });
   wrap.querySelectorAll("[data-seq-up]").forEach((b) => b.onclick = () => seqMoveCard(Number(b.dataset.seqUp), -1));
@@ -3062,7 +3357,7 @@ function seqAddCard() {
   if (!blockId) { toast("Bitte zuerst einen Block wählen.", false); return; }
   seqCards.push({
     id: null, title: "", grobziel: "", isLk: false, isReferat: false,
-    isKomplexeArbeit: false, isKlassenarbeit: false, weitereNotenart: "",
+    isKomplexeArbeit: false, isKlassenarbeit: false, weitereNotenart: "", date: "",
   });
   renderSeqCards();
 }
@@ -3080,7 +3375,7 @@ async function aiSequenzplan() {
     });
     const stunden = (res.suggestion && res.suggestion.stunden) || [];
     seqCards = stunden.map((s) => ({
-      id: null, title: s.title, grobziel: s.grobziel || "", weitereNotenart: "",
+      id: null, title: s.title, grobziel: s.grobziel || "", weitereNotenart: "", date: "",
       ...seqNotenartenToFlags(s.notenarten),
     }));
     renderSeqCards();
@@ -3105,6 +3400,7 @@ async function saveSequenzplan() {
         blockId, title: c.title.trim(), grobziel: c.grobziel || null,
         isLk: c.isLk, isReferat: c.isReferat, isKomplexeArbeit: c.isKomplexeArbeit,
         isKlassenarbeit: c.isKlassenarbeit, weitereNotenart: c.weitereNotenart || null,
+        date: c.date || null,
       };
       if (c.id == null) {
         const created = await API.post("/sequenz-stunden", body);
@@ -3116,6 +3412,14 @@ async function saveSequenzplan() {
     await API.post("/sequenz-stunden/reorder", { blockId, orderedIds: seqCards.map((c) => c.id) });
     toast("Sequenzplan gespeichert.");
     await loadSeqCardsFromServer();
+    setUndo("Sequenzplan gespeichert.", async () => {
+      await restoreSequenzStunden(blockId, original.map((r) => ({
+        title: r.title, grobziel: r.grobziel, isLk: r.isLk, isReferat: r.isReferat,
+        isKomplexeArbeit: r.isKomplexeArbeit, isKlassenarbeit: r.isKlassenarbeit,
+        weitereNotenart: r.weitereNotenart, date: r.date,
+      })));
+      await loadSeqCardsFromServer();
+    });
   } catch (e) { toast(e.message, false); }
 }
 

@@ -58,6 +58,17 @@ def test_notenart_flags_roundtrip(client, auth):
     assert s["weitereNotenart"] == "Portfolio"
 
 
+def test_date_set_and_clear(client, auth):
+    cid = _class(client)
+    plan = _plan(client, cid)
+    bid = _block_id(plan)
+    s = _stunde(client, bid, "Termin", date="2025-09-15")
+    assert s["date"] == "2025-09-15"
+    r = client.put(f"/api/sequenz-stunden/{s['id']}", json={"date": None})
+    assert r.status_code == 200
+    assert r.json()["date"] is None
+
+
 def test_update(client, auth):
     cid = _class(client)
     plan = _plan(client, cid)

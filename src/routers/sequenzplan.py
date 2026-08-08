@@ -41,7 +41,7 @@ def _out(row) -> SequenzStundeOut:
         grobziel=d["grobziel"], notes=d["notes"],
         is_lk=bool(d["is_lk"]), is_referat=bool(d["is_referat"]),
         is_komplexe_arbeit=bool(d["is_komplexe_arbeit"]), is_klassenarbeit=bool(d["is_klassenarbeit"]),
-        weitere_notenart=d["weitere_notenart"], lesson_id=d["lesson_id"],
+        weitere_notenart=d["weitere_notenart"], date=d["date"], lesson_id=d["lesson_id"],
         created_at=d["created_at"], updated_at=d["updated_at"],
     )
 
@@ -73,11 +73,11 @@ def create(body: SequenzStundeCreate, conn=Depends(get_db), user_id: int = Depen
         cur = conn.execute(
             "INSERT INTO sequenz_stunden "
             "(user_id, block_id, sort_order, title, grobziel, notes, is_lk, is_referat, "
-            " is_komplexe_arbeit, is_klassenarbeit, weitere_notenart) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            " is_komplexe_arbeit, is_klassenarbeit, weitere_notenart, date) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
             (user_id, body.block_id, sort_order, body.title.strip(), body.grobziel, body.notes,
              int(body.is_lk), int(body.is_referat), int(body.is_komplexe_arbeit),
-             int(body.is_klassenarbeit), body.weitere_notenart),
+             int(body.is_klassenarbeit), body.weitere_notenart, body.date),
         )
     return _out(_fetch(conn, user_id, cur.lastrowid))
 
@@ -87,7 +87,7 @@ def update(sid: int, body: SequenzStundeUpdate, conn=Depends(get_db), user_id: i
     row_or_404(_fetch(conn, user_id, sid), "Sequenzstunde")
     data = body.model_dump(exclude_unset=True)
     sets = {}
-    for key in ("title", "grobziel", "notes", "weitere_notenart"):
+    for key in ("title", "grobziel", "notes", "weitere_notenart", "date"):
         if key in data:
             sets[key] = data[key]
     for key in ("is_lk", "is_referat", "is_komplexe_arbeit", "is_klassenarbeit"):

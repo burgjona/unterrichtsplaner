@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from ..deps import get_db, get_user_id, row_or_404
 from ..schemas import (
     StoffPlanCreate, StoffPlanDetail, StoffPlanBlockOut, StoffPlanOut, StoffPlanUpdate,
-    StoffPlanDuplicateIn,
+    StoffPlanDuplicateIn, StoffPlanCombinedOut, StoffPlanBlockCombinedOut, SequenzStundeOut,
 )
 
 router = APIRouter(prefix="/stoff-plans", tags=["stoffplan"])
@@ -123,6 +123,42 @@ def list_(class_id: Optional[int] = Query(default=None, alias="classId"),
 def detail(plan_id: int, conn: sqlite3.Connection = Depends(get_db),
            user_id: int = Depends(get_user_id)):
     return _detail(conn, user_id, plan_id)
+
+
+def _stunde_out(row) -> SequenzStundeOut:
+    """Wie sequenzplan.py::_out, hier dupliziert (kein Router-übergreifender Import,
+    analog dem Präzedenzfall in sequenzplan.py::_week_type_for)."""
+    d = dict(row)
+    return SequenzStundeOut(
+        id=d["id"], block_id=d["block_id"], sort_order=d["sort_order"], title=d["title"],
+        grobziel=d["grobziel"], notes=d["notes"],
+        is_lk=bool(d["is_lk"]), is_referat=bool(d["is_referat"]),
+        is_komplexe_arbeit=bool(d["is_komplexe_arbeit"]), is_klassenarbeit=bool(d["is_klassenarbeit"]),
+        weitere_notenart=d["weitere_notenart"], date=d["date"], lesson_id=d["lesson_id"],
+        created_at=d["created_at"], updated_at=d["updated_at"],
+    )
+
+
+@router.get("/{plan_id}/combined", response_model=StoffPlanCombinedOut)
+def combined(plan_id: int, conn: sqlite3.Connection = Depends(get_db),
+             user_id: int = Depends(get_user_id)):
+    """Stoffplan-Blöcke inkl. ihrer Sequenzstunden für die kumulierte Ansicht (Stoffplan +
+    Sequenzplanung in einer Übersicht)."""
+    row = row_or_404(_load_plan(conn, user_id, plan_id), "Stoffplan")
+    block_rows = conn.execute(
+        "SELECT * FROM stoff_plan_blocks WHERE plan_id = ? ORDER BY sort_order, id", (plan_id,)
+    ).fetchall()
+    weeks = _weeks_for_blocks(conn, user_id, row["school_year_id"], block_rows)
+    blocks = []
+    for b, w in zip(block_rows, weeks):
+        stunden_rows = conn.execute(
+            "SELECT * FROM sequenz_stunden WHERE block_id = ? AND user_id = ? ORDER BY sort_order, id",
+            (b["id"], user_id),
+        ).fetchall()
+        blocks.append(StoffPlanBlockCombinedOut(
+            **dict(b), weeks=w, stunden=[_stunde_out(s) for s in stunden_rows],
+        ))
+    return StoffPlanCombinedOut(**dict(row), blocks=blocks)
 
 
 @router.put("/{plan_id}", response_model=StoffPlanDetail)
@@ -370,5 +406,37 @@ def export_plan(plan_id: int, format: str = Query("pdf"),
     ascii_fb = "".join(c if c.isascii() else "_" for c in fname)  # ASCII-Fallback für den Header
     disposition = (f"attachment; filename=\"{ascii_fb}\"; "
                    f"filename*=UTF-8''{urllib.parse.quote(fname)}")  # RFC 5987: Umlaute erhalten
+    return Response(content=data, media_type="application/pdf",
+                    headers={"Content-Disposition": disposition})
+
+
+@router.get("/{plan_id}/export-combined")
+def export_combined(plan_id: int, format: str = Query("pdf"),
+                    conn: sqlite3.Connection = Depends(get_db), user_id: int = Depends(get_user_id)):
+    """Kumulierte Ansicht (Stoffverteilungsplan + Sequenzplanung je Block) als PDF."""
+    from ..lib.kumulierte_ansicht_pdf import build_kumulierte_ansicht_pdf
+
+    if format != "pdf":
+        raise HTTPException(status_code=400, detail="Nur format=pdf wird unterstützt.")
+    plan_out = combined(plan_id, conn, user_id)
+
+    crow = conn.execute("SELECT name FROM classes WHERE id = ? AND user_id = ?",
+                        (plan_out.class_id, user_id)).fetchone()
+    class_name = crow["name"] if crow else "Klasse"
+    year_label = "—"
+    if plan_out.school_year_id is not None:
+        yrow = conn.execute("SELECT label FROM school_years WHERE id = ? AND user_id = ?",
+                            (plan_out.school_year_id, user_id)).fetchone()
+        if yrow:
+            year_label = yrow["label"]
+
+    plan_dict = plan_out.model_dump()
+    data = build_kumulierte_ansicht_pdf(plan_dict, plan_dict["blocks"], class_name, year_label)
+
+    parts = [_safe_name(p) for p in ("Kumulierte_Ansicht", class_name, year_label) if _safe_name(p)]
+    fname = "_".join(parts) + ".pdf"
+    ascii_fb = "".join(c if c.isascii() else "_" for c in fname)
+    disposition = (f"attachment; filename=\"{ascii_fb}\"; "
+                   f"filename*=UTF-8''{urllib.parse.quote(fname)}")
     return Response(content=data, media_type="application/pdf",
                     headers={"Content-Disposition": disposition})
