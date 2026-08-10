@@ -92,7 +92,8 @@ def fts_context(conn, user_id, query, subject=None, grade=None, limit=3) -> List
         return []
 
 
-def run(conn, user_id, function, system, user_text, schema=None, max_tokens=2000) -> dict:
+def run(conn, user_id, function, system, user_text, schema=None, max_tokens=2000,
+        bypass_cache=False) -> dict:
     """Führt einen KI-Call aus (mit lokalem Cache + Kosten-Logging). Wirft NoApiKey ohne Key."""
     api_key = get_api_key(conn, user_id)
     if not api_key:
@@ -101,7 +102,7 @@ def run(conn, user_id, function, system, user_text, schema=None, max_tokens=2000
     cache_key = hashlib.sha256(
         f"{function}|{model}|{system}|{user_text}|{json.dumps(schema, sort_keys=True)}".encode()
     ).hexdigest()
-    if cache_key in _prompt_cache:
+    if not bypass_cache and cache_key in _prompt_cache:
         return {"text": _prompt_cache[cache_key], "cached": True}
 
     client = _make_client(api_key)

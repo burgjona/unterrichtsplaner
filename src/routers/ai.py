@@ -17,9 +17,9 @@ router = APIRouter(prefix="/ai", tags=["ai"])
 _STR = {"type": "string"}
 
 
-def _run_json(conn, user_id, function, system, user_text, schema, max_tokens=2000):
+def _run_json(conn, user_id, function, system, user_text, schema, max_tokens=2000, bypass_cache=False):
     try:
-        result = ai.run(conn, user_id, function, system, user_text, schema, max_tokens)
+        result = ai.run(conn, user_id, function, system, user_text, schema, max_tokens, bypass_cache)
     except ai.NoApiKey:
         raise HTTPException(status_code=400, detail="Kein API-Key hinterlegt – bitte in den Einstellungen eintragen.")
     except ai.ResponseTruncated:
@@ -183,7 +183,10 @@ def stoffplan(body: StoffplanIn, conn: sqlite3.Connection = Depends(get_db),
                      "thematischen Lernbereiche 3–6 integrieren und in den Blocknotizen erwähnen.")
     parts.append("Lernbereiche:\n" + lb_text)
     user_text = "\n\n".join(parts)
-    data, cached = _run_json(conn, user_id, "stoffplan", _STOFF_SYSTEM, user_text, _STOFF_SCHEMA, max_tokens=8000)
+    # Kein Cache: Stoffplan-Vorschlag ist ein bewusster Einzelaufruf, ein gecachter alter
+    # (evtl. unvollständiger) Vorschlag soll nie stillschweigend erneut ausgeliefert werden.
+    data, cached = _run_json(conn, user_id, "stoffplan", _STOFF_SYSTEM, user_text, _STOFF_SCHEMA,
+                              max_tokens=8000, bypass_cache=True)
 
     from ..lib.planning import assign_dates_from_weeks
     ferien_d = [(_d(s), _d(e)) for s, e in ferien]
