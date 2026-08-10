@@ -278,6 +278,7 @@ class CalendarCreate(Base):
     lesson_id: Optional[int] = None
     school_year_id: Optional[int] = None
     is_fixed: bool = False
+    room: Optional[str] = None
 
 
 class CalendarUpdate(Base):
@@ -293,6 +294,7 @@ class CalendarUpdate(Base):
     lesson_id: Optional[int] = None
     school_year_id: Optional[int] = None
     is_fixed: Optional[bool] = None
+    room: Optional[str] = None
 
 
 class CalendarOut(Base):
@@ -309,6 +311,7 @@ class CalendarOut(Base):
     lesson_id: Optional[int] = None
     school_year_id: Optional[int] = None
     is_fixed: bool
+    room: Optional[str] = None
     auto_generated: bool = False
     created_at: str
     updated_at: Optional[str] = None          # U26: Last-write-wins-Zeitstempel (Google-Sync)

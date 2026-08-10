@@ -46,11 +46,11 @@ def create(body: CalendarCreate, conn=Depends(get_db), user_id: int = Depends(ge
         cur = conn.execute(
             """INSERT INTO calendar_entries
                (user_id, class_id, lesson_id, school_year_id, title, entry_date, end_date,
-                start_time, end_time, all_day, entry_type, category_id, is_fixed, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))""",
+                start_time, end_time, all_day, entry_type, category_id, is_fixed, room, updated_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))""",
             (user_id, body.class_id, body.lesson_id, body.school_year_id, body.title,
              body.entry_date, body.end_date, body.start_time, body.end_time,
-             int(body.all_day), body.entry_type, body.category_id, int(body.is_fixed)),
+             int(body.all_day), body.entry_type, body.category_id, int(body.is_fixed), body.room),
         )
         conn.commit()
     except sqlite3.IntegrityError as exc:

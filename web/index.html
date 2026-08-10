@@ -312,6 +312,9 @@
               <div><label>Klasse</label><select id="calEntryClass"></select></div>
               <div><label>Typ</label><select id="calEntryType"><option value="lu">Lernerfolgskontrolle</option><option value="exam">Klassenarbeit/Präsentation</option><option value="normal">Sonstiges</option></select></div>
             </div>
+            <div class="row" style="margin-top:8px;">
+              <div><label>Zimmer</label><input id="calEntryRoom" placeholder="z. B. 204" /></div>
+            </div>
             <label style="display:flex; align-items:center; gap:8px; margin-top:8px;"><input type="checkbox" id="calEntryFixed" style="width:auto;" /> Fixer Termin (nicht durch die Verplanung verschiebbar)</label>
             <div style="margin-top:10px; display:flex; gap:8px;"><button class="btn" id="calSaveEntryBtn">Termin speichern</button><button class="btn secondary" id="calEntryCancel">Abbrechen</button></div>
           </div>
@@ -504,6 +507,7 @@
         <div id="editHint" class="note-box hidden" style="margin-bottom:10px;">
           Bearbeite: <strong id="editHintTitle"></strong>
           <button class="btn small secondary" id="cancelEditBtn" style="margin-left:10px;">Abbrechen / Neue Stunde</button>
+          <button class="btn small danger" id="deleteLessonBtn" style="margin-left:10px;">Stunde löschen</button>
         </div>
         <div id="stundeEinordnungHint" class="note-box hidden" style="margin-bottom:10px;">
           Diese Stunde ist keinem Lernbereich zugeordnet (frei geplant).
@@ -532,9 +536,9 @@
         </div>
         <div id="lessonSeqRow" class="row hidden" style="margin-top:10px;">
           <div>
-            <label>Aus Sequenzplan übernehmen (optional)</label>
-            <select id="lessonSeq"><option value="">– keine Sequenzstunde –</option></select>
-            <div class="hint">Übernimmt Titel, Lernbereich und Grobziel der gewählten Sequenzstunde und verknüpft sie mit dieser Stunde.</div>
+            <label>Aus Sequenzplan übernehmen (optional, bis zu 2 für eine Doppelstunde)</label>
+            <div id="lessonSeqList"></div>
+            <div class="hint">Übernimmt Titel, Lernbereich und Grobziel der gewählten Sequenzstunde(n) und verknüpft sie mit dieser Stunde. Bei 2 gewählten Stunden wird die Stundendauer automatisch auf 90 Minuten gesetzt. Keine Auswahl (z. B. bei einer Vertretung) ist möglich.</div>
           </div>
         </div>
         <div id="lueHint" class="note-box hidden">Diese Stunde dient als Übungsstunde vor der Lernerfolgskontrolle – Fokus auf intelligentes Üben (Meyer-Merkmal 8) und Fehleranalyse legen.</div>

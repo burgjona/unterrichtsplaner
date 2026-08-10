@@ -335,7 +335,7 @@ function clearLessonForm() {
   renderLernziele();
   $("lueHint").classList.toggle("hidden", $("lessonType").value !== "Übungsstunde vor LUE");
   updateLessonLbOptions(null);
-  pendingSeqLinkId = null;
+  pendingSeqLinkIds = [];
   updateLessonSeqOptions();
   resetLocalUndo();   // andere/neue Stunde geladen – alte Block-Snapshots (Phasen, Klafki, Lernziele) wären falsch.
 }
@@ -453,22 +453,26 @@ function updateLessonLbProgress() {
   out.textContent = `${planned % 1 === 0 ? planned : planned.toFixed(1)} von ${soll} Stunden verplant`;
 }
 
-// Sequenzstunde, die beim nächsten Speichern der Stunde verknüpft werden soll (gesetzt durch
-// Auswahl in #lessonSeq, verbraucht/zurückgesetzt in saveLesson()/clearLessonForm()).
-let pendingSeqLinkId = null;
+// Sequenzstunde(n) (max. 2, für eine Doppelstunde), die beim nächsten Speichern der Stunde
+// verknüpft werden sollen (gesetzt durch Auswahl in #lessonSeqList, verbraucht/zurückgesetzt
+// in saveLesson()/clearLessonForm()).
+let pendingSeqLinkIds = [];
 let seqOptionsCache = [];   // [{id, blockId, title, grobziel, lernbereichId, isLk, isReferat, isKomplexeArbeit, isKlassenarbeit}]
 
-// Befüllt #lessonSeq mit den noch unverknüpften Sequenzstunden aller Blöcke des aktiven
-// Stoffplans der gewählten Klasse (analog updateLessonLbOptions).
+// Befüllt #lessonSeqList mit den noch unverknüpften Sequenzstunden aller Blöcke des aktiven
+// Stoffplans der gewählten Klasse (analog updateLessonLbOptions). Checkbox-Liste statt Select,
+// damit bis zu 2 Stunden (Doppelstunde) oder auch keine (z. B. Vertretung) gewählt werden können.
 async function updateLessonSeqOptions() {
-  const row = $("lessonSeqRow"), sel = $("lessonSeq");
-  if (!row || !sel) return;
+  const row = $("lessonSeqRow"), list = $("lessonSeqList");
+  if (!row || !list) return;
   const clsId = $("lessonClass").value ? Number($("lessonClass").value) : null;
   const ap = clsId ? state.activePlans[clsId] : null;
   seqOptionsCache = [];
+  pendingSeqLinkIds = [];
+  lastAutoSeqTitle = "";
   if (!clsId || !ap || !ap.blocks.length) {
     row.classList.add("hidden");
-    sel.innerHTML = '<option value="">– keine Sequenzstunde –</option>';
+    list.innerHTML = "";
     return;
   }
   const cls = state.classes.find((c) => c.id === clsId);
@@ -487,23 +491,59 @@ async function updateLessonSeqOptions() {
     } catch (e) { return []; }
   }));
   seqOptionsCache = perBlock.flat();
-  sel.innerHTML = '<option value="">– keine Sequenzstunde –</option>' +
-    seqOptionsCache.map((s) => `<option value="${s.id}">${esc(s.blockLabel)} – ${esc(s.title)}</option>`).join("");
+  renderLessonSeqList();
   row.classList.toggle("hidden", seqOptionsCache.length === 0);
-  sel.value = "";
+}
+
+function renderLessonSeqList() {
+  const list = $("lessonSeqList");
+  if (!list) return;
+  if (!seqOptionsCache.length) { list.innerHTML = '<p class="muted small">Keine offenen Sequenzstunden.</p>'; return; }
+  const capped = pendingSeqLinkIds.length >= 2;
+  list.innerHTML = seqOptionsCache.map((s) => {
+    const checked = pendingSeqLinkIds.includes(s.id);
+    const disabled = capped && !checked;
+    return `<label class="small" style="display:block; margin-bottom:4px;">
+      <input type="checkbox" data-lesson-seq="${s.id}" ${checked ? "checked" : ""} ${disabled ? "disabled" : ""} style="width:auto;" />
+      ${esc(s.blockLabel)} – ${esc(s.title)}
+    </label>`;
+  }).join("");
+  list.querySelectorAll("[data-lesson-seq]").forEach((cb) => {
+    cb.onchange = () => toggleLessonSeqSelection(Number(cb.dataset.lessonSeq), cb.checked);
+  });
+}
+
+// Titel, den applyLessonSeqSelection zuletzt selbst eingetragen hat – so wird ein manuell
+// überschriebener Titel beim nächsten Toggle nicht wieder verdrängt.
+let lastAutoSeqTitle = "";
+
+function toggleLessonSeqSelection(id, checked) {
+  if (checked) {
+    if (pendingSeqLinkIds.length >= 2) return;
+    pendingSeqLinkIds.push(id);
+  } else {
+    pendingSeqLinkIds = pendingSeqLinkIds.filter((x) => x !== id);
+  }
+  applyLessonSeqSelection();
+  renderLessonSeqList();
 }
 
 function applyLessonSeqSelection() {
-  const id = $("lessonSeq").value ? Number($("lessonSeq").value) : null;
-  pendingSeqLinkId = id;
-  const s = seqOptionsCache.find((x) => x.id === id);
-  if (!s) return;
-  if (!$("lessonTitle").value.trim()) $("lessonTitle").value = s.title;
-  if (s.lernbereichId != null) { $("lessonLb").value = String(s.lernbereichId); updateLessonLbProgress(); }
-  if (s.grobziel && !lessonZiele.some((z) => z.kind === "grob" && z.text === s.grobziel)) {
-    lessonZiele.push({ kind: "grob", text: s.grobziel, bloomStufe: null, phaseSortOrder: null, sortOrder: lessonZiele.length });
-    renderLernziele();
+  const selected = pendingSeqLinkIds.map((id) => seqOptionsCache.find((x) => x.id === id)).filter(Boolean);
+  const joinedTitle = selected.map((s) => s.title).filter(Boolean).join(" / ");
+  if (joinedTitle && ($("lessonTitle").value.trim() === "" || $("lessonTitle").value === lastAutoSeqTitle)) {
+    $("lessonTitle").value = joinedTitle;
   }
+  lastAutoSeqTitle = joinedTitle;
+  const lb = selected.find((s) => s.lernbereichId != null);
+  if (lb) { $("lessonLb").value = String(lb.lernbereichId); updateLessonLbProgress(); }
+  selected.forEach((s) => {
+    if (s.grobziel && !lessonZiele.some((z) => z.kind === "grob" && z.text === s.grobziel)) {
+      lessonZiele.push({ kind: "grob", text: s.grobziel, bloomStufe: null, phaseSortOrder: null, sortOrder: lessonZiele.length });
+    }
+  });
+  renderLernziele();
+  if (selected.length === 2) $("lessonDuration").value = "90";
 }
 
 // Bietet nach dem Verknüpfen einer Sequenzstunde mit Notenart-Flag an, den bereits
@@ -2356,7 +2396,7 @@ function renderCalendar() {
     const entriesHtml = isMonth
       ? (entries.length ? `<div class="cal-dots">` +
           entries.slice(0, 5).map((e) => {
-            const tip = ((!e.allDay && e.startTime) ? e.startTime + " " : "") + e.title;
+            const tip = ((!e.allDay && e.startTime) ? e.startTime + " " : "") + e.title + (e.room ? ` (Zimmer ${e.room})` : "");
             return `<span class="cal-dot" style="background:${entryDotColor(e)}" title="${esc(tip)}"></span>`;
           }).join("") +
           (entries.length > 5 ? `<span class="cal-dot-more">+${entries.length - 5}</span>` : "") + `</div>`
@@ -2442,7 +2482,7 @@ function renderDayAgenda(dStr) {
     const style = color ? ` style="background:${color};color:${readableTextColor(color)}"` : "";
     const time = e.allDay ? "Ganztägig" : ([e.startTime, e.endTime].filter(Boolean).join(" – ") || "—");
     return `<div class="cal-day-agenda-item ${esc(e.entryType)}" data-lesson="${e.lessonId == null ? "" : e.lessonId}" data-entry-id="${e.id}"${style}>` +
-      `<span class="cal-day-agenda-time">${esc(time)}</span><span class="cal-day-agenda-title">${esc(e.title)}</span></div>`;
+      `<span class="cal-day-agenda-time">${esc(time)}</span><span class="cal-day-agenda-title">${esc(e.title)}${e.room ? ` <span class="muted small">· Zimmer ${esc(e.room)}</span>` : ""}</span></div>`;
   }).join("") : `<p class="muted small cal-day-agenda-empty">Keine Termine an diesem Tag.</p>`;
   list.querySelectorAll(".cal-day-agenda-item").forEach((el) => {
     const lid = el.dataset.lesson;
@@ -2470,11 +2510,12 @@ async function saveCalendarEntry() {
       categoryId: $("calEntryCategory").value ? Number($("calEntryCategory").value) : null,
       classId: $("calEntryClass").value ? Number($("calEntryClass").value) : null,
       isFixed: $("calEntryFixed").checked,
+      room: $("calEntryRoom").value.trim() || null,
     });
     $("calEntryTitle").value = ""; $("calEntryEndDate").value = "";
     $("calEntryStartTime").value = ""; $("calEntryEndTime").value = "";
     $("calEntryAllDay").checked = true; $("calEntryTimeRow").style.display = "none";
-    $("calEntryFixed").checked = false;
+    $("calEntryFixed").checked = false; $("calEntryRoom").value = "";
     closeCalEntryPanel();
     await refresh(); toast("Termin gespeichert.");
   } catch (e) { toast(e.message, false); }
@@ -2514,6 +2555,9 @@ function openCalendarEventModal(entryId) {
           <div><label>Klasse</label><select id="evtClass">${classOpts}</select></div>
           <div><label>Typ</label><select id="evtType">${typeOpts}</select></div>
         </div>
+        <div class="row" style="margin-top:8px;">
+          <div><label>Zimmer</label><input id="evtRoom" value="${esc(e.room || "")}" placeholder="z. B. 204" /></div>
+        </div>
         <label style="display:flex; align-items:center; gap:8px; margin-top:8px;"><input type="checkbox" id="evtFixed" style="width:auto;"${e.isFixed ? " checked" : ""} /> Fixer Termin (nicht durch die Verplanung verschiebbar)</label>
         ${e.googleEventId ? `<p class="muted small" style="margin-top:8px;">Mit Google-Kalender verknüpft — Änderungen werden beim nächsten Sync übertragen.</p>` : ""}
       </div>
@@ -2546,6 +2590,7 @@ async function saveCalendarEventModal(id) {
       categoryId: $("evtCategory").value ? Number($("evtCategory").value) : null,
       classId: $("evtClass").value ? Number($("evtClass").value) : null,
       isFixed: $("evtFixed").checked,
+      room: $("evtRoom").value.trim() || null,
     });
     closeModal();
     await refresh(); toast("Termin aktualisiert.");
@@ -3174,8 +3219,22 @@ function kumuliertBlockHtml(b, bi) {
 function kumuliertCardHtml(card, bi, ci) {
   const chk = (field, label) =>
     `<label class="small"><input type="checkbox" data-ka-f="${field}" data-ka-bi="${bi}" data-ka-ci="${ci}" ${card[field] ? "checked" : ""}> ${label}</label>`;
+  const collapsed = !!card.collapsed;
+  const toggleBtn = `<button class="btn tiny secondary" data-ka-toggle="${bi}-${ci}" title="${collapsed ? "Ausklappen" : "Einklappen"}">${collapsed ? "▸" : "▾"}</button>`;
+  if (collapsed) {
+    return `<div class="seq-card seq-card-collapsed" data-ka-card="${bi}-${ci}">
+      <div class="seq-card-head">
+        ${toggleBtn}
+        <span class="seq-card-num">${ci + 1}.</span>
+        <span class="seq-card-collapsed-title">${esc(card.title) || '<span class="muted">Titel der Stunde</span>'}</span>
+        <span class="muted small">${card.date ? deDate(card.date) : "kein Datum"}</span>
+        <button class="btn tiny danger" data-ka-del="${bi}-${ci}" title="Stunde entfernen">✕</button>
+      </div>
+    </div>`;
+  }
   return `<div class="seq-card" data-ka-card="${bi}-${ci}" data-local-undo-block="ka-${bi}-${ci}">
     <div class="seq-card-head">
+      ${toggleBtn}
       <span class="seq-card-num">${ci + 1}.</span>
       <input type="text" class="seq-card-title" data-ka-f="title" data-ka-bi="${bi}" data-ka-ci="${ci}" value="${esc(card.title)}" placeholder="Titel der Stunde" />
       <button class="btn tiny secondary" data-local-undo-btn disabled title="Letzte ungespeicherte Änderung an dieser Karte rückgängig machen">Rückgängig</button>
@@ -3203,6 +3262,11 @@ function wireKumulierteAnsichtBlocks(box) {
       kumuliertBlocks[bi].cards[ci][f] = el.type === "checkbox" ? el.checked : el.value;
     });
   });
+  box.querySelectorAll("[data-ka-toggle]").forEach((b) => b.onclick = () => {
+    const [bi, ci] = b.dataset.kaToggle.split("-").map(Number);
+    kumuliertBlocks[bi].cards[ci].collapsed = !kumuliertBlocks[bi].cards[ci].collapsed;
+    renderKumulierteAnsichtFromState(box);
+  });
   box.querySelectorAll("[data-ka-clear-date]").forEach((b) => b.onclick = () => {
     const [bi, ci] = b.dataset.kaClearDate.split("-").map(Number);
     kumuliertBlocks[bi].cards[ci].date = "";
@@ -3213,11 +3277,14 @@ function wireKumulierteAnsichtBlocks(box) {
     kumuliertBlocks[bi].cards.splice(ci, 1);
     renderKumulierteAnsichtFromState(box);
   });
-  box.querySelectorAll("[data-ka-add]").forEach((b) => b.onclick = () => {
+  box.querySelectorAll("[data-ka-add]").forEach((b) => b.onclick = async () => {
     const bi = Number(b.dataset.kaAdd);
+    let date = "";
+    try { date = (await API.get(`/sequenz-stunden/suggest-date?blockId=${kumuliertBlocks[bi].id}`)).date || ""; }
+    catch (e) { /* best effort */ }
     kumuliertBlocks[bi].cards.push({
       id: null, title: "", grobziel: "", isLk: false, isReferat: false,
-      isKomplexeArbeit: false, isKlassenarbeit: false, weitereNotenart: "", date: "",
+      isKomplexeArbeit: false, isKlassenarbeit: false, weitereNotenart: "", date,
     });
     renderKumulierteAnsichtFromState(box);
   });
@@ -3424,12 +3491,15 @@ async function seqShiftCard(idx) {
   } catch (e) { toast(e.message, false); }
 }
 
-function seqAddCard() {
+async function seqAddCard() {
   const blockId = Number($("seqBlock").value);
   if (!blockId) { toast("Bitte zuerst einen Block wählen.", false); return; }
+  let date = "";
+  try { date = (await API.get(`/sequenz-stunden/suggest-date?blockId=${blockId}`)).date || ""; }
+  catch (e) { /* best effort – ohne Stundenplan/Blockstart bleibt das Datum leer */ }
   seqCards.push({
     id: null, title: "", grobziel: "", isLk: false, isReferat: false,
-    isKomplexeArbeit: false, isKlassenarbeit: false, weitereNotenart: "", date: "",
+    isKomplexeArbeit: false, isKlassenarbeit: false, weitereNotenart: "", date,
   });
   renderSeqCards();
 }
@@ -3531,6 +3601,7 @@ function openLessonModal(l) {
       <button class="modal-close" id="modalCloseBtn">Schließen</button>
       <button class="btn small secondary" id="modalAsuvBtn" style="float:right; margin-right:10px;">ASUV-Entwurf</button>
       <button class="btn small secondary" id="modalEditBtn" style="float:right; margin-right:10px;">Stunde bearbeiten</button>
+      <button class="btn small danger" id="modalDeleteBtn" style="float:right; margin-right:10px;">Löschen</button>
       <h2>${esc(l.title)}</h2>
       <p class="muted small">${esc(l.subject)} – Klasse ${esc(l.grade || "?")} – ${esc(l.lessonType || "")} – ${esc(l.durationMinutes || 45)} Min. ${l.time ? "– " + esc(l.time) + " Uhr" : ""}</p>
       <div class="modal-section"><h3>Lernziele</h3>${zieleHtml}</div>
@@ -3548,6 +3619,16 @@ function openLessonModal(l) {
   $("modalCloseBtn").onclick = closeModal;
   $("modalAsuvBtn").onclick = () => { closeModal(); showView("asuv"); loadAsuv(l.id); };
   $("modalEditBtn").onclick = () => { closeModal(); showView("stunde"); loadLessonIntoForm(l); };
+  $("modalDeleteBtn").onclick = async () => {
+    if (!window.confirm("Diese Stunde wirklich löschen?")) return;
+    try {
+      await API.del(`/lessons/${l.id}`);
+      if (editingLessonId === l.id) { resetLessonEditState(); clearLessonForm(); }
+      closeModal();
+      await refresh();
+      toast("Stunde gelöscht.");
+    } catch (e) { toast(e.message, false); }
+  };
   loadModalMaterials(l);
   $("modalMatUpload").onclick = async () => {
     const f = $("modalMatFile").files[0];
@@ -3621,11 +3702,11 @@ async function saveLesson() {
     } else {
       saved = await API.post("/lessons", { ...body, time: null });
     }
-    if (pendingSeqLinkId != null) {
-      const seqInfo = seqOptionsCache.find((x) => x.id === pendingSeqLinkId);
+    for (const seqId of pendingSeqLinkIds) {
+      const seqInfo = seqOptionsCache.find((x) => x.id === seqId);
       try {
-        await API.post(`/sequenz-stunden/${pendingSeqLinkId}/link`, { lessonId: saved.id });
-        await offerSeqCalendarEntry(pendingSeqLinkId, seqInfo, body.date);
+        await API.post(`/sequenz-stunden/${seqId}/link`, { lessonId: saved.id });
+        await offerSeqCalendarEntry(seqId, seqInfo, body.date);
       }
       catch (e) { toast("Stunde gespeichert, Verknüpfung mit der Sequenzstunde ist aber fehlgeschlagen: " + e.message, false); }
     }
@@ -3633,6 +3714,18 @@ async function saveLesson() {
     resetLessonEditState();
     clearLessonForm(); await refresh();
     toast(updated ? "Stunde aktualisiert." : "Stunde gespeichert.");
+  } catch (e) { toast(e.message, false); }
+}
+
+async function deleteLesson() {
+  if (!editingLessonId) return;
+  if (!window.confirm("Diese Stunde wirklich löschen?")) return;
+  try {
+    await API.del("/lessons/" + editingLessonId);
+    resetLessonEditState();
+    clearLessonForm();
+    await refresh();
+    toast("Stunde gelöscht.");
   } catch (e) { toast(e.message, false); }
 }
 
@@ -5374,8 +5467,8 @@ function wireEvents() {
   $("spAiBtn").onclick = aiArrangeSeats;
   $("saveLesson").onclick = saveLesson;
   $("cancelEditBtn").onclick = () => { resetLessonEditState(); clearLessonForm(); toast("Formular geleert – neue Stunde."); };
+  $("deleteLessonBtn").onclick = deleteLesson;
   $("lessonClass").addEventListener("change", () => { updateLessonLbOptions(null); updateLessonSeqOptions(); });
-  $("lessonSeq").addEventListener("change", applyLessonSeqSelection);
   $("lessonLb").addEventListener("change", updateLessonLbProgress);
   $("saveReflect").onclick = saveReflect;
 

@@ -131,18 +131,23 @@ def test_link_and_unlink(client, auth):
     assert r2.json()["lessonId"] is None
 
 
-def test_link_rejects_double_link(client, auth):
+def test_link_allows_up_to_two_for_doppelstunde(client, auth):
     cid = _class(client)
     plan = _plan(client, cid)
     bid = _block_id(plan)
     s1 = _stunde(client, bid, "A")
     s2 = _stunde(client, bid, "B")
+    s3 = _stunde(client, bid, "C")
     lesson = client.post("/api/lessons", json={
         "title": "Testlektion", "subject": "Deutsch", "grade": 7, "classId": cid,
     }).json()
     assert client.post(f"/api/sequenz-stunden/{s1['id']}/link",
                        json={"lessonId": lesson["id"]}).status_code == 200
-    r = client.post(f"/api/sequenz-stunden/{s2['id']}/link", json={"lessonId": lesson["id"]})
+    # Doppelstunde: eine zweite Sequenzstunde darf auf dieselbe Lesson zeigen.
+    assert client.post(f"/api/sequenz-stunden/{s2['id']}/link",
+                       json={"lessonId": lesson["id"]}).status_code == 200
+    # Eine dritte wird abgelehnt (max. 2 je Lesson).
+    r = client.post(f"/api/sequenz-stunden/{s3['id']}/link", json={"lessonId": lesson["id"]})
     assert r.status_code == 400
 
 
@@ -275,4 +280,47 @@ def test_requires_login(client):
 
 def test_foreign_block_rejected(client, auth):
     r = client.post("/api/sequenz-stunden", json={"blockId": 9999, "title": "X"})
+    assert r.status_code == 404
+
+
+def test_suggest_date_without_timetable_returns_null(client, auth):
+    cid = _class(client)
+    plan = _plan(client, cid)
+    bid = _block_id(plan)
+    r = client.get(f"/api/sequenz-stunden/suggest-date?blockId={bid}")
+    assert r.status_code == 200
+    assert r.json()["date"] is None
+
+
+def test_suggest_date_uses_block_start_then_last_stunde(client, auth):
+    cid = _class(client)
+    kinds = client.get("/api/stundenplan/kinds").json()
+    slots = client.get("/api/stundenplan/slots").json()
+    plans = client.get("/api/stundenplan/plans").json()   # löst Seeding aus (Default-Plan gilt ab "heute")
+    r = client.post("/api/stundenplan/entries", json={
+        "planId": plans[0]["id"], "slotId": slots[0]["id"], "kindId": kinds[0]["id"],
+        "classId": cid, "weekday": 0,  # Montag
+    })
+    assert r.status_code == 201, r.text
+
+    r = client.post("/api/stoff-plans", json={
+        "classId": cid, "title": "Zukunftsplan",
+        "blocks": [{"lbCode": "LB3", "title": "Lesen", "ustd": 20,
+                    "startDate": "2030-01-07", "endDate": "2030-02-10"}],   # Montag
+    })
+    assert r.status_code == 201, r.text
+    bid = _block_id(r.json())
+
+    r = client.get(f"/api/sequenz-stunden/suggest-date?blockId={bid}")
+    assert r.status_code == 200
+    assert r.json()["date"] == "2030-01-07"
+
+    _stunde(client, bid, "A", date="2030-01-07")
+    r = client.get(f"/api/sequenz-stunden/suggest-date?blockId={bid}")
+    assert r.status_code == 200
+    assert r.json()["date"] == "2030-01-14"   # nächster Montag nach der zuletzt terminierten Stunde
+
+
+def test_suggest_date_unknown_block_rejected(client, auth):
+    r = client.get("/api/sequenz-stunden/suggest-date?blockId=9999")
     assert r.status_code == 404

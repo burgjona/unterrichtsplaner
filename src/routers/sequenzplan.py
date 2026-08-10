@@ -1,6 +1,7 @@
 """Sequenzplan: Einzelstunden-Ebene je Stoffplan-Block (eigenständiges Objekt, optionale
-1:1-Verknüpfung zu einer lessons-Zeile über sequenz_stunden.lesson_id). Nutzer-Scoping läuft
-über den referenzierten Block -> Stoffplan (stoff_plan_blocks.plan_id -> stoff_plans.user_id).
+Verknüpfung zu einer lessons-Zeile über sequenz_stunden.lesson_id -- 1:1 im Regelfall, 2:1 bei
+einer aus 2 Sequenzstunden gebildeten Doppelstunde). Nutzer-Scoping läuft über den referenzierten
+Block -> Stoffplan (stoff_plan_blocks.plan_id -> stoff_plans.user_id).
 """
 import sqlite3
 from datetime import date, timedelta
@@ -54,6 +55,27 @@ def list_(block_id: int = Query(alias="blockId"), conn=Depends(get_db), user_id:
         (block_id, user_id),
     ).fetchall()
     return [_out(r) for r in rows]
+
+
+@router.get("/suggest-date")
+def suggest_date(block_id: int = Query(alias="blockId"), conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+    """Vorschlag für das voraussichtliche Datum einer neuen Sequenzstunde: nächster freier
+    Unterrichtstermin der Klasse nach der zuletzt terminierten Stunde im Block – ohne bereits
+    terminierte Stunde wird ab dem Blockstart aus dem Stoffverteilungsplan gesucht."""
+    block = _load_block(conn, user_id, block_id)
+    last = conn.execute(
+        "SELECT date FROM sequenz_stunden WHERE block_id = ? AND user_id = ? AND date IS NOT NULL "
+        "ORDER BY date DESC LIMIT 1",
+        (block_id, user_id),
+    ).fetchone()
+    if last:
+        after = last["date"]
+    elif block["start_date"]:
+        after = (date.fromisoformat(block["start_date"]) - timedelta(days=1)).isoformat()
+    else:
+        return {"date": None}
+    slot = _next_class_slot(conn, user_id, block["plan_class_id"], after)
+    return {"date": slot["date"] if slot else None}
 
 
 @router.post("", response_model=SequenzStundeOut, status_code=201)
@@ -144,12 +166,13 @@ def link(sid: int, body: SequenzStundeLinkIn, conn=Depends(get_db), user_id: int
         row_or_404(conn.execute(
             "SELECT id FROM lessons WHERE id = ? AND user_id = ?", (body.lesson_id, user_id)
         ).fetchone(), "Stunde")
-        already = conn.execute(
-            "SELECT id FROM sequenz_stunden WHERE lesson_id = ? AND user_id = ? AND id != ?",
+        # Bis zu 2 Sequenzstunden je Lesson (Doppelstunde: 2 Einzelstunden -> 1 Lesson à 90 Min.).
+        linked_count = conn.execute(
+            "SELECT COUNT(*) AS n FROM sequenz_stunden WHERE lesson_id = ? AND user_id = ? AND id != ?",
             (body.lesson_id, user_id, sid),
-        ).fetchone()
-        if already:
-            raise HTTPException(status_code=400, detail="Diese Stunde ist bereits mit einer anderen Sequenzstunde verknüpft.")
+        ).fetchone()["n"]
+        if linked_count >= 2:
+            raise HTTPException(status_code=400, detail="Diese Stunde ist bereits mit 2 Sequenzstunden verknüpft.")
     with conn:
         conn.execute(
             "UPDATE sequenz_stunden SET lesson_id = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?",
