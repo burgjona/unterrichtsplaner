@@ -108,6 +108,59 @@ async function restoreSequenzStunden(blockId, targetRows) {
     });
   }
 }
+
+/* ---------- Lokales Block-Undo (Unterrichtsplanung): Phasentabelle, Klafki-Reflexion,
+   Lernziel-Karten. Anders als das server-seitige Undo oben: rein im Browser, ein dauerhaft
+   sichtbarer (bis zur Nutzung deaktivierter) Button je Block macht die letzte lokale Änderung
+   dieses einen Blocks rückgängig – auch bevor „Stunde speichern" gedrückt wurde. Ein Block ist
+   ein Container mit [data-local-undo-block="<key>"] und genau einem [data-local-undo-btn] darin.
+   Delegiert auf document, damit es auch für später (z. B. bei renderLernziele()) neu ins DOM
+   eingefügte Blöcke ohne erneutes Verdrahten funktioniert. */
+const localUndoSnapshots = new Map();   // blockKey -> Array der Feldwerte vor der ersten Änderung
+
+function localUndoFields(block) {
+  return [...block.querySelectorAll("input, textarea, select")];
+}
+
+document.addEventListener("focusin", (e) => {
+  const block = e.target.closest("[data-local-undo-block]");
+  if (!block) return;
+  const key = block.dataset.localUndoBlock;
+  if (!localUndoSnapshots.has(key)) {
+    localUndoSnapshots.set(key, localUndoFields(block).map((f) => f.value));
+  }
+});
+["input", "change"].forEach((evt) => document.addEventListener(evt, (e) => {
+  const block = e.target.closest("[data-local-undo-block]");
+  if (!block || !localUndoSnapshots.has(block.dataset.localUndoBlock)) return;
+  const btn = block.querySelector("[data-local-undo-btn]");
+  if (btn) btn.disabled = false;
+}));
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-local-undo-btn]");
+  if (!btn) return;
+  const block = btn.closest("[data-local-undo-block]");
+  const key = block.dataset.localUndoBlock;
+  const snapshot = localUndoSnapshots.get(key);
+  if (!snapshot) return;
+  localUndoFields(block).forEach((f, i) => { f.value = snapshot[i]; });
+  localUndoSnapshots.delete(key);
+  btn.disabled = true;
+});
+
+// Verwirft gemerkte Block-Änderungen (z. B. beim Laden einer anderen Stunde) und deaktiviert
+// die zugehörigen Buttons wieder. Ohne keyPrefix: alles zurücksetzen.
+function resetLocalUndo(keyPrefix) {
+  [...localUndoSnapshots.keys()].forEach((key) => {
+    if (!keyPrefix || key.startsWith(keyPrefix)) localUndoSnapshots.delete(key);
+  });
+  document.querySelectorAll("[data-local-undo-block]").forEach((block) => {
+    if (keyPrefix && !block.dataset.localUndoBlock.startsWith(keyPrefix)) return;
+    const btn = block.querySelector("[data-local-undo-btn]");
+    if (btn) btn.disabled = true;
+  });
+}
+
 function isoWeek(d) {
   const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
   const dayNum = (date.getUTCDay() + 6) % 7;
@@ -177,8 +230,12 @@ function buildPhases() {
   phaseNames.forEach((p, i) => {
     const div = document.createElement("div");
     div.className = "phase";
+    div.dataset.localUndoBlock = `phase-${i}`;
     div.innerHTML =
-      `<strong>${p}</strong>
+      `<div class="phase-head">
+         <strong>${p}</strong>
+         <button class="btn tiny secondary" data-local-undo-btn disabled title="Letzte Änderung in dieser Phase rückgängig machen">Rückgängig</button>
+       </div>
        <div class="row-4" style="margin-top:10px;">
          <input placeholder="Zeit (Min.)" id="time${i}" />
          <select id="social${i}"><option>EA</option><option>PA</option><option>GA</option><option>Plenum</option></select>
@@ -217,6 +274,7 @@ let lessonZiele = [];   // [{kind:'grob'|'fein', text, bloomStufe, phaseSortOrde
 function renderLernziele() {
   const wrap = $("lernzieleList");
   if (!wrap) return;
+  resetLocalUndo("lernziel-");   // Karten-Indizes verschieben sich hier ggf. – alte Snapshots wären falsch zugeordnet.
   if (!lessonZiele.length) {
     wrap.innerHTML = '<p class="muted small">Noch keine Lernziele. „Ziel hinzufügen“ oder „✨ Lernziele vorschlagen“.</p>';
     return;
@@ -227,8 +285,12 @@ function renderLernziele() {
       .concat(BLOOM_STUFEN.map((b) => `<option value="${b}" ${z.bloomStufe === b ? "selected" : ""}>${b}</option>`)).join("");
     const phaseOpts = ['<option value="">– keine Phase –</option>']
       .concat(phaseNames.map((p, pi) => `<option value="${pi}" ${String(z.phaseSortOrder) === String(pi) ? "selected" : ""}>${esc(p)}</option>`)).join("");
-    return `<div class="phase" style="margin-top:8px;">
-      <div class="row-4" style="margin-top:0;">
+    return `<div class="phase" style="margin-top:8px;" data-local-undo-block="lernziel-${i}">
+      <div class="phase-head">
+        <strong>Lernziel ${i + 1}</strong>
+        <button class="btn tiny secondary" data-local-undo-btn disabled title="Letzte Änderung an diesem Lernziel rückgängig machen">Rückgängig</button>
+      </div>
+      <div class="row-4" style="margin-top:10px;">
         <select data-zk="${i}"><option value="grob" ${isGrob ? "selected" : ""}>Grobziel</option><option value="fein" ${!isGrob ? "selected" : ""}>Feinziel</option></select>
         <select data-zb="${i}">${bloomOpts}</select>
         <select data-zp="${i}">${phaseOpts}</select>
@@ -275,6 +337,7 @@ function clearLessonForm() {
   updateLessonLbOptions(null);
   pendingSeqLinkId = null;
   updateLessonSeqOptions();
+  resetLocalUndo();   // andere/neue Stunde geladen – alte Block-Snapshots (Phasen, Klafki, Lernziele) wären falsch.
 }
 
 /* ---------- Bearbeitungsmodus Unterrichtsplanung ---------- */
@@ -2897,7 +2960,8 @@ async function renderStoffPlanEditor(id) {
   try { p = await API.get(`/stoff-plans/${id}`); }
   catch (e) { toast(e.message, false); return; }
   const rows = (p.blocks || []).map((b, i) =>
-    `<tr data-i="${i}">
+    `<tbody data-local-undo-block="stoffblock-${i}">
+    <tr data-i="${i}">
       <td>${esc(b.lbCode || "")}</td>
       <td><input type="text" data-f="title" value="${esc(b.title || "")}" /></td>
       <td><input type="number" data-f="ustd" min="0" value="${esc(b.ustd ?? "")}" style="width:70px;" /></td>
@@ -2906,17 +2970,21 @@ async function renderStoffPlanEditor(id) {
     </tr>
     <tr class="stoff-note-row">
       <td colspan="5" class="stoff-note-cell">
-        <label class="small stoff-note-label">Hinweis</label>
+        <div class="stoff-note-head">
+          <label class="small stoff-note-label">Hinweis</label>
+          <button class="btn tiny secondary" data-local-undo-btn disabled title="Letzte ungespeicherte Änderung an diesem Block rückgängig machen">Rückgängig</button>
+        </div>
         <textarea class="stoff-note-textarea" data-note-i="${i}" data-f="conflictNote" rows="2">${esc(b.conflictNote || "")}</textarea>
       </td>
-    </tr>`).join("");
+    </tr>
+    </tbody>`).join("");
   box.innerHTML = `
     <div class="stoff-plan-edit-inner">
       <label class="small">Titel</label>
       <input type="text" data-edit-title value="${esc(p.title)}" style="width:100%; margin-bottom:8px;" />
       <div class="table-scroll"><table class="stoff-edit-table">
         <thead><tr><th>LB</th><th>Thema</th><th>Ustd.</th><th>Beginn</th><th>Ende</th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="5" class="muted small">Keine Blöcke.</td></tr>'}</tbody>
+        ${rows || '<tbody><tr><td colspan="5" class="muted small">Keine Blöcke.</td></tr></tbody>'}
       </table></div>
       <div style="margin-top:10px;">
         <button class="btn small" data-sp-save="${id}">Änderungen speichern</button>
@@ -3106,10 +3174,11 @@ function kumuliertBlockHtml(b, bi) {
 function kumuliertCardHtml(card, bi, ci) {
   const chk = (field, label) =>
     `<label class="small"><input type="checkbox" data-ka-f="${field}" data-ka-bi="${bi}" data-ka-ci="${ci}" ${card[field] ? "checked" : ""}> ${label}</label>`;
-  return `<div class="seq-card" data-ka-card="${bi}-${ci}">
+  return `<div class="seq-card" data-ka-card="${bi}-${ci}" data-local-undo-block="ka-${bi}-${ci}">
     <div class="seq-card-head">
       <span class="seq-card-num">${ci + 1}.</span>
       <input type="text" class="seq-card-title" data-ka-f="title" data-ka-bi="${bi}" data-ka-ci="${ci}" value="${esc(card.title)}" placeholder="Titel der Stunde" />
+      <button class="btn tiny secondary" data-local-undo-btn disabled title="Letzte ungespeicherte Änderung an dieser Karte rückgängig machen">Rückgängig</button>
       <button class="btn tiny danger" data-ka-del="${bi}-${ci}" title="Stunde entfernen">✕</button>
     </div>
     <textarea class="seq-card-grobziel" data-ka-f="grobziel" data-ka-bi="${bi}" data-ka-ci="${ci}" rows="2" placeholder="Grobziel">${esc(card.grobziel)}</textarea>
@@ -3155,6 +3224,7 @@ function wireKumulierteAnsichtBlocks(box) {
 }
 
 function renderKumulierteAnsichtFromState(box) {
+  resetLocalUndo("ka-");   // Block-/Karten-Indizes verschieben sich hier ggf. – alte Snapshots wären falsch zugeordnet.
   box.querySelector(".ka-blocks").innerHTML =
     kumuliertBlocks.map((b, bi) => kumuliertBlockHtml(b, bi)).join("")
     || '<p class="muted small">Keine Blöcke erfasst.</p>';
@@ -3270,13 +3340,14 @@ async function loadSeqCardsFromServer() {
 function seqCardHtml(card, idx) {
   const chk = (field, label) =>
     `<label class="small"><input type="checkbox" data-seq-f="${field}" data-seq-i="${idx}" ${card[field] ? "checked" : ""}> ${label}</label>`;
-  return `<div class="seq-card" data-seq-card="${idx}">
+  return `<div class="seq-card" data-seq-card="${idx}" data-local-undo-block="seq-${idx}">
     <div class="seq-card-head">
       <span class="seq-card-num">${idx + 1}.</span>
       <input type="text" class="seq-card-title" data-seq-f="title" data-seq-i="${idx}" value="${esc(card.title)}" placeholder="Titel der Stunde" />
       <button class="btn tiny secondary" data-seq-up="${idx}" ${idx === 0 ? "disabled" : ""} title="Nach vorn">↑</button>
       <button class="btn tiny secondary" data-seq-down="${idx}" ${idx === seqCards.length - 1 ? "disabled" : ""} title="Nach hinten (Position)">↓</button>
       <button class="btn tiny secondary" data-seq-shift="${idx}" ${card.id == null ? "disabled" : ""} title="Diese Stunde hat nicht gereicht – ganze Sequenz ab hier eine Position nach hinten schieben">Nicht gereicht</button>
+      <button class="btn tiny secondary" data-local-undo-btn disabled title="Letzte ungespeicherte Änderung an dieser Karte rückgängig machen">Rückgängig</button>
       <button class="btn tiny danger" data-seq-del="${idx}" title="Stunde entfernen">✕</button>
     </div>
     <textarea class="seq-card-grobziel" data-seq-f="grobziel" data-seq-i="${idx}" rows="2" placeholder="Grobziel">${esc(card.grobziel)}</textarea>
@@ -3296,6 +3367,7 @@ function seqCardHtml(card, idx) {
 function renderSeqCards() {
   const wrap = $("seqCards"), summary = $("seqSummary");
   if (!wrap) return;
+  resetLocalUndo("seq-");   // Karten-Indizes verschieben sich hier ggf. – alte Snapshots wären falsch zugeordnet.
   const blockId = Number($("seqBlock").value);
   if (!blockId) {
     wrap.innerHTML = '<p class="muted small">Bitte Klasse und Block wählen.</p>';

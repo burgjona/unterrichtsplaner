@@ -98,6 +98,8 @@ th, td { padding:10px 10px; text-align:left; vertical-align:top; }
 tbody tr { background:var(--surface); box-shadow:0 3px 10px rgba(20,83,45,.05); }
 tbody tr td:first-child { border-radius:10px 0 0 10px; } tbody tr td:last-child { border-radius:0 10px 10px 0; }
 .phase { background: var(--surface-2); border:1px solid var(--line); border-radius:14px; padding:14px; margin-bottom:10px; }
+.phase-head { display:flex; justify-content:space-between; align-items:center; gap:10px; }
+[data-local-undo-btn] { white-space:nowrap; }
 .small { font-size:12px; } .muted { color:var(--muted); }
 .hero-grid { display:grid; grid-template-columns: 1.3fr .9fr; gap:16px; margin-bottom:16px; }
 .hero-panel { background: var(--primary); color:white; border-radius:20px; padding:22px; }
@@ -365,6 +367,7 @@ tbody tr td:first-child { border-radius:10px 0 0 10px; } tbody tr td:last-child 
 .stoff-edit-table th, .stoff-edit-table td { padding:4px 6px; }
 /* Hinweis/Bemerkung als volle Breite unter dem jeweiligen Lernbereich statt gequetscht in einer Spalte. */
 .stoff-note-row td { padding:2px 6px 10px; border-top:none; }
+.stoff-note-head { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:2px; }
 .stoff-note-cell { width:100%; }
 .stoff-note-label { display:block; color:var(--muted); margin-bottom:2px; }
 .stoff-note-textarea {
