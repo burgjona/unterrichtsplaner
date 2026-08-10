@@ -52,6 +52,9 @@ class SettingsOut(Base):
     google_key_set: bool = False
     google_calendar_id: Optional[str] = None
     google_last_sync: Optional[str] = None
+    # Deploy-Info (aus Docker-Build-Args, siehe DEPLOY.md)
+    deploy_commit: str = "unbekannt"
+    deploy_time: str = "unbekannt"
 
 
 # ---------- Nutzer (Profil) ----------

@@ -1,6 +1,10 @@
 services:
   app:
-    build: .
+    build:
+      context: .
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-unbekannt}
+        DEPLOY_TIME: ${DEPLOY_TIME:-unbekannt}
     image: lehrer-dashboard:latest
     container_name: lehrer-dashboard
     restart: unless-stopped

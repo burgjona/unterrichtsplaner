@@ -61,5 +61,20 @@ docker compose logs -f app        # erwartet: Seed "62 Lernbereiche", dann uvico
 - **Backups:** `./data/data.db` (Konto, Planung) und `./storage` (Dateien) sichern.
 - **Update:** `git pull` → `docker compose build && docker compose up -d`. Migrationen laufen
   automatisch beim Start (Tabelle `schema_migrations`), der Seed ist idempotent.
+- **Deploy-Zeitstempel + Commit (Einstellungen-Seite):** Damit "Letztes NAS-Update" im UI
+  stimmt, muss das Update-Skript `GIT_COMMIT`/`DEPLOY_TIME` als Build-Args setzen (Dockerfile
+  nimmt sie per `ARG`/`ENV` auf, `docker-compose.yml` reicht sie durch). Task-Scheduler-Skript
+  entsprechend erweitern:
+  ```bash
+  export HOME=/root
+  git config --global --add safe.directory /volume1/docker/adlerplan
+  cd /volume1/docker/adlerplan
+  git pull
+  export GIT_COMMIT=$(git rev-parse --short HEAD)
+  export DEPLOY_TIME=$(date '+%d.%m.%Y %H:%M')
+  docker compose build
+  docker compose up -d
+  ```
+  (Pfad ggf. anpassen — Beispiel aus dem bestehenden Skript.)
 - **FTS5:** Das `python:3.12-slim`-Image bringt FTS5 mit; falls nicht, bricht der Start mit klarer
   Meldung ab (`src/db.py::assert_fts5`).

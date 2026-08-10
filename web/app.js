@@ -3767,6 +3767,8 @@ async function loadSettings() {
     applyAppearance(s.theme, s.darkMode, s.font);
     renderAiUsage();
     refreshLogoPreview();
+    $("deployTime").textContent = s.deployTime || "unbekannt";
+    $("deployCommit").textContent = s.deployCommit || "unbekannt";
   } catch (e) { toast(e.message, false); }
 }
 

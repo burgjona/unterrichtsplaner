@@ -39,6 +39,8 @@ def _settings_out(conn, user_id) -> SettingsOut:
         google_key_set=google_set,
         google_calendar_id=row["google_calendar_id"] if google_set else None,
         google_last_sync=row["google_last_sync"] if row is not None else None,
+        deploy_commit=os.environ.get("GIT_COMMIT", "unbekannt"),
+        deploy_time=os.environ.get("DEPLOY_TIME", "unbekannt"),
     )
 
 

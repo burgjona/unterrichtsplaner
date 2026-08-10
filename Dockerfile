@@ -9,6 +9,14 @@ RUN apt-get update \
 
 WORKDIR /app
 
+# Deploy-Info fürs UI (Einstellungen → Zeitstempel/Commit des letzten NAS-Updates).
+# .git wird bewusst nicht ins Image kopiert; das Update-Skript auf der NAS übergibt
+# Commit + Zeitstempel deshalb als Build-Args (siehe DEPLOY.md).
+ARG GIT_COMMIT=unbekannt
+ARG DEPLOY_TIME=unbekannt
+ENV GIT_COMMIT=${GIT_COMMIT} \
+    DEPLOY_TIME=${DEPLOY_TIME}
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
