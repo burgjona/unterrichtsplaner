@@ -22,6 +22,9 @@ def _run_json(conn, user_id, function, system, user_text, schema, max_tokens=200
         result = ai.run(conn, user_id, function, system, user_text, schema, max_tokens)
     except ai.NoApiKey:
         raise HTTPException(status_code=400, detail="Kein API-Key hinterlegt – bitte in den Einstellungen eintragen.")
+    except ai.ResponseTruncated:
+        raise HTTPException(status_code=502, detail="KI-Antwort war zu lang und wurde abgeschnitten – "
+                             "bitte erneut versuchen oder Hinweise/Vorgaben kürzen.")
     except Exception as exc:  # Netz-/Auth-/API-Fehler sauber weiterreichen
         raise HTTPException(status_code=502, detail=f"KI-Anfrage fehlgeschlagen: {exc}")
     try:
@@ -180,7 +183,7 @@ def stoffplan(body: StoffplanIn, conn: sqlite3.Connection = Depends(get_db),
                      "thematischen Lernbereiche 3–6 integrieren und in den Blocknotizen erwähnen.")
     parts.append("Lernbereiche:\n" + lb_text)
     user_text = "\n\n".join(parts)
-    data, cached = _run_json(conn, user_id, "stoffplan", _STOFF_SYSTEM, user_text, _STOFF_SCHEMA, max_tokens=4000)
+    data, cached = _run_json(conn, user_id, "stoffplan", _STOFF_SYSTEM, user_text, _STOFF_SCHEMA, max_tokens=8000)
 
     from ..lib.planning import assign_dates_from_weeks
     ferien_d = [(_d(s), _d(e)) for s, e in ferien]

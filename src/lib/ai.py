@@ -42,6 +42,14 @@ class NoApiKey(Exception):
     """Kein Anthropic-Key hinterlegt."""
 
 
+class ResponseTruncated(Exception):
+    """KI-Antwort wurde wegen max_tokens abgeschnitten (unvollständiges JSON)."""
+
+    def __init__(self, function: str):
+        self.function = function
+        super().__init__(f"Antwort für '{function}' bei max_tokens abgeschnitten.")
+
+
 def get_api_key(conn: sqlite3.Connection, user_id: int) -> Optional[str]:
     row = conn.execute(
         "SELECT anthropic_key_cipher, anthropic_key_nonce FROM user_settings WHERE user_id = ?",
@@ -108,6 +116,8 @@ def run(conn, user_id, function, system, user_text, schema=None, max_tokens=2000
     resp = client.messages.create(**kwargs)
 
     text = next((b.text for b in resp.content if getattr(b, "type", None) == "text"), "")
+    if getattr(resp, "stop_reason", None) == "max_tokens":
+        raise ResponseTruncated(function)
     usage = resp.usage
     inp = getattr(usage, "input_tokens", 0) or 0
     out = getattr(usage, "output_tokens", 0) or 0
