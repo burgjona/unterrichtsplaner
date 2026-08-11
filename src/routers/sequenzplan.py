@@ -5,7 +5,7 @@ Block -> Stoffplan (stoff_plan_blocks.plan_id -> stoff_plans.user_id).
 """
 import sqlite3
 from datetime import date, timedelta
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -58,23 +58,29 @@ def list_(block_id: int = Query(alias="blockId"), conn=Depends(get_db), user_id:
 
 
 @router.get("/suggest-date")
-def suggest_date(block_id: int = Query(alias="blockId"), conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+def suggest_date(block_id: int = Query(alias="blockId"), after: Optional[str] = Query(default=None),
+                  conn=Depends(get_db), user_id: int = Depends(get_user_id)):
     """Vorschlag für das voraussichtliche Datum einer neuen Sequenzstunde: nächster freier
     Unterrichtstermin der Klasse nach der zuletzt terminierten Stunde im Block – ohne bereits
-    terminierte Stunde wird ab dem Blockstart aus dem Stoffverteilungsplan gesucht."""
+    terminierte Stunde wird ab dem Blockstart aus dem Stoffverteilungsplan gesucht. Über `after`
+    kann der Aufrufer den Ausgangspunkt selbst vorgeben (z.B. beim client-seitigen Vorbelegen
+    mehrerer neuer, noch ungespeicherter Karten in Folge – etwa nach einem KI-Vorschlag)."""
     block = _load_block(conn, user_id, block_id)
-    last = conn.execute(
-        "SELECT date FROM sequenz_stunden WHERE block_id = ? AND user_id = ? AND date IS NOT NULL "
-        "ORDER BY date DESC LIMIT 1",
-        (block_id, user_id),
-    ).fetchone()
-    if last:
-        after = last["date"]
-    elif block["start_date"]:
-        after = (date.fromisoformat(block["start_date"]) - timedelta(days=1)).isoformat()
+    if after:
+        after_date = after
     else:
-        return {"date": None}
-    slot = _next_class_slot(conn, user_id, block["plan_class_id"], after)
+        last = conn.execute(
+            "SELECT date FROM sequenz_stunden WHERE block_id = ? AND user_id = ? AND date IS NOT NULL "
+            "ORDER BY date DESC LIMIT 1",
+            (block_id, user_id),
+        ).fetchone()
+        if last:
+            after_date = last["date"]
+        elif block["start_date"]:
+            after_date = (date.fromisoformat(block["start_date"]) - timedelta(days=1)).isoformat()
+        else:
+            return {"date": None}
+    slot = _next_class_slot(conn, user_id, block["plan_class_id"], after_date)
     return {"date": slot["date"] if slot else None}
 
 

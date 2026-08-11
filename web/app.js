@@ -3504,6 +3504,22 @@ async function seqAddCard() {
   renderSeqCards();
 }
 
+async function fillSeqDatesFromSuggestions(blockId, cards) {
+  // Karten sind noch ungespeichert (id=null) und tauchen daher server-seitig nicht als
+  // "letzte terminierte Stunde" auf – deshalb hier je Karte einzeln nachfragen und den
+  // zuletzt vorgeschlagenen Termin als Ausgangspunkt für die nächste Karte weiterreichen.
+  let after = null;
+  for (const c of cards) {
+    try {
+      const url = after
+        ? `/sequenz-stunden/suggest-date?blockId=${blockId}&after=${after}`
+        : `/sequenz-stunden/suggest-date?blockId=${blockId}`;
+      const res = await API.get(url);
+      if (res.date) { c.date = res.date; after = res.date; }
+    } catch (e) { /* best effort – ohne Stundenplan/Blockstart bleibt das Datum leer */ }
+  }
+}
+
 async function aiSequenzplan() {
   const blockId = Number($("seqBlock").value);
   if (!blockId) { toast("Bitte Klasse und Block wählen.", false); return; }
@@ -3520,6 +3536,7 @@ async function aiSequenzplan() {
       id: null, title: s.title, grobziel: s.grobziel || "", weitereNotenart: "", date: "",
       ...seqNotenartenToFlags(s.notenarten),
     }));
+    await fillSeqDatesFromSuggestions(blockId, seqCards);
     renderSeqCards();
     toast(`Vorschlag mit ${stunden.length} Stunden erzeugt${res.cached ? " (aus Cache)" : ""} – bitte prüfen und speichern.`);
   } catch (e) { toast(e.message, false); }

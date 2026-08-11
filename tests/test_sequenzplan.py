@@ -321,6 +321,35 @@ def test_suggest_date_uses_block_start_then_last_stunde(client, auth):
     assert r.json()["date"] == "2030-01-14"   # nächster Montag nach der zuletzt terminierten Stunde
 
 
+def test_suggest_date_after_param_chains_without_persisted_stunde(client, auth):
+    """`after` erlaubt es dem Client, mehrere noch ungespeicherte Karten in Folge zu terminieren
+    (z.B. nach einem KI-Vorschlag) – ohne dass jede Karte zwischenzeitlich gespeichert werden muss."""
+    cid = _class(client)
+    kinds = client.get("/api/stundenplan/kinds").json()
+    slots = client.get("/api/stundenplan/slots").json()
+    plans = client.get("/api/stundenplan/plans").json()
+    r = client.post("/api/stundenplan/entries", json={
+        "planId": plans[0]["id"], "slotId": slots[0]["id"], "kindId": kinds[0]["id"],
+        "classId": cid, "weekday": 0,  # Montag
+    })
+    assert r.status_code == 201, r.text
+
+    r = client.post("/api/stoff-plans", json={
+        "classId": cid, "title": "Zukunftsplan",
+        "blocks": [{"lbCode": "LB3", "title": "Lesen", "ustd": 20,
+                    "startDate": "2030-01-07", "endDate": "2030-02-10"}],   # Montag
+    })
+    assert r.status_code == 201, r.text
+    bid = _block_id(r.json())
+
+    r = client.get(f"/api/sequenz-stunden/suggest-date?blockId={bid}")
+    assert r.json()["date"] == "2030-01-07"
+
+    r = client.get(f"/api/sequenz-stunden/suggest-date?blockId={bid}&after=2030-01-07")
+    assert r.status_code == 200
+    assert r.json()["date"] == "2030-01-14"
+
+
 def test_suggest_date_unknown_block_rejected(client, auth):
     r = client.get("/api/sequenz-stunden/suggest-date?blockId=9999")
     assert r.status_code == 404
