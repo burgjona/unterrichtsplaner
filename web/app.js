@@ -1535,7 +1535,7 @@ async function renderWeekOverview() {
     });
     unplannedEl.innerHTML = "";
     if (!unplanned.length) {
-      unplannedEl.innerHTML = '<p class="mini-empty">Alle Stunden dieser Woche sind geplant.</p>';
+      unplannedEl.innerHTML = '<p class="mini-empty">Keine ungeplanten Stunden diese Woche.</p>';
     } else {
       renderDayGroups(unplannedEl, unplanned, (u) => u.weekday, (u) => ({
         time: u.timeRange || "",
@@ -1972,8 +1972,13 @@ async function runSearch() {
   } catch (e) { toast(e.message, false); }
 }
 
+// Ab >5 Klassen wird die Chip-Liste hinter einem Summary-Button eingeklappt (sonst wächst sie
+// unkontrolliert in die Höhe); der Aufklapp-Zustand bleibt über Re-Renders hinweg erhalten.
+let classToggleExpanded = false;
+
 function renderClassToggles() {
   const row = $("classToggleRow");
+  const summaryBtn = $("classToggleSummaryBtn");
   if (!row) return;
   row.innerHTML = "";
   state.classes.forEach((c) => {
@@ -1988,6 +1993,20 @@ function renderClassToggles() {
       catch (e) { toast(e.message, false); }
     };
   });
+
+  if (!summaryBtn) return;
+  const total = state.classes.length;
+  if (total > 5) {
+    const visible = state.classes.filter((c) => c.visibleInCalendar !== false).length;
+    summaryBtn.hidden = false;
+    summaryBtn.textContent = `${visible}/${total} Klassen sichtbar`;
+    summaryBtn.setAttribute("aria-expanded", String(classToggleExpanded));
+    row.classList.toggle("collapsed", !classToggleExpanded);
+    summaryBtn.onclick = () => { classToggleExpanded = !classToggleExpanded; renderClassToggles(); };
+  } else {
+    summaryBtn.hidden = true;
+    row.classList.remove("collapsed");
+  }
 }
 
 // Effektiver Bildungsgang für die Anzeige (Deutsch 'gemischt' ab Kl. 7 → RS;
@@ -4798,15 +4817,15 @@ const titles = {
   heute: ["Schulalltag heute", "Dein Tag auf einen Blick."],
   klassen: ["Klassen", "Klassen und Parallelgruppen anlegen und verwalten."],
   "klasse-detail": ["Klassendetails", "Stammdaten, Stunden und Schülerliste einer Klasse."],
-  kalender: ["Planungskalender", "Monat, Woche und Lernbereichs-Zeitleiste (folgt in M4)."],
+  kalender: ["Planungskalender", "Monat, Woche und Lernbereichs-Zeitleiste."],
   praesentation: ["Schüleransicht", "Präsentationsmodus für Beamer/Tafel – Jahresplan, Lernbereich, heutiger Ablauf."],
-  stoff: ["Stoffverteilungsplan", "Lehrplanbasierte Jahresplanung (folgt in M4)."],
+  stoff: ["Stoffverteilungsplan", "Lehrplanbasierte Jahresplanung."],
   sequenzplan: ["Sequenzplanung", "Einzelstunden je Block des Stoffverteilungsplans, mit Grobziel und Notenart."],
   stunde: ["Unterrichtsplanung", "Ideenfeld, Phasentabelle und abschließende Klafki-/Meyer-Reflexion."],
   reflexion: ["Reflexion", "Offene Reflexionen ansehen, überspringen oder erfassen."],
   notizen: ["Notizen", "Gedanken sammeln – allgemein oder je Klasse, mit Autosave."],
-  asuv: ["ASUV-Entwürfe", "Ausführlicher schriftlicher Unterrichtsentwurf je Stunde (folgt in M6)."],
-  material: ["Materialbibliothek", "Material hochladen, taggen und wiederfinden (folgt in M5)."],
+  asuv: ["ASUV-Entwürfe", "Ausführlicher schriftlicher Unterrichtsentwurf je Stunde."],
+  material: ["Materialbibliothek", "Material hochladen, taggen und wiederfinden."],
   settings: ["Einstellungen", "API-Key und Konto."],
   suche: ["Suche", "Volltextsuche über alle Inhalte."],
   mehr: ["Mehr", "Weitere Bereiche und Einstellungen."],
@@ -4862,10 +4881,18 @@ function renderGlobalTabs() {
     return `<div class="g-tab${active}" data-tab-key="${esc(t.key)}">` +
       `<span class="g-tab-label">${esc(tabLabelFor(t))}</span>` +
       `<button class="g-tab-close" data-tab-close="${esc(t.key)}" aria-label="Tab schließen">×</button></div>`;
-  }).join("");
+  }).join("") + `<button class="g-tabs-close-all" id="closeAllTabsBtn" type="button" title="Alle Tabs schließen" aria-label="Alle Tabs schließen">Alle schließen</button>`;
   wrap.querySelectorAll("[data-tab-key]").forEach((el) => el.onclick = () => activateTab(el.dataset.tabKey));
   wrap.querySelectorAll("[data-tab-close]").forEach((el) =>
     el.onclick = (e) => { e.stopPropagation(); closeTab(el.dataset.tabClose); });
+  $("closeAllTabsBtn").onclick = closeAllTabs;
+}
+
+function closeAllTabs() {
+  openTabs = [];
+  activeTabKey = null;
+  renderGlobalTabs();
+  showView("heute");
 }
 
 function activateTab(key) {

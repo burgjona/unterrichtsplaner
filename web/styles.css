@@ -189,8 +189,17 @@ tbody tr td:first-child { border-radius:10px 0 0 10px; } tbody tr td:last-child 
 .todo-src.manuell { background:#fce7f3; color:#9d174d; }
 .open-reflect-row { display:flex; justify-content:space-between; align-items:center; padding:9px 11px; background:#fff7ed; border:1px solid #fed7aa; border-radius:10px; margin-bottom:7px; gap:10px; flex-wrap:wrap; }
 .class-toggle-row { display:flex; gap:9px; flex-wrap:wrap; margin-bottom:12px; }
+.class-toggle-row.collapsed { display:none; }
 .class-toggle { display:flex; align-items:center; gap:6px; padding:7px 11px; border-radius:999px; background:var(--surface-2); border:1px solid var(--line); font-size:12px; cursor:pointer; }
 .class-toggle input { width:auto; }
+.class-toggle-summary {
+  display:flex; align-items:center; gap:6px; width:100%; margin-bottom:12px; padding:8px 12px;
+  border-radius:10px; border:1px solid var(--line); background:var(--surface-2); color:var(--text);
+  font-family:inherit; font-size:12px; font-weight:var(--fw-bold); cursor:pointer; text-align:left;
+}
+.class-toggle-summary:hover { background:var(--line); }
+.class-toggle-summary::after { content:"▾"; margin-left:auto; opacity:.6; }
+.class-toggle-summary[aria-expanded="true"]::after { content:"▴"; }
 .timeline-row { display:flex; align-items:center; gap:9px; margin-bottom:9px; }
 .timeline-label { width:105px; font-size:12px; font-weight:var(--fw-bold); flex-shrink:0; color:var(--primary-dark); }
 .timeline-track { flex:1; display:flex; flex-wrap:wrap; gap:3px; min-width:0; }
@@ -423,6 +432,12 @@ tbody tr td:first-child { border-radius:10px 0 0 10px; } tbody tr td:last-child 
   padding:2px 4px; border-radius:6px; opacity:.6;
 }
 .g-tab-close:hover { opacity:1; background:rgba(0,0,0,0.08); }
+.g-tabs-close-all {
+  margin-left:auto; align-self:center; border:0; background:transparent; color:var(--muted);
+  font-family:inherit; font-size:12px; font-weight:var(--fw-bold); cursor:pointer; padding:6px 8px;
+  border-radius:8px; opacity:.75;
+}
+.g-tabs-close-all:hover { opacity:1; background:rgba(0,0,0,0.06); color:var(--primary-dark); }
 .cd-head { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
 .cd-actions { display:flex; gap:8px; flex-wrap:wrap; }
 .cd-meta { display:flex; gap:10px; flex-wrap:wrap; margin-top:12px; }
