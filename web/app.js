@@ -24,6 +24,7 @@ const state = {
 };
 let editingStoffPlanId = null;        // gerade im Inline-Editor geöffneter Plan (U12)
 const lbCache = {};                 // Lernbereiche je Fach|Stufe|Bildungsgang
+let lessonSlotsCache = null;        // Klingelraster-Stunden (für "Stunde"-Auswahl im Kalender-Neuer-Termin-Panel)
 let calMode = "month";
 let calCursor = new Date();
 let calSelectedDate = null;  // U28: im Monatsmodus ausgewählter Tag (Tages-Agenda unten im Grid)
@@ -1687,7 +1688,7 @@ function renderTodos() {
 function renderClassSelects() {
   const opts = state.classes.map((c) => `<option value="${c.id}">${esc(c.name)} (${esc(c.subject)})</option>`).join("");
   $("lessonClass").innerHTML = '<option value="">– keine –</option>' + opts;
-  $("calEntryClass").innerHTML = opts;
+  $("calEntryClass").innerHTML = '<option value="">– keine Klasse –</option>' + opts;
   $("planClass").innerHTML = opts;
   $("planYear").innerHTML = state.schoolYears.map((s) => `<option value="${s.id}">${esc(s.label)}</option>`).join("");
   renderSeqClassSelect();
@@ -2063,6 +2064,19 @@ function openCalEntryPanel(dateStr) {
   if (dateStr && $("calEntryDate")) $("calEntryDate").value = dateStr;
   panel.scrollIntoView({ behavior: "smooth", block: "center" });
   if ($("calEntryTitle")) $("calEntryTitle").focus();
+  fillCalEntrySlotSelect();
+}
+
+// Stunden-Auswahl im "Neuer Termin"-Panel: aus den Klingelzeiten befüllen (lazy geladen, gecacht).
+async function fillCalEntrySlotSelect() {
+  const sel = $("calEntrySlot");
+  if (!sel) return;
+  if (!lessonSlotsCache) {
+    try { lessonSlotsCache = (await API.get("/stundenplan/slots")).filter((s) => s.slotType === "lesson"); }
+    catch (e) { lessonSlotsCache = []; }
+  }
+  sel.innerHTML = '<option value="">– manuell –</option>' +
+    lessonSlotsCache.map((s) => `<option value="${s.id}" data-start="${esc(s.startTime)}" data-end="${esc(s.endTime)}">${esc(s.label)} · ${esc(s.startTime)}–${esc(s.endTime)}</option>`).join("");
 }
 function closeCalEntryPanel() { const p = $("calEntryPanel"); if (p) p.classList.add("hidden"); }
 
@@ -2516,6 +2530,7 @@ async function saveCalendarEntry() {
     $("calEntryStartTime").value = ""; $("calEntryEndTime").value = "";
     $("calEntryAllDay").checked = true; $("calEntryTimeRow").style.display = "none";
     $("calEntryFixed").checked = false; $("calEntryRoom").value = "";
+    $("calEntrySlot").value = "";
     closeCalEntryPanel();
     await refresh(); toast("Termin gespeichert.");
   } catch (e) { toast(e.message, false); }
@@ -5506,6 +5521,15 @@ function wireEvents() {
   $("calSaveEntryBtn").onclick = saveCalendarEntry;
   $("calEntryAllDay").onchange = () => {
     $("calEntryTimeRow").style.display = $("calEntryAllDay").checked ? "none" : "flex";
+  };
+  // Stunde auswählen -> Uhrzeiten aus dem Klingelraster übernehmen (Ganztägig automatisch abwählen).
+  $("calEntrySlot").onchange = () => {
+    const opt = $("calEntrySlot").selectedOptions[0];
+    if (!opt || !opt.value) return;
+    $("calEntryAllDay").checked = false;
+    $("calEntryTimeRow").style.display = "flex";
+    $("calEntryStartTime").value = opt.dataset.start || "";
+    $("calEntryEndTime").value = opt.dataset.end || "";
   };
   // U22: Termin-Popover öffnen/schließen; Werkzeug-Seitenleiste ein-/ausklappen.
   $("calNewEntryBtn").onclick = () => openCalEntryPanel(isoDate(new Date()));
