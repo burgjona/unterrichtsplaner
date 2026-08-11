@@ -1444,7 +1444,43 @@ async function renderTodayList() {
 }
 
 const WEEKDAY_SHORT = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+const WEEKDAY_LONG = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"];
 function weekdayOf(dateStr) { return (new Date(dateStr + "T00:00:00").getDay() + 6) % 7; }
+
+// Rendert eine "Woche im Blick"-Liste gruppiert nach Wochentag (Tagesüberschrift statt
+// Wiederholung pro Zeile) statt einer Karte pro Eintrag – hält die Liste bei vielen
+// Terminen kompakt. `getWeekday` liefert den Index (0=Mo…6=So), `toRow` die Zeilendaten.
+function renderDayGroups(container, items, getWeekday, toRow) {
+  container.innerHTML = "";
+  const byDay = new Map();
+  items.forEach((item) => {
+    const wd = getWeekday(item);
+    if (!byDay.has(wd)) byDay.set(wd, []);
+    byDay.get(wd).push(item);
+  });
+  [...byDay.keys()].sort((a, b) => a - b).forEach((wd) => {
+    const group = document.createElement("div");
+    group.className = "day-group";
+    const heading = document.createElement("div");
+    heading.className = "day-heading";
+    heading.textContent = WEEKDAY_LONG[wd];
+    const rows = document.createElement("div");
+    rows.className = "day-rows";
+    byDay.get(wd).forEach((item) => {
+      const { time, title, badgeClass, badgeLabel, onClick } = toRow(item);
+      const row = document.createElement("div");
+      row.className = "day-row";
+      row.innerHTML =
+        `<span class="row-time">${esc(time)}</span>` +
+        `<span class="row-title">${esc(title)}</span>` +
+        `<span class="badge ${badgeClass}">${esc(badgeLabel)}</span>`;
+      row.onclick = onClick;
+      rows.appendChild(row);
+    });
+    group.append(heading, rows);
+    container.appendChild(group);
+  });
+}
 
 // „Woche im Blick": ungeplante Stunden (Stundenplan-Slot mit Klasse ohne passende Unterrichts-
 // planung an dem Tag, Ferien/Feiertage ausgenommen) + alle Kalendertermine dieser Woche
@@ -1473,17 +1509,15 @@ async function renderWeekOverview() {
   if (!appts.length) {
     apptEl.innerHTML = '<p class="mini-empty">Keine Termine diese Woche.</p>';
   } else {
-    appts.forEach((e) => {
+    renderDayGroups(apptEl, appts, (e) => weekdayOf(e.entryDate), (e) => {
       const badgeClass = e.entryType === "lu" ? "bad" : e.entryType === "exam" ? "warn" : "ok";
       const badgeLabel = e.entryType === "lu" ? "LEK" : e.entryType === "exam" ? "Prüfung" : "Termin";
-      const sub = WEEKDAY_SHORT[weekdayOf(e.entryDate)] + (e.startTime ? ", " + e.startTime : "");
-      const div = document.createElement("div");
-      div.className = "mini-item";
-      div.innerHTML =
-        `<span class="lbl">${esc(e.title)}<span class="sub">${esc(sub)}</span></span>` +
-        `<span class="badge ${badgeClass}">${badgeLabel}</span>`;
-      div.onclick = () => openCalendarEventModal(e.id);
-      apptEl.appendChild(div);
+      return {
+        time: e.startTime || "",
+        title: e.title,
+        badgeClass, badgeLabel,
+        onClick: () => openCalendarEventModal(e.id),
+      };
     });
   }
 
@@ -1503,15 +1537,13 @@ async function renderWeekOverview() {
     if (!unplanned.length) {
       unplannedEl.innerHTML = '<p class="mini-empty">Alle Stunden dieser Woche sind geplant.</p>';
     } else {
-      unplanned.forEach((u) => {
-        const div = document.createElement("div");
-        div.className = "mini-item";
-        div.innerHTML =
-          `<span class="lbl">${esc(u.title)}<span class="sub">${esc(WEEKDAY_SHORT[u.weekday])}, ${esc(u.timeRange || "")}</span></span>` +
-          `<span class="badge warn">planen</span>`;
-        div.onclick = () => showView("stunde");
-        unplannedEl.appendChild(div);
-      });
+      renderDayGroups(unplannedEl, unplanned, (u) => u.weekday, (u) => ({
+        time: u.timeRange || "",
+        title: u.title,
+        badgeClass: "warn",
+        badgeLabel: "planen",
+        onClick: () => showView("stunde"),
+      }));
     }
   } catch (e) {
     unplannedEl.innerHTML = '<p class="mini-empty">Stundenplan konnte nicht geladen werden.</p>';
