@@ -2516,12 +2516,20 @@ function renderCalendar() {
         el.onclick = () => openCalendarEventModal(Number(el.dataset.entryId));
       }
     });
+    // U29: Klick auf die Tageszahl öffnet die Tages-Agenda (wie in der Monatsansicht),
+    // ohne das Termin-Popover per Klick auf die freie Fläche zu verlieren.
+    grid.querySelectorAll(".cal-daynum").forEach((num) => {
+      num.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        renderDayAgenda(num.closest(".cal-cell").dataset.date);
+      });
+    });
     // U22: Klick auf die freie Fläche eines Tages öffnet das Termin-Popover (vorbefülltes Datum).
     grid.querySelectorAll(".cal-cell").forEach((cell) => {
       cell.addEventListener("click", (ev) => {
         // U27c/U27d: Klicks auf die (blasse) Stundenplan-Ebene oder den Tropentag-Toggle
         // öffnen kein Termin-Popover.
-        if (ev.target.closest(".cal-entry, .cal-tt-strip, .cal-tt-daytoggle")) return;
+        if (ev.target.closest(".cal-entry, .cal-tt-strip, .cal-tt-daytoggle, .cal-daynum")) return;
         openCalEntryPanel(cell.dataset.date);
       });
     });
