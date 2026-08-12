@@ -28,14 +28,20 @@ _LESSON_COLS = (
 
 
 def _sync_calendar_entry(conn, user_id: int, lesson_id: int) -> None:
-    """Hält den automatisch erzeugten Kalendereintrag einer terminierten Stunde synchron."""
+    """Hält den mit der Stunde verknüpften Kalendereintrag synchron.
+
+    Verknüpft ist entweder ein automatisch erzeugter Eintrag oder ein manueller Termin,
+    den der Nutzer per "jetzt Unterrichtsstunde planen" explizit mit dieser Stunde
+    verlinkt hat (siehe /calendar PUT). Beide werden gleich behandelt, damit aus einem
+    manuellen Termin heraus geplante Stunden nicht zusätzlich einen Auto-Eintrag erzeugen.
+    """
     l = conn.execute(
         "SELECT date, title, class_id FROM lessons WHERE id = ? AND user_id = ?", (lesson_id, user_id)
     ).fetchone()
     if l is None:
         return
     existing = conn.execute(
-        "SELECT id FROM calendar_entries WHERE lesson_id = ? AND auto_generated = 1", (lesson_id,)
+        "SELECT id, auto_generated FROM calendar_entries WHERE lesson_id = ?", (lesson_id,)
     ).fetchone()
     if l["date"]:
         if existing:
@@ -50,7 +56,11 @@ def _sync_calendar_entry(conn, user_id: int, lesson_id: int) -> None:
                 (user_id, l["class_id"], lesson_id, l["title"], l["date"]),
             )
     elif existing:
-        conn.execute("DELETE FROM calendar_entries WHERE id = ?", (existing["id"],))
+        if existing["auto_generated"]:
+            conn.execute("DELETE FROM calendar_entries WHERE id = ?", (existing["id"],))
+        else:
+            # manueller Termin bleibt erhalten, verliert aber die Verknüpfung.
+            conn.execute("UPDATE calendar_entries SET lesson_id = NULL WHERE id = ?", (existing["id"],))
 
 
 def _lesson_values(body, klafki: Klafki, bibox: Bibox, meyer_plan) -> dict:
