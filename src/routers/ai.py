@@ -433,7 +433,7 @@ def lernziele_suggestion(lesson_id: int, conn: sqlite3.Connection = Depends(get_
         f"Stunde: {l['title']} · Fach {l['subject']} · Klassenstufe {l['grade'] or '-'} · "
         f"Stundentyp {l['lesson_type'] or '-'} · Dauer {dur} Minuten\n"
         f"Phasen: {phase_text}\n"
-        f"{lb_text}\n\n{regel}"
+        f"{lb_text}\n\n{regel}\n\n{_ctx_block(ai.lesson_material_context(conn, user_id, lesson_id))}"
     )
     data, cached = _run_json(conn, user_id, "lernziele", _LERNZIELE_SYSTEM, user_text, _LERNZIELE_SCHEMA, max_tokens=4000)
     return {"suggestion": data, "cached": cached}
@@ -503,7 +503,8 @@ def einordnung_suggestion(lesson_id: int, conn: sqlite3.Connection = Depends(get
     user_text = (
         f"Frei geplante Stunde: {l['title']} · Fach {l['subject']} · Klassenstufe {l['grade'] or '-'} · "
         f"Stundentyp {l['lesson_type'] or '-'}\n\n"
-        "Kandidaten-Lernbereiche:\n" + "\n".join(lb_lines)
+        "Kandidaten-Lernbereiche:\n" + "\n".join(lb_lines) +
+        f"\n\n{_ctx_block(ai.lesson_material_context(conn, user_id, lesson_id))}"
     )
     data, cached = _run_json(conn, user_id, "einordnung", _EINORDNUNG_SYSTEM, user_text, _EINORDNUNG_SCHEMA, max_tokens=4000)
     return {"suggestion": data, "cached": cached}

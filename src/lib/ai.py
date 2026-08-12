@@ -92,6 +92,22 @@ def fts_context(conn, user_id, query, subject=None, grade=None, limit=3) -> List
         return []
 
 
+def lesson_material_context(conn, user_id, lesson_id, limit=6) -> List[dict]:
+    """Abschnitte aus Materialien, die explizit mit dieser Stunde verknüpft sind – unabhängig
+    von deren Fach-Tag. Deckt z. B. Vertretungsstunden ab, für die ein Lehrplan-Ausschnitt eines
+    fremden Fachs (Mathe, Physik, ...) als Planungsgrundlage hochgeladen wurde und die daher
+    beim fach-/klassenstufen-gefilterten fts_context() sonst nie auftauchen würden."""
+    sql = ("SELECT m.filename, mc.page_from, mc.content FROM material_chunks mc "
+           "JOIN materials m ON m.id = mc.material_id "
+           "JOIN material_lessons ml ON ml.material_id = m.id "
+           "WHERE ml.lesson_id = ? AND m.user_id = ? "
+           "ORDER BY mc.material_id, mc.chunk_index LIMIT ?")
+    try:
+        return [dict(r) for r in conn.execute(sql, (lesson_id, user_id, limit)).fetchall()]
+    except sqlite3.OperationalError:
+        return []
+
+
 def run(conn, user_id, function, system, user_text, schema=None, max_tokens=2000,
         bypass_cache=False) -> dict:
     """Führt einen KI-Call aus (mit lokalem Cache + Kosten-Logging). Wirft NoApiKey ohne Key."""
