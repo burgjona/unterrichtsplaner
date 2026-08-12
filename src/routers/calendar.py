@@ -209,7 +209,7 @@ async def import_analyze(
 
     try:
         result = ai.run(conn, user_id, "jahresplan_import", _IMPORT_SYSTEM, user_text,
-                        _IMPORT_SCHEMA, max_tokens=3000)
+                        _IMPORT_SCHEMA, max_tokens=8000)
     except ai.NoApiKey:
         raise HTTPException(status_code=400,
                             detail="Kein API-Key hinterlegt – bitte in den Einstellungen eintragen.")
