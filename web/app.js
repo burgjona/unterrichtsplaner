@@ -2818,10 +2818,9 @@ function matchCategoryId(name) {
 }
 
 function renderImportSuggestions() {
-  const wrap = $("importResult");
-  if (!wrap) return;
   if (!importSuggestions.length) {
-    wrap.innerHTML = '<p class="muted small">Keine Termine erkannt.</p>';
+    $("modalRoot").innerHTML = "";
+    toast("Keine Termine erkannt.", false);
     return;
   }
   const rows = importSuggestions.map((s, i) => {
@@ -2833,10 +2832,18 @@ function renderImportSuggestions() {
       <select data-import-cat="${i}">${importCategoryOptions(matchCategoryId(s.kategorieVorschlag))}</select>
     </div>`;
   }).join("");
-  wrap.innerHTML =
-    `<p class="small muted">${importSuggestions.length} Termin(e) erkannt – Auswahl prüfen und übernehmen.</p>` +
-    rows +
-    `<div style="margin-top:10px;"><button class="btn" id="importCommitBtn">Ausgewählte übernehmen</button></div>`;
+  $("modalRoot").innerHTML =
+    `<div class="modal-overlay" id="modalOverlay"><div class="modal-box" style="max-width:820px;">
+      <button class="modal-close" id="modalCloseBtn">Schließen</button>
+      <h2>Jahresplan-Import</h2>
+      <div class="modal-section">
+        <p class="small muted">${importSuggestions.length} Termin(e) erkannt – Auswahl prüfen und übernehmen.</p>
+        ${rows}
+        <div style="margin-top:14px;"><button class="btn" id="importCommitBtn">Ausgewählte übernehmen</button></div>
+      </div>
+    </div></div>`;
+  $("modalOverlay").onclick = (ev) => { if (ev.target.id === "modalOverlay") closeModal(); };
+  $("modalCloseBtn").onclick = closeModal;
   $("importCommitBtn").onclick = commitJahresplanImport;
 }
 
@@ -2859,7 +2866,7 @@ async function analyzeJahresplan() {
 }
 
 async function commitJahresplanImport() {
-  const wrap = $("importResult");
+  const wrap = $("modalRoot");
   const entries = [];
   wrap.querySelectorAll("[data-import-cb]").forEach((cb) => {
     if (!cb.checked) return;
@@ -2874,7 +2881,7 @@ async function commitJahresplanImport() {
   if (!entries.length) { toast("Keine Termine ausgewählt.", false); return; }
   try {
     const created = await API.post("/calendar/import/commit", { entries });
-    importSuggestions = []; $("importFile").value = ""; $("importResult").innerHTML = "";
+    importSuggestions = []; $("importFile").value = ""; closeModal();
     await refresh(); toast(`${created.length} Termin(e) übernommen.`);
   } catch (e) { toast(e.message, false); }
 }
