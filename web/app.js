@@ -322,9 +322,18 @@ function readLernziele() {
                       phaseSortOrder: z.phaseSortOrder == null ? null : Number(z.phaseSortOrder), sortOrder: i }));
 }
 
+// Datei, die im Erstellungsformular gewählt aber erst nach saveLesson() (sobald die lessonId
+// existiert) tatsächlich hochgeladen/verknüpft wird – analog zu pendingSeqLinkIds.
+let pendingLessonMaterialFile = null;
+let pendingLessonMaterialSubject = "";
+
 function clearLessonForm() {
   ["lessonIdeas", "lessonTitle", "lessonDate", "klafki1", "klafki2", "klafki3", "klafki4", "klafki5",
-   "biboxWerk", "biboxSeite", "biboxNotiz"].forEach((id) => ($(id).value = ""));
+   "biboxWerk", "biboxSeite", "biboxNotiz", "lessonMatSubject"].forEach((id) => ($(id).value = ""));
+  if ($("lessonMatFile")) $("lessonMatFile").value = "";
+  pendingLessonMaterialFile = null;
+  pendingLessonMaterialSubject = "";
+  if ($("lessonMaterials")) $("lessonMaterials").innerHTML = "";
   $("lessonClass").value = "";
   $("lessonDuration").value = "45";
   phaseNames.forEach((_, i) =>
@@ -338,11 +347,36 @@ function clearLessonForm() {
   updateLessonLbOptions(null);
   pendingSeqLinkIds = [];
   updateLessonSeqOptions();
+  pendingCalendarEntryLink = null;
   resetLocalUndo();   // andere/neue Stunde geladen – alte Block-Snapshots (Phasen, Klafki, Lernziele) wären falsch.
+}
+
+// U30: Aus dem Termin-Bearbeiten-Fenster heraus in die Unterrichtsplanung springen und
+// Klasse/Fach/Klassenstufe/Datum aus dem Termin vorbefüllen. Der Termin wird erst nach dem
+// ersten Speichern der neuen Stunde verlinkt (pendingCalendarEntryLink, siehe saveLesson()).
+function planLessonFromCalendarEntry(e) {
+  closeModal();
+  showView("stunde");
+  clearLessonForm();
+  // U30: manuelle Termine tragen die Klasse(n) in classIds (Mehrfachauswahl); classId (singular)
+  // ist nur bei auto-generierten Stundenterminen gepflegt. Für die Vorbefüllung reicht eine Klasse.
+  const firstClassId = (e.classIds && e.classIds.length) ? e.classIds[0] : e.classId;
+  const cls = firstClassId != null ? state.classes.find((c) => c.id === firstClassId) : null;
+  if (cls) {
+    $("lessonClass").value = String(cls.id);
+    if (cls.subject) $("lessonSubject").value = cls.subject;
+    if (cls.grade != null) $("lessonGrade").value = String(cls.grade);
+  }
+  $("lessonDate").value = e.entryDate || "";
+  updateLessonLbOptions(null);
+  pendingCalendarEntryLink = e.id;
 }
 
 /* ---------- Bearbeitungsmodus Unterrichtsplanung ---------- */
 let editingLessonId = null;
+// U30: Termin, aus dem heraus "jetzt Unterrichtsstunde planen" die neue Stunde anlegt —
+// wird nach dem ersten Speichern mit dem Termin verlinkt (siehe saveLesson()).
+let pendingCalendarEntryLink = null;
 function resetLessonEditState() {
   editingLessonId = null;
   $("editHint").classList.add("hidden");
@@ -402,6 +436,18 @@ function loadLessonIntoForm(l) {
   }
   updateLessonLbOptions(l.lernbereichId ?? null);
   updateLessonSeqOptions();
+  loadLessonMaterials(l.id);
+}
+
+async function loadLessonMaterials(lessonId) {
+  const wrap = $("lessonMaterials");
+  if (!wrap) return;
+  try {
+    const mats = await API.get(`/lessons/${lessonId}/materials`);
+    wrap.innerHTML = mats.length
+      ? mats.map((m) => `<div class="file-chip"><span><a href="/api/materials/${m.id}/download">${esc(m.filename)}</a></span></div>`).join("")
+      : '<p class="muted small">Noch kein Material verknüpft.</p>';
+  } catch (e) { wrap.innerHTML = ""; }
 }
 
 /* ---------- U29: LB-Zuordnung in der Unterrichtsplanung (aus aktivem Stoffverteilungsplan) ---------- */
@@ -1501,7 +1547,8 @@ async function renderWeekOverview() {
   const appts = state.calendar
     .filter((e) => {
       const end = e.endDate || e.entryDate;
-      return e.entryDate <= weekEndStr && end >= mondayStr && (e.classId == null || vis.includes(e.classId));
+      const cids = entryClassIds(e);
+      return e.entryDate <= weekEndStr && end >= mondayStr && (cids.length === 0 || cids.some((cid) => vis.includes(cid)));
     })
     .sort((a, b) => (a.entryDate + (a.startTime || "")).localeCompare(b.entryDate + (b.startTime || "")));
 
@@ -1720,8 +1767,13 @@ function renderTodos() {
 function renderClassSelects() {
   const opts = state.classes.map((c) => `<option value="${c.id}">${esc(c.name)} (${esc(c.subject)})</option>`).join("");
   $("lessonClass").innerHTML = '<option value="">– keine –</option>' + opts;
-  $("calEntryClass").innerHTML = '<option value="">– keine Klasse –</option>' + opts;
-  $("planClass").innerHTML = opts;
+  renderClassCheckboxes($("calEntryClasses"), []);
+  // Jahres-Stoffverteilungsplan setzt ein einheitliches Fach voraus – "kein Fach"-Klassen
+  // (z. B. stellvertretende Klassenleitung) werden hier ausgeblendet, Stunden bleiben über
+  // die Unterrichtsplanung mit freier Fachwahl pro Stunde planbar.
+  $("planClass").innerHTML = state.classes
+    .filter((c) => c.subject !== "kein Fach")
+    .map((c) => `<option value="${c.id}">${esc(c.name)} (${esc(c.subject)})</option>`).join("");
   $("planYear").innerHTML = state.schoolYears.map((s) => `<option value="${s.id}">${esc(s.label)}</option>`).join("");
   renderSeqClassSelect();
   renderSeqBlockSelect();
@@ -1972,6 +2024,18 @@ async function runSearch() {
   } catch (e) { toast(e.message, false); }
 }
 
+// U31: Mehrfachauswahl Klassen für Kalendertermine (Chip-Checkboxen wie beim Kalender-Klassenfilter).
+function renderClassCheckboxes(wrap, selectedIds) {
+  if (!wrap) return;
+  const sel = new Set((selectedIds || []).map(Number));
+  wrap.innerHTML = state.classes.map((c) =>
+    `<label class="class-toggle"><input type="checkbox" value="${c.id}"${sel.has(c.id) ? " checked" : ""}/> ${esc(c.name)} (${esc(c.subject)})</label>`
+  ).join("") || '<span class="muted small">Keine Klassen angelegt.</span>';
+}
+function getCheckedClassIds(wrap) {
+  return wrap ? [...wrap.querySelectorAll("input:checked")].map((i) => Number(i.value)) : [];
+}
+
 // Ab >5 Klassen wird die Chip-Liste hinter einem Summary-Button eingeklappt (sonst wächst sie
 // unkontrolliert in die Höhe); der Aufklapp-Zustand bleibt über Re-Renders hinweg erhalten.
 let classToggleExpanded = false;
@@ -2091,7 +2155,7 @@ function toggleLbDetail(row) {
     html = `<div><span class="muted small">Zeitraum:</span> ` +
       `<span class="date-chip" data-jump="${esc(pb.startDate)}">${esc(pb.startDate)} – ${esc(end)}</span></div>`;
     const lues = state.calendar.filter((e) =>
-      e.classId === cid && (e.entryType === "lu" || e.entryType === "exam") &&
+      entryClassIds(e).includes(cid) && (e.entryType === "lu" || e.entryType === "exam") &&
       (e.endDate || e.entryDate) >= pb.startDate && e.entryDate <= end);
     html += lues.length
       ? `<div style="margin-top:6px;"><span class="muted small">Leistungsüberprüfungen:</span> ` +
@@ -2402,14 +2466,20 @@ function jumpCalendarToDate(dStr) {
 }
 function visibleClassIds() { return state.classes.filter((c) => c.visibleInCalendar !== false).map((c) => c.id); }
 function catById(id) { return id == null ? null : state.calendarCategories.find((c) => c.id === id); }
+// U31: Termine können mehreren Klassen zugeordnet sein (classIds); auto-generierte
+// Stundentermine tragen weiterhin nur classId — als Fallback berücksichtigen.
+function entryClassIds(e) {
+  return (e.classIds && e.classIds.length) ? e.classIds : (e.classId != null ? [e.classId] : []);
+}
 function entriesForDate(dStr) {
   const vis = visibleClassIds();
-  // Klassenlose Termine (classId == null) sind immer sichtbar; mehrtägige Termine
-  // erscheinen an jedem Tag zwischen entryDate und endDate (inklusive).
+  // Klassenlose Termine sind immer sichtbar; mehrtägige Termine erscheinen an jedem Tag
+  // zwischen entryDate und endDate (inklusive).
   return state.calendar.filter((e) => {
     const end = e.endDate || e.entryDate;
     const inRange = e.entryDate <= dStr && dStr <= end;
-    return inRange && (e.classId == null || vis.includes(e.classId));
+    const cids = entryClassIds(e);
+    return inRange && (cids.length === 0 || cids.some((cid) => vis.includes(cid)));
   });
 }
 function schoolDateFor(dStr) {
@@ -2419,7 +2489,9 @@ function renderCalendar() {
   const grid = $("calGrid");
   if (!grid) return;
   grid.innerHTML = "";
+  grid.classList.toggle("with-kw", calMode === "month");
   const ttGen = ++calTtGen;  // U27c: jede Neurenderung entwertet noch laufende Stundenplan-Fetches
+  if (calMode === "month") { const h = document.createElement("div"); h.className = "cal-head"; h.textContent = "KW"; grid.appendChild(h); }
   ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"].forEach((d) => {
     const h = document.createElement("div"); h.className = "cal-head"; h.textContent = d; grid.appendChild(h);
   });
@@ -2482,14 +2554,22 @@ function renderCalendar() {
     $("calLabel").textContent = calCursor.toLocaleDateString("de-DE", { month: "long", year: "numeric" });
     const startOffset = (new Date(y, m, 1).getDay() + 6) % 7;
     const startDate = new Date(y, m, 1 - startOffset);
-    for (let i = 0; i < 42; i++) { const d = new Date(startDate); d.setDate(startDate.getDate() + i); grid.appendChild(makeCell(d, d.getMonth() !== m, true)); }
+    for (let i = 0; i < 42; i++) {
+      const d = new Date(startDate); d.setDate(startDate.getDate() + i);
+      if (i % 7 === 0) { const kw = document.createElement("div"); kw.className = "cal-kw"; kw.textContent = isoWeek(d); grid.appendChild(kw); }
+      grid.appendChild(makeCell(d, d.getMonth() !== m, true));
+    }
     // U27c: Stundenplan-Ebene ist Wochen-only → Toggle + KW-Badge im Monatsmodus verstecken.
     const bdg = $("calWeekBadge"); if (bdg) bdg.classList.add("hidden");
     const tgl = $("calTtToggle"); if (tgl) tgl.classList.add("hidden");
     monthStartStr = isoDate(new Date(y, m, 1)); monthEndStr = isoDate(new Date(y, m + 1, 0));
   } else {
     const d0 = new Date(calCursor); d0.setDate(d0.getDate() - ((d0.getDay() + 6) % 7));
-    $("calLabel").textContent = "Woche " + isoWeek(d0) + ", " + d0.toLocaleDateString("de-DE", { year: "numeric" });
+    const d6 = new Date(d0); d6.setDate(d0.getDate() + 6);
+    const monthLabel = d0.getMonth() === d6.getMonth()
+      ? d0.toLocaleDateString("de-DE", { month: "long", year: "numeric" })
+      : d0.toLocaleDateString("de-DE", { month: "short" }) + " / " + d6.toLocaleDateString("de-DE", { month: "long", year: "numeric" });
+    $("calLabel").textContent = "Woche " + isoWeek(d0) + ", " + monthLabel;
     for (let i = 0; i < 7; i++) { const d = new Date(d0); d.setDate(d0.getDate() + i); grid.appendChild(makeCell(d, false, false)); }
     // U27c: Stundenplan-Ebene laden und (falls verfuegbar) blasse Chips einspielen.
     calTtRenderWeek(isoDate(d0), ttGen);
@@ -2581,15 +2661,17 @@ async function saveCalendarEntry() {
       endTime: allDay ? null : ($("calEntryEndTime").value || null),
       entryType: $("calEntryType").value,
       categoryId: $("calEntryCategory").value ? Number($("calEntryCategory").value) : null,
-      classId: $("calEntryClass").value ? Number($("calEntryClass").value) : null,
+      classIds: getCheckedClassIds($("calEntryClasses")),
       isFixed: $("calEntryFixed").checked,
       room: $("calEntryRoom").value.trim() || null,
+      notes: $("calEntryNotes").value.trim() || null,
     });
     $("calEntryTitle").value = ""; $("calEntryEndDate").value = "";
     $("calEntryStartTime").value = ""; $("calEntryEndTime").value = "";
     $("calEntryAllDay").checked = true; $("calEntryTimeRow").style.display = "none";
     $("calEntryFixed").checked = false; $("calEntryRoom").value = "";
-    $("calEntrySlot").value = "";
+    $("calEntrySlot").value = ""; $("calEntryNotes").value = "";
+    renderClassCheckboxes($("calEntryClasses"), []);
     closeCalEntryPanel();
     await refresh(); toast("Termin gespeichert.");
   } catch (e) { toast(e.message, false); }
@@ -2602,8 +2684,6 @@ function openCalendarEventModal(entryId) {
   if (!e) return;
   const catOpts = `<option value="">— keine —</option>` +
     state.calendarCategories.map((c) => `<option value="${c.id}"${c.id === e.categoryId ? " selected" : ""}>${esc(c.name)}</option>`).join("");
-  const classOpts = `<option value="">— keine —</option>` +
-    state.classes.map((c) => `<option value="${c.id}"${c.id === e.classId ? " selected" : ""}>${esc(c.name)} (${esc(c.subject)})</option>`).join("");
   const typeOpts = [["lu", "Lernerfolgskontrolle"], ["exam", "Klassenarbeit/Präsentation"], ["normal", "Sonstiges"]]
     .map(([v, lab]) => `<option value="${v}"${e.entryType === v ? " selected" : ""}>${lab}</option>`).join("");
   const gBadge = e.googleEventId ? ` <span class="badge google">Google</span>` : "";
@@ -2626,27 +2706,31 @@ function openCalendarEventModal(entryId) {
           <div><label>Uhrzeit bis</label><input id="evtEndTime" type="time" value="${esc(e.endTime || "")}" /></div>
         </div>
         <div class="row" style="margin-top:8px;">
-          <div><label>Klasse</label><select id="evtClass">${classOpts}</select></div>
+          <div><label>Klassen</label><div class="class-toggle-row" id="evtClasses"></div></div>
           <div><label>Typ</label><select id="evtType">${typeOpts}</select></div>
         </div>
         <div class="row" style="margin-top:8px;">
           <div><label>Zimmer</label><input id="evtRoom" value="${esc(e.room || "")}" placeholder="z. B. 204" /></div>
         </div>
+        <div style="margin-top:8px;"><label>Notizen</label><textarea id="evtNotes" rows="3" placeholder="Notizen zu diesem Termin">${esc(e.notes || "")}</textarea></div>
         <label style="display:flex; align-items:center; gap:8px; margin-top:8px;"><input type="checkbox" id="evtFixed" style="width:auto;"${e.isFixed ? " checked" : ""} /> Fixer Termin (nicht durch die Verplanung verschiebbar)</label>
         ${e.googleEventId ? `<p class="muted small" style="margin-top:8px;">Mit Google-Kalender verknüpft — Änderungen werden beim nächsten Sync übertragen.</p>` : ""}
       </div>
       <div style="margin-top:14px; display:flex; gap:8px; flex-wrap:wrap;">
         <button class="btn" id="evtSaveBtn">Speichern</button>
+        ${((e.classIds && e.classIds.length) || e.classId != null) ? `<button class="btn secondary" id="evtPlanLessonBtn">Jetzt Unterrichtsstunde planen</button>` : ""}
         <button class="btn danger" id="evtDeleteBtn">Löschen</button>
         <button class="btn secondary" id="evtCancelBtn">Abbrechen</button>
       </div>
     </div></div>`;
+  renderClassCheckboxes($("evtClasses"), e.classIds || (e.classId != null ? [e.classId] : []));
   $("modalOverlay").onclick = (ev) => { if (ev.target.id === "modalOverlay") closeModal(); };
   $("modalCloseBtn").onclick = closeModal;
   $("evtCancelBtn").onclick = closeModal;
   $("evtAllDay").onchange = () => { $("evtTimeRow").style.display = $("evtAllDay").checked ? "none" : "flex"; };
   $("evtSaveBtn").onclick = () => saveCalendarEventModal(e.id);
   $("evtDeleteBtn").onclick = () => deleteCalendarEventModal(e.id);
+  if ($("evtPlanLessonBtn")) $("evtPlanLessonBtn").onclick = () => planLessonFromCalendarEntry(e);
 }
 
 async function saveCalendarEventModal(id) {
@@ -2662,9 +2746,10 @@ async function saveCalendarEventModal(id) {
       endTime: allDay ? null : ($("evtEndTime").value || null),
       entryType: $("evtType").value,
       categoryId: $("evtCategory").value ? Number($("evtCategory").value) : null,
-      classId: $("evtClass").value ? Number($("evtClass").value) : null,
+      classIds: getCheckedClassIds($("evtClasses")),
       isFixed: $("evtFixed").checked,
       room: $("evtRoom").value.trim() || null,
+      notes: $("evtNotes").value.trim() || null,
     });
     closeModal();
     await refresh(); toast("Termin aktualisiert.");
@@ -3454,8 +3539,11 @@ function renderSeqClassSelect() {
   const sel = $("seqClass");
   if (!sel) return;
   const prev = sel.value;
-  sel.innerHTML = state.classes.map((c) => `<option value="${c.id}">${esc(c.name)} (${esc(c.subject)})</option>`).join("");
-  if (state.classes.some((c) => String(c.id) === String(prev))) sel.value = prev;
+  // Sequenzplanung baut auf dem aktiven Stoffverteilungsplan der Klasse auf – "kein Fach"-
+  // Klassen haben keinen solchen Plan, daher hier ebenfalls ausgeblendet (s. renderClassSelects).
+  const eligible = state.classes.filter((c) => c.subject !== "kein Fach");
+  sel.innerHTML = eligible.map((c) => `<option value="${c.id}">${esc(c.name)} (${esc(c.subject)})</option>`).join("");
+  if (eligible.some((c) => String(c.id) === String(prev))) sel.value = prev;
 }
 
 function renderSeqBlockSelect() {
@@ -3795,10 +3883,36 @@ async function saveLesson() {
   };
   try {
     let saved;
+    const isNew = !editingLessonId;
     if (editingLessonId) {
       saved = await API.put("/lessons/" + editingLessonId, body);
     } else {
       saved = await API.post("/lessons", { ...body, time: null });
+    }
+    if (isNew && pendingLessonMaterialFile) {
+      const fd = new FormData();
+      fd.append("file", pendingLessonMaterialFile);
+      fd.append("subject", pendingLessonMaterialSubject || body.subject);
+      if (body.grade) fd.append("grade", body.grade);
+      fd.append("lessonId", saved.id);
+      try { await API.upload("/materials/upload", fd); }
+      catch (e2) { toast("Stunde gespeichert, Material-Upload ist aber fehlgeschlagen: " + e2.message, false); }
+      pendingLessonMaterialFile = null;
+      pendingLessonMaterialSubject = "";
+    }
+    if (isNew && pendingCalendarEntryLink) {
+      const linkId = pendingCalendarEntryLink;
+      pendingCalendarEntryLink = null;
+      try {
+        await API.put("/calendar/" + linkId, { lessonId: saved.id });
+        // Das Anlegen der Stunde hat nebenbei einen eigenen Auto-Kalendereintrag erzeugt
+        // (der Termin, aus dem heraus geplant wurde, war dem Backend zu dem Zeitpunkt noch
+        // nicht bekannt) — den verwaisten Duplikat-Eintrag entfernen.
+        const dupes = (await API.get("/calendar")).filter(
+          (c) => c.lessonId === saved.id && c.id !== linkId && c.autoGenerated
+        );
+        for (const d of dupes) await API.del("/calendar/" + d.id);
+      } catch (e2) { toast("Stunde gespeichert, Verknüpfung mit dem Termin ist aber fehlgeschlagen: " + e2.message, false); }
     }
     for (const seqId of pendingSeqLinkIds) {
       const seqInfo = seqOptionsCache.find((x) => x.id === seqId);
@@ -5577,6 +5691,32 @@ function wireEvents() {
   $("cancelEditBtn").onclick = () => { resetLessonEditState(); clearLessonForm(); toast("Formular geleert – neue Stunde."); };
   $("deleteLessonBtn").onclick = deleteLesson;
   $("lessonClass").addEventListener("change", () => { updateLessonLbOptions(null); updateLessonSeqOptions(); });
+  $("lessonMatUpload").onclick = async () => {
+    const f = $("lessonMatFile").files[0];
+    if (!f) { toast("Bitte eine Datei wählen.", false); return; }
+    const subjectOverride = $("lessonMatSubject").value.trim();
+    if (!editingLessonId) {
+      // Neue Stunde: Verknüpfung erst nach dem Speichern möglich (fehlende lessonId) – merken.
+      pendingLessonMaterialFile = f;
+      pendingLessonMaterialSubject = subjectOverride;
+      $("lessonMaterials").innerHTML =
+        `<div class="file-chip"><span>${esc(f.name)} (wird beim Speichern der Stunde hochgeladen)</span></div>`;
+      return;
+    }
+    const fd = new FormData();
+    fd.append("file", f);
+    fd.append("subject", subjectOverride || $("lessonSubject").value);
+    const grade = Number($("lessonGrade").value);
+    if (grade) fd.append("grade", grade);
+    fd.append("lessonId", editingLessonId);
+    try {
+      await API.upload("/materials/upload", fd);
+      await refresh();
+      loadLessonMaterials(editingLessonId);
+      $("lessonMatFile").value = ""; $("lessonMatSubject").value = "";
+      toast("Material verknüpft.");
+    } catch (e) { toast(e.message, false); }
+  };
   $("lessonLb").addEventListener("change", updateLessonLbProgress);
   $("saveReflect").onclick = saveReflect;
 

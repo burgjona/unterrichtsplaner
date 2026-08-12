@@ -312,12 +312,13 @@
               <div><label>Uhrzeit bis</label><input id="calEntryEndTime" type="time" /></div>
             </div>
             <div class="row" style="margin-top:8px;">
-              <div><label>Klasse</label><select id="calEntryClass"></select></div>
+              <div><label>Klassen</label><div class="class-toggle-row" id="calEntryClasses"></div></div>
               <div><label>Typ</label><select id="calEntryType"><option value="lu">Lernerfolgskontrolle</option><option value="exam">Klassenarbeit/Präsentation</option><option value="normal">Sonstiges</option></select></div>
             </div>
             <div class="row" style="margin-top:8px;">
               <div><label>Zimmer</label><input id="calEntryRoom" placeholder="z. B. 204" /></div>
             </div>
+            <div style="margin-top:8px;"><label>Notizen</label><textarea id="calEntryNotes" rows="3" placeholder="Notizen zu diesem Termin"></textarea></div>
             <label style="display:flex; align-items:center; gap:8px; margin-top:8px;"><input type="checkbox" id="calEntryFixed" style="width:auto;" /> Fixer Termin (nicht durch die Verplanung verschiebbar)</label>
             <div style="margin-top:10px; display:flex; gap:8px;"><button class="btn" id="calSaveEntryBtn">Termin speichern</button><button class="btn secondary" id="calEntryCancel">Abbrechen</button></div>
           </div>
@@ -418,6 +419,7 @@
           <div><label>Schuljahr</label><select id="planYear"></select></div>
           <div><label>Klasse</label><select id="planClass"></select></div>
         </div>
+        <p class="muted small">Klassen ohne festes Fach (z. B. stellvertretende Klassenleitung) erscheinen hier nicht – für sie gibt es keinen einheitlichen Lehrplan. Einzelne Stunden lassen sich für solche Klassen weiterhin direkt in der Unterrichtsplanung mit freier Fachwahl anlegen.</p>
         <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap;">
           <button class="btn ai" id="stoffAiBtn">✨ KI-Vorschlag</button>
         </div>
@@ -503,6 +505,17 @@
       <div class="card">
         <h3>Ideenfeld</h3>
         <textarea id="lessonIdeas" rows="3" placeholder="z. B. Balladen szenisch erschließen, Hörbeispiel als Einstieg, Gruppenarbeit mit Standbild ..."></textarea>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Zusätzliches Material</h3>
+        <p class="muted small">Für Vertretungsstunden oder Einzelfälle: Lehrplan-Ausschnitte oder Materialien anderer Fächer (z. B. Mathe, Physik) hochladen, die als Grundlage für diese Stunde dienen sollen. Wird beim Speichern der Stunde verknüpft.</p>
+        <div id="lessonMaterials" class="file-list" style="margin-bottom:8px;"></div>
+        <div class="row">
+          <div><label>Datei</label><input type="file" id="lessonMatFile" /></div>
+          <div><label>Fach des Materials (optional)</label><input id="lessonMatSubject" placeholder="leer = Fach der Stunde" /></div>
+        </div>
+        <button class="btn small" id="lessonMatUpload" style="margin-top:6px;">Hochladen &amp; verknüpfen</button>
       </div>
 
       <div class="card" style="margin-top:14px;">

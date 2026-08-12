@@ -28,7 +28,29 @@ def _get(conn, user_id, cid):
     row = conn.execute(
         "SELECT * FROM calendar_entries WHERE id = ? AND user_id = ?", (cid, user_id)
     ).fetchone()
-    return CalendarOut(**dict(row)) if row else None
+    if not row:
+        return None
+    class_ids = [r["class_id"] for r in conn.execute(
+        "SELECT class_id FROM calendar_entry_classes WHERE entry_id = ? ORDER BY class_id", (cid,)
+    ).fetchall()]
+    return CalendarOut(**dict(row), class_ids=class_ids)
+
+
+def _set_entry_classes(conn, user_id, entry_id, class_ids):
+    """Ersetzt die Klassen-Verknüpfungen eines Termins; validiert Ownership je Klasse."""
+    if class_ids:
+        owned = {r["id"] for r in conn.execute(
+            "SELECT id FROM classes WHERE user_id = ? AND id IN (%s)"
+            % ",".join("?" * len(class_ids)), (user_id, *class_ids)
+        ).fetchall()}
+        unknown = set(class_ids) - owned
+        if unknown:
+            raise HTTPException(status_code=400, detail="Unbekannte Klasse in Auswahl.")
+    conn.execute("DELETE FROM calendar_entry_classes WHERE entry_id = ?", (entry_id,))
+    conn.executemany(
+        "INSERT INTO calendar_entry_classes (entry_id, class_id) VALUES (?, ?)",
+        [(entry_id, cid) for cid in dict.fromkeys(class_ids)],
+    )
 
 
 def _category_owned(conn, user_id, category_id) -> bool:
@@ -46,12 +68,15 @@ def create(body: CalendarCreate, conn=Depends(get_db), user_id: int = Depends(ge
         cur = conn.execute(
             """INSERT INTO calendar_entries
                (user_id, class_id, lesson_id, school_year_id, title, entry_date, end_date,
-                start_time, end_time, all_day, entry_type, category_id, is_fixed, room, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))""",
+                start_time, end_time, all_day, entry_type, category_id, is_fixed, room, notes, updated_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))""",
             (user_id, body.class_id, body.lesson_id, body.school_year_id, body.title,
              body.entry_date, body.end_date, body.start_time, body.end_time,
-             int(body.all_day), body.entry_type, body.category_id, int(body.is_fixed), body.room),
+             int(body.all_day), body.entry_type, body.category_id, int(body.is_fixed), body.room,
+             body.notes),
         )
+        if body.class_ids:
+            _set_entry_classes(conn, user_id, cur.lastrowid, body.class_ids)
         conn.commit()
     except sqlite3.IntegrityError as exc:
         raise HTTPException(status_code=400, detail=f"Ungültiger Eintrag: {exc}")
@@ -78,7 +103,15 @@ def list_(
         sql += " AND class_id = ?"
         params.append(class_id)
     sql += " ORDER BY entry_date"
-    return [CalendarOut(**dict(r)) for r in conn.execute(sql, params).fetchall()]
+    rows = conn.execute(sql, params).fetchall()
+    class_map = {}
+    for r in conn.execute(
+        """SELECT ec.entry_id, ec.class_id FROM calendar_entry_classes ec
+           JOIN calendar_entries ce ON ce.id = ec.entry_id WHERE ce.user_id = ?""",
+        (user_id,),
+    ).fetchall():
+        class_map.setdefault(r["entry_id"], []).append(r["class_id"])
+    return [CalendarOut(**dict(r), class_ids=class_map.get(r["id"], [])) for r in rows]
 
 
 @router.get("/{cid}", response_model=CalendarOut)
@@ -92,6 +125,9 @@ def update(cid: int, body: CalendarUpdate, conn=Depends(get_db), user_id: int = 
     fields = body.model_dump(exclude_unset=True)
     if fields.get("category_id") is not None and not _category_owned(conn, user_id, fields["category_id"]):
         raise HTTPException(status_code=400, detail="Unbekannte Kategorie.")
+    class_ids = fields.pop("class_ids", None)
+    if class_ids is not None:
+        _set_entry_classes(conn, user_id, cid, class_ids)
     if "is_fixed" in fields:
         fields["is_fixed"] = int(fields["is_fixed"])
     if "all_day" in fields:
@@ -103,6 +139,8 @@ def update(cid: int, body: CalendarUpdate, conn=Depends(get_db), user_id: int = 
         conn.execute(
             f"UPDATE calendar_entries SET {cols} WHERE id = :id AND user_id = :uid", fields
         )
+        conn.commit()
+    elif class_ids is not None:
         conn.commit()
     return _get(conn, user_id, cid)
 
