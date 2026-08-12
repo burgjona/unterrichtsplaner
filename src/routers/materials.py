@@ -253,16 +253,18 @@ def list_(
     subject: Optional[str] = None,
     grade: Optional[int] = None,
     lernbereich_id: Optional[int] = Query(None, alias="lernbereichId"),
+    archived: bool = Query(False, alias="archived"),
     conn=Depends(get_db),
     user_id: int = Depends(get_user_id),
 ):
+    archived_cond = "m.archived_at IS NOT NULL" if archived else "m.archived_at IS NULL"
     if lernbereich_id is not None:
         sql = ("SELECT m.* FROM materials m "
                "JOIN material_lernbereiche ml ON ml.material_id = m.id "
-               "WHERE m.user_id = ? AND ml.lernbereich_id = ?")
+               f"WHERE m.user_id = ? AND ml.lernbereich_id = ? AND {archived_cond}")
         params = [user_id, lernbereich_id]
     else:
-        sql = "SELECT * FROM materials WHERE user_id = ?"
+        sql = f"SELECT * FROM materials m WHERE m.user_id = ? AND {archived_cond}"
         params = [user_id]
         if subject is not None:
             sql += " AND subject = ?"
@@ -270,7 +272,7 @@ def list_(
         if grade is not None:
             sql += " AND grade = ?"
             params.append(grade)
-    sql += " ORDER BY m.id" if lernbereich_id is not None else " ORDER BY id"
+    sql += " ORDER BY m.id"
     return [MaterialOut(**dict(r)) for r in conn.execute(sql, params).fetchall()]
 
 
@@ -291,6 +293,30 @@ def update(mid: int, body: MaterialUpdate, conn=Depends(get_db), user_id: int = 
             fields,
         )
         conn.commit()
+    return _get(conn, user_id, mid)
+
+
+@router.post("/{mid}/archive", response_model=MaterialOut)
+def archive(mid: int, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+    row_or_404(_get(conn, user_id, mid), "Material")
+    conn.execute(
+        "UPDATE materials SET archived_at = datetime('now'), updated_at = datetime('now') "
+        "WHERE id = ? AND user_id = ?",
+        (mid, user_id),
+    )
+    conn.commit()
+    return _get(conn, user_id, mid)
+
+
+@router.post("/{mid}/restore", response_model=MaterialOut)
+def restore(mid: int, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+    row_or_404(_get(conn, user_id, mid), "Material")
+    conn.execute(
+        "UPDATE materials SET archived_at = NULL, updated_at = datetime('now') "
+        "WHERE id = ? AND user_id = ?",
+        (mid, user_id),
+    )
+    conn.commit()
     return _get(conn, user_id, mid)
 
 

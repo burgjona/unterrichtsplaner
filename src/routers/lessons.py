@@ -40,8 +40,12 @@ def _sync_calendar_entry(conn, user_id: int, lesson_id: int) -> None:
     ).fetchone()
     if l is None:
         return
+    # archivierte Einträge zählen nicht als "existing" – sonst würde ein Nutzer, der einen
+    # archivierten Auto-Eintrag hat, bei jeder Stunden-Aktualisierung nur dessen (weiterhin
+    # verstecktes) archived_at-Feld erben, statt einen neuen sichtbaren Eintrag zu bekommen.
     existing = conn.execute(
-        "SELECT id, auto_generated FROM calendar_entries WHERE lesson_id = ?", (lesson_id,)
+        "SELECT id, auto_generated FROM calendar_entries WHERE lesson_id = ? AND archived_at IS NULL",
+        (lesson_id,),
     ).fetchone()
     if l["date"]:
         if existing:

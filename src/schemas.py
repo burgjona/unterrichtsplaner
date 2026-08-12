@@ -322,6 +322,7 @@ class CalendarOut(Base):
     notes: Optional[str] = None
     class_ids: List[int] = []
     auto_generated: bool = False
+    archived_at: Optional[str] = None
     created_at: str
     updated_at: Optional[str] = None          # U26: Last-write-wins-Zeitstempel (Google-Sync)
     google_event_id: Optional[str] = None     # U26: gesetzt = mit Google-Kalender verknuepft
@@ -411,6 +412,7 @@ class MaterialOut(Base):
     tag: Optional[str] = None
     external_link: Optional[str] = None
     extracted: bool
+    archived_at: Optional[str] = None
     created_at: str
     updated_at: str
 

@@ -88,10 +88,12 @@ def list_(
     from_: Optional[str] = Query(None, alias="from"),
     to: Optional[str] = None,
     class_id: Optional[int] = Query(None, alias="classId"),
+    archived: bool = Query(False, alias="archived"),
     conn=Depends(get_db),
     user_id: int = Depends(get_user_id),
 ):
-    sql = "SELECT * FROM calendar_entries WHERE user_id = ?"
+    archived_cond = "archived_at IS NOT NULL" if archived else "archived_at IS NULL"
+    sql = f"SELECT * FROM calendar_entries WHERE user_id = ? AND {archived_cond}"
     params = [user_id]
     if from_ is not None:
         sql += " AND entry_date >= ?"
@@ -142,6 +144,30 @@ def update(cid: int, body: CalendarUpdate, conn=Depends(get_db), user_id: int = 
         conn.commit()
     elif class_ids is not None:
         conn.commit()
+    return _get(conn, user_id, cid)
+
+
+@router.post("/{cid}/archive", response_model=CalendarOut)
+def archive(cid: int, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+    row_or_404(_get(conn, user_id, cid), "Kalendereintrag")
+    conn.execute(
+        "UPDATE calendar_entries SET archived_at = datetime('now'), updated_at = datetime('now') "
+        "WHERE id = ? AND user_id = ?",
+        (cid, user_id),
+    )
+    conn.commit()
+    return _get(conn, user_id, cid)
+
+
+@router.post("/{cid}/restore", response_model=CalendarOut)
+def restore(cid: int, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+    row_or_404(_get(conn, user_id, cid), "Kalendereintrag")
+    conn.execute(
+        "UPDATE calendar_entries SET archived_at = NULL, updated_at = datetime('now') "
+        "WHERE id = ? AND user_id = ?",
+        (cid, user_id),
+    )
+    conn.commit()
     return _get(conn, user_id, cid)
 
 
