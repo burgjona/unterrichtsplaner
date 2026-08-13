@@ -2304,6 +2304,12 @@ let calTtAvailable = false;                              // erst nach erfolgreic
 let calTtGen = 0;                                        // Render-Generation gegen veraltete Async-Anwendung
 const calTtCache = new Map();                            // mondayStr → { data, time } | { promise, time }
 
+// Filter „Nur Stundenplan“: blendet reguläre Termine + Stoffplan-Streifen aus (Monat + Woche),
+// zeigt ausschließlich die Stundenplan-Ebene. Persistiert wie calTtOn.
+const CAL_ONLY_TT_KEY = "ldb_cal_only_tt";
+let calOnlyTt = false;
+try { calOnlyTt = localStorage.getItem(CAL_ONLY_TT_KEY) === "1"; } catch (e) { /* Storage evtl. blockiert */ }
+
 // Nur Hex-Farben zulassen → keine CSS-Injection über das style-Attribut; sonst neutraler Fallback.
 function calTtSafeColor(c) {
   return (typeof c === "string" && /^#[0-9a-fA-F]{3,8}$/.test(c)) ? c : "#94a3b8";
@@ -2382,6 +2388,36 @@ function calTtApplyToCells(data) {
     });
   });
 }
+// U33: Filter „Nur Stundenplan“ in der Monatsansicht — die volle .cal-tt-strip-Ebene würde
+// in den kleinen Monatskacheln überlaufen, daher hier dieselben dezenten Farbpunkte wie bei
+// regulären Terminen (Fantastical-Stil), nur eben aus der Stundenplan-Ebene gespeist.
+function calTtApplyMonthDots(data) {
+  const grid = $("calGrid");
+  if (!grid || !data || !Array.isArray(data.days)) return;
+  data.days.forEach((day) => {
+    if (!day || !day.date || !Array.isArray(day.items) || !day.items.length) return;
+    const cell = grid.querySelector('.cal-cell[data-date="' + day.date + '"]');
+    const dayNum = cell && cell.querySelector(".cal-daynum");
+    if (!cell || !dayNum) return;
+    const dots = document.createElement("div");
+    dots.className = "cal-dots";
+    dots.innerHTML = day.items.slice(0, 5).map((it) => {
+      const color = calTtSafeColor(it.color);
+      const tip = [it.timeRange, it.title].filter(Boolean).join(" ");
+      return '<span class="cal-dot" style="background:' + color + '" title="' + esc(tip) + '"></span>';
+    }).join("") + (day.items.length > 5 ? '<span class="cal-dot-more">+' + (day.items.length - 5) + '</span>' : "");
+    cell.insertBefore(dots, dayNum.nextSibling);
+  });
+}
+// Holt und wendet die Stundenplan-Ebene für mehrere Wochen an (Monatsraster: bis zu 6 Montage).
+async function calOnlyTtRenderMonth(mondayStrs, gen) {
+  for (const mondayStr of mondayStrs) {
+    let data;
+    try { data = await calTtFetch(mondayStr); } catch (e) { continue; }
+    if (gen !== calTtGen || calMode !== "month" || !calOnlyTt) return;
+    calTtApplyMonthDots(data);
+  }
+}
 // U30: Vertretung aus der blassen Stundenplan-Ebene löschen (Cache invalidieren + Woche neu einspielen).
 async function calTtDeleteOverride(overrideId) {
   if (!confirm("Diese Vertretung wirklich entfernen?")) return;
@@ -2424,14 +2460,16 @@ async function calTtRenderWeek(mondayStr, gen) {
   if (gen !== calTtGen || calMode !== "week") return;    // Render veraltet/Modus gewechselt → nichts anwenden
   calTtAvailable = true;
   const tgl = $("calTtToggle");
-  if (tgl) { tgl.classList.remove("hidden"); tgl.classList.toggle("active", calTtOn); }
+  // U33: Bei aktivem „Nur Stundenplan“-Filter ist die Ebene immer an — der Ein-/Aus-Toggle
+  // wäre dann irreführend, deshalb ausblenden statt ihn separat deaktiviert anzuzeigen.
+  if (tgl) { tgl.classList.toggle("hidden", calOnlyTt); tgl.classList.toggle("active", calTtOn); }
   const bdg = $("calWeekBadge");
   if (bdg) {
     const wt = data.weekType;
     if (wt === "A" || wt === "B") { bdg.textContent = wt + "-Woche"; bdg.classList.remove("hidden"); }
     else bdg.classList.add("hidden");
   }
-  if (calTtOn) calTtApplyToCells(data);
+  if (calTtOn || calOnlyTt) calTtApplyToCells(data);
 }
 // U15: Kalender auf ein Datum springen lassen und den Tag kurz farblich hervorheben.
 function jumpCalendarToDate(dStr) {
@@ -2507,12 +2545,14 @@ function renderCalendar() {
     cell.dataset.date = dStr;
     const sd = schoolDateFor(dStr);
     if (sd) { cell.style.background = cssVar(sd.kind === "feiertag" ? "--cal-holiday" : "--cal-vacation", sd.kind === "feiertag" ? "#fde68a" : "#e5e7eb"); cell.title = sd.name; }
-    const strips = planSegs.filter((s) => s.start <= dStr && dStr <= s.end);
+    // U33: Filter „Nur Stundenplan“ blendet Stoffplan-Streifen und reguläre Termine aus —
+    // die Stundenplan-Ebene wird davon unabhängig weiter unten (calTt*) eingespielt.
+    const strips = calOnlyTt ? [] : planSegs.filter((s) => s.start <= dStr && dStr <= s.end);
     const stripHtml = strips.length
       ? `<div class="cal-plan-strips">` + strips.map((s) =>
           `<span class="cal-plan-strip" style="background:${s.color}" title="${s.tip}">${esc(s.code)}</span>`).join("") + `</div>`
       : "";
-    const entries = entriesForDate(dStr);
+    const entries = calOnlyTt ? [] : entriesForDate(dStr);
     // U28: Im Monatsraster nur dezente Farbpunkte (Fantastical-Stil) — die Tages-Agenda unten
     // zeigt Titel/Zeit im Klartext, damit die winzigen Kacheln nicht überladen wirken.
     const entriesHtml = isMonth
@@ -2539,14 +2579,20 @@ function renderCalendar() {
     $("calLabel").textContent = calCursor.toLocaleDateString("de-DE", { month: "long", year: "numeric" });
     const startOffset = (new Date(y, m, 1).getDay() + 6) % 7;
     const startDate = new Date(y, m, 1 - startOffset);
+    const mondays = [];                                  // U33: je Rasterzeile ein Montag (Stundenplan-Ebene)
     for (let i = 0; i < 42; i++) {
       const d = new Date(startDate); d.setDate(startDate.getDate() + i);
-      if (i % 7 === 0) { const kw = document.createElement("div"); kw.className = "cal-kw"; kw.textContent = isoWeek(d); grid.appendChild(kw); }
+      if (i % 7 === 0) {
+        const kw = document.createElement("div"); kw.className = "cal-kw"; kw.textContent = isoWeek(d); grid.appendChild(kw);
+        mondays.push(isoDate(d));
+      }
       grid.appendChild(makeCell(d, d.getMonth() !== m, true));
     }
     // U27c: Stundenplan-Ebene ist Wochen-only → Toggle + KW-Badge im Monatsmodus verstecken.
     const bdg = $("calWeekBadge"); if (bdg) bdg.classList.add("hidden");
     const tgl = $("calTtToggle"); if (tgl) tgl.classList.add("hidden");
+    // U33: „Nur Stundenplan“ gilt auch im Monat — Stundenplan-Ebene je Rasterzeile nachladen.
+    if (calOnlyTt) calOnlyTtRenderMonth(mondays, ttGen);
     monthStartStr = isoDate(new Date(y, m, 1)); monthEndStr = isoDate(new Date(y, m + 1, 0));
   } else {
     const d0 = new Date(calCursor); d0.setDate(d0.getDate() - ((d0.getDay() + 6) % 7));
@@ -2609,7 +2655,8 @@ function renderDayAgenda(dStr) {
   document.querySelectorAll("#calGrid .cal-cell").forEach((c) => c.classList.toggle("selected", c.dataset.date === dStr));
   const d = parseIso(dStr);
   $("calDayAgendaDate").textContent = d ? d.toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long" }) : dStr;
-  const items = entriesForDate(dStr).slice().sort((a, b) => {
+  // U33: Filter „Nur Stundenplan“ blendet auch die Termine der Tages-Agenda aus.
+  const items = calOnlyTt ? [] : entriesForDate(dStr).slice().sort((a, b) => {
     if (a.allDay !== b.allDay) return a.allDay ? -1 : 1;
     return (a.startTime || "").localeCompare(b.startTime || "");
   });
@@ -2621,7 +2668,7 @@ function renderDayAgenda(dStr) {
     const time = e.allDay ? "Ganztägig" : ([e.startTime, e.endTime].filter(Boolean).join(" – ") || "—");
     return `<div class="cal-day-agenda-item ${esc(e.entryType)}" data-lesson="${e.lessonId == null ? "" : e.lessonId}" data-entry-id="${e.id}"${style}>` +
       `<span class="cal-day-agenda-time">${esc(time)}</span><span class="cal-day-agenda-title">${esc(e.title)}${e.room ? ` <span class="muted small">· Zimmer ${esc(e.room)}</span>` : ""}</span></div>`;
-  }).join("") : `<p class="muted small cal-day-agenda-empty">Keine Termine an diesem Tag.</p>`;
+  }).join("") : `<p class="muted small cal-day-agenda-empty">${calOnlyTt ? "Termine ausgeblendet (Filter „Nur Stundenplan“)." : "Keine Termine an diesem Tag."}</p>`;
   list.querySelectorAll(".cal-day-agenda-item").forEach((el) => {
     const lid = el.dataset.lesson;
     if (lid) el.onclick = () => { const l = state.lessons.find((x) => String(x.id) === lid); if (l) openLessonModal(l); };
@@ -4945,6 +4992,14 @@ function wireEvents() {
     $("calTtToggle").classList.toggle("active", calTtOn);
     renderCalendar();
   };
+  // U33: Filter „Nur Stundenplan“ ein-/ausschalten (persistiert, Monat + Woche).
+  $("calOnlyTtBtn").onclick = () => {
+    calOnlyTt = !calOnlyTt;
+    try { localStorage.setItem(CAL_ONLY_TT_KEY, calOnlyTt ? "1" : "0"); } catch (e) { /* egal */ }
+    $("calOnlyTtBtn").classList.toggle("active", calOnlyTt);
+    renderCalendar();
+  };
+  $("calOnlyTtBtn").classList.toggle("active", calOnlyTt);
   $("calSaveEntryBtn").onclick = saveCalendarEntry;
   $("calEntryAllDay").onchange = () => {
     $("calEntryTimeRow").style.display = $("calEntryAllDay").checked ? "none" : "flex";

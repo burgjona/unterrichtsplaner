@@ -762,6 +762,7 @@ body.cmd-open { overflow:hidden; }
    echten Termin-Chips NICHT übertönen: getönt + Farbpunkt, KEIN Seitenstreifen. */
 .cal-week-badge { background:var(--surface-2); color:var(--primary-dark); border:1px solid var(--line); }
 #calTtToggle.active { background:var(--primary); border-color:var(--primary); color:#fff; }
+#calOnlyTtBtn.active { background:var(--primary); border-color:var(--primary); color:#fff; }
 .cal-tt-strip { display:flex; flex-direction:column; gap:2px; margin-bottom:3px; }
 .cal-tt-chip {
   --cal-tt-c: var(--muted);
