@@ -269,6 +269,53 @@ function readPhases() {
   });
   return phases;
 }
+
+/* ---------- Sozialform-Monotonie-Warnung (regelbasiert, kein KI-Call) ----------
+   Warnt, wenn die letzten 3 geplanten Stunden derselben Klasse dieselbe überwiegende
+   Sozialform hatten (Meyer-Merkmal 4, Methodenvielfalt). Reines Auszählen über die
+   bereits geladenen state.lessons (inkl. Phasen) – kein zusätzlicher API-Call nötig. */
+const SOCIAL_FORM_LABELS = { EA: "Einzelarbeit", PA: "Partnerarbeit", GA: "Gruppenarbeit", Plenum: "Plenum" };
+
+// Häufigste Sozialform unter den Phasen einer Stunde (leere Phasen zählen nicht mit).
+function dominantSocialForm(lesson) {
+  const counts = {};
+  (lesson.phases || []).forEach((p) => {
+    if (!p.socialForm) return;
+    counts[p.socialForm] = (counts[p.socialForm] || 0) + 1;
+  });
+  let best = null, bestCount = 0;
+  Object.keys(counts).forEach((k) => {
+    if (counts[k] > bestCount) { best = k; bestCount = counts[k]; }
+  });
+  return best;
+}
+
+// Letzte 3 terminierten Stunden der Klasse (ohne die aktuell bearbeitete) – wenn alle
+// dieselbe überwiegende Sozialform haben, deren Code zurückgeben, sonst null.
+function checkSozialformMonotonie(classId, excludeLessonId) {
+  const past = state.lessons
+    .filter((l) => l.classId === classId && l.date && l.id !== excludeLessonId)
+    .sort((a, b) => (b.date || "").localeCompare(a.date || ""))
+    .slice(0, 3);
+  if (past.length < 3) return null;
+  const forms = past.map(dominantSocialForm);
+  if (forms.some((f) => !f)) return null;
+  return (forms[0] === forms[1] && forms[1] === forms[2]) ? forms[0] : null;
+}
+
+function updateSozialformMonotonyHint() {
+  const box = $("sozialformHint");
+  if (!box) return;
+  const classId = $("lessonClass").value ? Number($("lessonClass").value) : null;
+  const form = classId ? checkSozialformMonotonie(classId, editingLessonId) : null;
+  if (form) {
+    box.textContent = `Die letzten 3 geplanten Stunden dieser Klasse waren überwiegend ${SOCIAL_FORM_LABELS[form] || form} – für Methodenvielfalt (Meyer-Merkmal 4) ggf. eine andere Sozialform wählen.`;
+    box.classList.remove("hidden");
+  } else {
+    box.classList.add("hidden");
+  }
+}
+
 /* ---------- Lernziele-Editor (M11) ---------- */
 let lessonZiele = [];   // [{kind:'grob'|'fein', text, bloomStufe, phaseSortOrder}]
 
@@ -348,6 +395,7 @@ function clearLessonForm() {
   pendingSeqLinkIds = [];
   updateLessonSeqOptions();
   pendingCalendarEntryLink = null;
+  updateSozialformMonotonyHint();   // Klasse gerade zurückgesetzt → blendet den Hinweis aus
   resetLocalUndo();   // andere/neue Stunde geladen – alte Block-Snapshots (Phasen, Klafki, Lernziele) wären falsch.
 }
 
@@ -369,6 +417,7 @@ function planLessonFromCalendarEntry(e) {
   }
   $("lessonDate").value = e.entryDate || "";
   updateLessonLbOptions(null);
+  updateSozialformMonotonyHint();
   pendingCalendarEntryLink = e.id;
 }
 
@@ -401,6 +450,7 @@ function loadLessonIntoForm(l) {
     $("lessonClass").appendChild(opt);
   }
   $("lessonClass").value = clsVal;
+  updateSozialformMonotonyHint();
   $("lessonDate").value = l.date || "";
   $("lessonDuration").value = String(l.durationMinutes || 45);
   lessonZiele = (l.lernziele || []).map((z) => ({
@@ -4853,7 +4903,7 @@ function wireEvents() {
   $("saveLesson").onclick = saveLesson;
   $("cancelEditBtn").onclick = () => { resetLessonEditState(); clearLessonForm(); toast("Formular geleert – neue Stunde."); };
   $("deleteLessonBtn").onclick = deleteLesson;
-  $("lessonClass").addEventListener("change", () => { updateLessonLbOptions(null); updateLessonSeqOptions(); });
+  $("lessonClass").addEventListener("change", () => { updateLessonLbOptions(null); updateLessonSeqOptions(); updateSozialformMonotonyHint(); });
   $("lessonMatUpload").onclick = async () => {
     const f = $("lessonMatFile").files[0];
     if (!f) { toast("Bitte eine Datei wählen.", false); return; }
