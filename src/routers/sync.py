@@ -20,6 +20,7 @@ from ..schemas import (
 )
 from . import calendar_categories as calendar_categories_router
 from . import notes as notes_router
+from . import school_years as school_years_router
 from . import todos as todos_router
 
 router = APIRouter(prefix="/sync", tags=["sync"])
@@ -28,6 +29,7 @@ ENTITY_REGISTRY = {
     "notes": notes_router.SYNC_HANDLER,
     "todos": todos_router.SYNC_HANDLER,
     "calendar_categories": calendar_categories_router.SYNC_HANDLER,
+    "school_years": school_years_router.SYNC_HANDLER,
 }
 
 PAGE_SIZE = 500

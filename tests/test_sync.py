@@ -280,3 +280,57 @@ def test_calendar_categories_push_detects_conflict(client, auth):
     result = r.json()["results"][0]
     assert result["status"] == "conflict"
     assert result["serverEntity"]["color"] == "#111111"
+
+
+# ---------- Rollout Tranche 1: school_years ----------
+
+def test_sync_log_table_and_school_years_triggers_exist(tmp_path):
+    conn = init_db(str(tmp_path / "schema.db"))
+    triggers = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
+    assert {
+        "trg_synclog_school_years_ai",
+        "trg_synclog_school_years_au",
+        "trg_synclog_school_years_ad",
+    } <= triggers
+    conn.close()
+
+
+def test_school_years_push_create_update_delete_lifecycle(client, auth):
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "school_years", "op": "create",
+        "payload": {"label": "2026/2027", "startDate": "2026-08-01", "endDate": "2027-07-31"},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "applied"
+    sid, base_updated = result["entityId"], result["entity"]["updatedAt"]
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_2", "entityType": "school_years", "op": "update", "entityId": sid,
+        "baseUpdatedAt": base_updated, "payload": {"label": "2026/2027 (korrigiert)"},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "applied"
+    assert result["entity"]["label"] == "2026/2027 (korrigiert)"
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_3", "entityType": "school_years", "op": "delete", "entityId": sid,
+        "baseUpdatedAt": result["entity"]["updatedAt"],
+    }]})
+    assert r.json()["results"][0]["status"] == "applied"
+    assert client.get("/api/school-years").json() == []
+
+
+def test_school_years_push_detects_conflict(client, auth):
+    created = client.post("/api/school-years", json={
+        "label": "2026/2027", "startDate": "2026-08-01", "endDate": "2027-07-31",
+    }).json()
+    sid, base_updated = created["id"], created["updatedAt"]
+    assert client.put(f"/api/school-years/{sid}", json={"label": "geaendert"}).status_code == 200
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "school_years", "op": "update", "entityId": sid,
+        "baseUpdatedAt": base_updated, "payload": {"label": "zu spaet"},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "conflict"
+    assert result["serverEntity"]["label"] == "geaendert"

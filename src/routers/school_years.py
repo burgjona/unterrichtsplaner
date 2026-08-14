@@ -38,14 +38,13 @@ def _get(conn, user_id, sid):
     return SchoolYearOut(**dict(row)) if row else None
 
 
-@router.post("", response_model=SchoolYearOut, status_code=201)
-def create(body: SchoolYearCreate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+def _apply_create(conn, user_id, body: SchoolYearCreate) -> SchoolYearOut:
     try:
         cur = conn.execute(
-            "INSERT INTO school_years(user_id, label, start_date, end_date) VALUES (?,?,?,?)",
+            "INSERT INTO school_years(user_id, label, start_date, end_date, updated_at) "
+            "VALUES (?,?,?,?, strftime('%Y-%m-%d %H:%M:%f','now'))",
             (user_id, body.label, body.start_date, body.end_date),
         )
-        conn.commit()
     except sqlite3.IntegrityError:
         raise HTTPException(status_code=409, detail="Schuljahr-Label bereits vorhanden.")
     try:
@@ -53,6 +52,29 @@ def create(body: SchoolYearCreate, conn=Depends(get_db), user_id: int = Depends(
     except Exception:  # Abruf best-effort – Schuljahr entsteht auch ohne Netz
         pass
     return _get(conn, user_id, cur.lastrowid)
+
+
+def _apply_update(conn, user_id, sid: int, body: SchoolYearUpdate) -> SchoolYearOut:
+    row_or_404(_get(conn, user_id, sid), "Schuljahr")
+    fields = body.model_dump(exclude_unset=True)
+    if fields:
+        cols = ", ".join(f"{k} = :{k}" for k in fields) + ", updated_at = strftime('%Y-%m-%d %H:%M:%f','now')"
+        fields.update(id=sid, uid=user_id)
+        conn.execute(f"UPDATE school_years SET {cols} WHERE id = :id AND user_id = :uid", fields)
+    return _get(conn, user_id, sid)
+
+
+def _apply_delete(conn, user_id, sid: int) -> None:
+    cur = conn.execute("DELETE FROM school_years WHERE id = ? AND user_id = ?", (sid, user_id))
+    if cur.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Schuljahr nicht gefunden.")
+
+
+@router.post("", response_model=SchoolYearOut, status_code=201)
+def create(body: SchoolYearCreate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+    result = _apply_create(conn, user_id, body)
+    conn.commit()
+    return result
 
 
 @router.get("", response_model=List[SchoolYearOut])
@@ -70,22 +92,41 @@ def get_(sid: int, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
 
 @router.put("/{sid}", response_model=SchoolYearOut)
 def update(sid: int, body: SchoolYearUpdate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
-    row_or_404(_get(conn, user_id, sid), "Schuljahr")
-    fields = body.model_dump(exclude_unset=True)
-    if fields:
-        cols = ", ".join(f"{k} = :{k}" for k in fields)
-        fields.update(id=sid, uid=user_id)
-        conn.execute(f"UPDATE school_years SET {cols} WHERE id = :id AND user_id = :uid", fields)
-        conn.commit()
-    return _get(conn, user_id, sid)
+    result = _apply_update(conn, user_id, sid, body)
+    conn.commit()
+    return result
 
 
 @router.delete("/{sid}", status_code=204)
 def delete(sid: int, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
-    cur = conn.execute("DELETE FROM school_years WHERE id = ? AND user_id = ?", (sid, user_id))
+    _apply_delete(conn, user_id, sid)
     conn.commit()
-    if cur.rowcount == 0:
-        raise HTTPException(status_code=404, detail="Schuljahr nicht gefunden.")
+
+
+# ---------- Sync-Handler-Registry (src/routers/sync.py) ----------
+
+def _sync_fetch(conn, user_id, entity_id):
+    return _get(conn, user_id, entity_id)
+
+
+def _sync_create(conn, user_id, payload: dict) -> SchoolYearOut:
+    return _apply_create(conn, user_id, SchoolYearCreate(**payload))
+
+
+def _sync_update(conn, user_id, entity_id, payload: dict) -> SchoolYearOut:
+    return _apply_update(conn, user_id, entity_id, SchoolYearUpdate(**payload))
+
+
+def _sync_delete(conn, user_id, entity_id) -> None:
+    _apply_delete(conn, user_id, entity_id)
+
+
+SYNC_HANDLER = {
+    "fetch": _sync_fetch,
+    "create": _sync_create,
+    "update": _sync_update,
+    "delete": _sync_delete,
+}
 
 
 @router.get("/{sid}/dates", response_model=List[SchoolDateOut])

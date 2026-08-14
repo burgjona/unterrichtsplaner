@@ -98,6 +98,7 @@ class SchoolYearOut(Base):
     start_date: str
     end_date: str
     created_at: str
+    updated_at: str
 
 
 # ---------- Klassen ----------

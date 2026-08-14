@@ -739,10 +739,10 @@ async function loadAll() {
   // bleiben offline angelegte/geänderte Notizen sichtbar. pull() ist offline ein No-Op,
   // materialize() liefert dann den zuletzt bekannten Stand + Warteschlange.
   await SyncEngine.pull();
-  const [classes, lessons, reflections, open, materials, todosAll, notes, schoolYears, calendar, calendarCategoriesAll, asuvDrafts] = await Promise.all([
+  const [classes, lessons, reflections, open, materials, todosAll, notes, schoolYearsAll, calendar, calendarCategoriesAll, asuvDrafts] = await Promise.all([
     API.get("/classes"), API.get("/lessons"), API.get("/reflections"),
     API.get("/reflections/open"), API.get("/materials"), SyncEngine.materialize("todos"),
-    SyncEngine.materialize("notes"), API.get("/school-years"), API.get("/calendar"),
+    SyncEngine.materialize("notes"), SyncEngine.materialize("school_years"), API.get("/calendar"),
     SyncEngine.materialize("calendar_categories"), API.get("/asuv"),
   ]);
   // Archivierte To-dos bleiben wie bisher außerhalb von state.todos (eigene Abfrage in der
@@ -752,6 +752,8 @@ async function loadAll() {
   // bisherige Backend-Endpunkt (ORDER BY sort_order, id) hier client-seitig herstellen.
   const calendarCategories = calendarCategoriesAll.slice()
     .sort((a, b) => (a.sortOrder - b.sortOrder) || (String(a.id).localeCompare(String(b.id))));
+  const schoolYears = schoolYearsAll.slice()
+    .sort((a, b) => String(a.startDate).localeCompare(String(b.startDate)));
   let schoolDates = [];
   for (const sy of schoolYears) {
     try { schoolDates = schoolDates.concat(await API.get(`/school-years/${sy.id}/dates`)); }
@@ -3174,7 +3176,7 @@ async function saveSchoolYear() {
   const label = $("syLabel").value.trim(), start = $("syStart").value, end = $("syEnd").value;
   if (!label || !start || !end) { toast("Bitte Bezeichnung, Beginn und Ende angeben.", false); return; }
   try {
-    await API.post("/school-years", { label, startDate: start, endDate: end });
+    await SyncEngine.create("school_years", { label, startDate: start, endDate: end });
     $("syLabel").value = ""; await refresh(); toast("Schuljahr angelegt (Ferien/Feiertage abgerufen).");
   } catch (e) { toast(e.message, false); }
 }
@@ -5397,6 +5399,7 @@ const SYNC_ENTITY_RENDERERS = {
   notes: (n) => ({ title: noteTitle(n), preview: notePreviewText(n) }),
   todos: (t) => ({ title: t.text, preview: t.done ? "erledigt" : "offen" }),
   calendar_categories: (c) => ({ title: c.name, preview: c.color }),
+  school_years: (s) => ({ title: s.label, preview: `${s.startDate} – ${s.endDate}` }),
 };
 
 let _syncConflictsModulePromise = null;
@@ -5544,4 +5547,13 @@ SyncEngine.onChange(async (entityType) => {
     .sort((a, b) => (a.sortOrder - b.sortOrder) || (String(a.id).localeCompare(String(b.id))));
   renderCategoryManager();
   renderCalendarLegend();
+});
+
+// Rollout (Tranche 1): school_years — nur "anlegen" ist verdrahtet (keine Update/Delete-UI
+// im Frontend vorhanden); Ferien/Feiertage (school_dates) bleiben separat online-only.
+SyncEngine.onChange(async (entityType) => {
+  if (entityType !== "school_years") return;
+  const all = await SyncEngine.materialize("school_years");
+  state.schoolYears = all.slice().sort((a, b) => String(a.startDate).localeCompare(String(b.startDate)));
+  renderSchoolYears();
 });
