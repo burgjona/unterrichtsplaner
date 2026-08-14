@@ -10,9 +10,58 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..deps import get_db, get_user_id, row_or_404
 from ..lib.planning import distribute_lernbereiche, effective_blocks, resolve_track
-from ..schemas import PlanningRequest, PlanningResult, PlanNoteIn, PlanNoteOut
+from ..schemas import (
+    PlanningRequest, PlanningResult, PlanNoteIn, PlanNoteOut,
+    PlanNoteSyncCreate, PlanNoteSyncUpdate,
+)
 
 router = APIRouter(prefix="/planning", tags=["planning"])
+
+
+def _get_plan_note(conn, user_id, pid):
+    row = conn.execute(
+        "SELECT * FROM plan_notes WHERE id = ? AND user_id = ?", (pid, user_id)
+    ).fetchone()
+    return PlanNoteOut(**dict(row)) if row else None
+
+
+def _apply_create(conn, user_id, body: PlanNoteSyncCreate) -> PlanNoteOut:
+    # Klasse/Schuljahr müssen dem Nutzer gehören (Scoping + FK-Schutz, wie beim alten Upsert).
+    row_or_404(conn.execute("SELECT id FROM classes WHERE id=? AND user_id=?",
+                            (body.class_id, user_id)).fetchone(), "Klasse")
+    row_or_404(conn.execute("SELECT id FROM school_years WHERE id=? AND user_id=?",
+                            (body.school_year_id, user_id)).fetchone(), "Schuljahr")
+    try:
+        # Bewusst ein reines INSERT (kein ON CONFLICT DO UPDATE wie beim alten Upsert-Endpunkt):
+        # legen zwei Geräte offline beide eine erste Notiz für dieselbe Klasse/Schuljahr an,
+        # soll das als Konflikt auffallen statt die zuerst angewandte Version still zu überschreiben.
+        cur = conn.execute(
+            "INSERT INTO plan_notes(user_id, class_id, school_year_id, text, updated_at) "
+            "VALUES (?,?,?,?, strftime('%Y-%m-%d %H:%M:%f','now'))",
+            (user_id, body.class_id, body.school_year_id, body.text or ""),
+        )
+    except sqlite3.IntegrityError:
+        raise HTTPException(
+            status_code=409,
+            detail="Für diese Klasse/dieses Schuljahr existieren bereits Ideen — bitte neu laden.",
+        )
+    return _get_plan_note(conn, user_id, cur.lastrowid)
+
+
+def _apply_update(conn, user_id, pid: int, body: PlanNoteSyncUpdate) -> PlanNoteOut:
+    row_or_404(_get_plan_note(conn, user_id, pid), "Jahresplan-Ideen")
+    conn.execute(
+        "UPDATE plan_notes SET text = ?, updated_at = strftime('%Y-%m-%d %H:%M:%f','now') "
+        "WHERE id = ? AND user_id = ?",
+        (body.text or "", pid, user_id),
+    )
+    return _get_plan_note(conn, user_id, pid)
+
+
+def _apply_delete(conn, user_id, pid: int) -> None:
+    cur = conn.execute("DELETE FROM plan_notes WHERE id = ? AND user_id = ?", (pid, user_id))
+    if cur.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Jahresplan-Ideen nicht gefunden.")
 
 
 @router.post("/preview", response_model=PlanningResult)
@@ -57,9 +106,10 @@ def get_notes(class_id: int = Query(alias="classId"),
               conn: sqlite3.Connection = Depends(get_db),
               user_id: int = Depends(get_user_id)):
     row = conn.execute(
-        "SELECT text, updated_at FROM plan_notes WHERE user_id=? AND class_id=? AND school_year_id=?",
+        "SELECT id, text, updated_at FROM plan_notes WHERE user_id=? AND class_id=? AND school_year_id=?",
         (user_id, class_id, school_year_id)).fetchone()
     return PlanNoteOut(
+        id=(row["id"] if row else None),
         class_id=class_id, school_year_id=school_year_id,
         text=(row["text"] if row else ""),
         updated_at=(row["updated_at"] if row else None),
@@ -76,13 +126,39 @@ def put_notes(body: PlanNoteIn, conn: sqlite3.Connection = Depends(get_db),
                             (body.school_year_id, user_id)).fetchone(), "Schuljahr")
     conn.execute(
         """INSERT INTO plan_notes (user_id, class_id, school_year_id, text, updated_at)
-           VALUES (?, ?, ?, ?, datetime('now'))
+           VALUES (?, ?, ?, ?, strftime('%Y-%m-%d %H:%M:%f','now'))
            ON CONFLICT(user_id, class_id, school_year_id)
-           DO UPDATE SET text=excluded.text, updated_at=datetime('now')""",
+           DO UPDATE SET text=excluded.text, updated_at=strftime('%Y-%m-%d %H:%M:%f','now')""",
         (user_id, body.class_id, body.school_year_id, body.text or ""))
     conn.commit()
     row = conn.execute(
-        "SELECT text, updated_at FROM plan_notes WHERE user_id=? AND class_id=? AND school_year_id=?",
+        "SELECT id, text, updated_at FROM plan_notes WHERE user_id=? AND class_id=? AND school_year_id=?",
         (user_id, body.class_id, body.school_year_id)).fetchone()
-    return PlanNoteOut(class_id=body.class_id, school_year_id=body.school_year_id,
+    return PlanNoteOut(id=row["id"], class_id=body.class_id, school_year_id=body.school_year_id,
                        text=row["text"], updated_at=row["updated_at"])
+
+
+# ---------- Sync-Handler-Registry (src/routers/sync.py) ----------
+
+def _sync_fetch(conn, user_id, entity_id):
+    return _get_plan_note(conn, user_id, entity_id)
+
+
+def _sync_create(conn, user_id, payload: dict) -> PlanNoteOut:
+    return _apply_create(conn, user_id, PlanNoteSyncCreate(**payload))
+
+
+def _sync_update(conn, user_id, entity_id, payload: dict) -> PlanNoteOut:
+    return _apply_update(conn, user_id, entity_id, PlanNoteSyncUpdate(**payload))
+
+
+def _sync_delete(conn, user_id, entity_id) -> None:
+    _apply_delete(conn, user_id, entity_id)
+
+
+SYNC_HANDLER = {
+    "fetch": _sync_fetch,
+    "create": _sync_create,
+    "update": _sync_update,
+    "delete": _sync_delete,
+}

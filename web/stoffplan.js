@@ -16,7 +16,7 @@
 
 export function createStoffplanModule(ctx) {
   const {
-    $, esc, API, toast, state, refresh, setUndo,
+    $, esc, API, toast, state, refresh, setUndo, SyncEngine,
     deDate, nextMonday, parseIso, isoDate, openDatePicker,
     resetLocalUndo, restoreSequenzStunden, getLernbereiche, resolveTrack,
     downloadStoffPlanPdf, cascadeStoffPlanDates,
@@ -27,20 +27,38 @@ export function createStoffplanModule(ctx) {
   let kumuliertBlocks = [];
   let planNotesTimer = null;
   let planNotesKey = "";           // classId|schoolYearId der aktuell geladenen Notiz
+  let planNotesId = null;          // id der geladenen plan_notes-Zeile, oder null (noch keine angelegt)
 
-  /* ---------- Jahresplan-Ideen (Freitext, KI-relevant) ---------- */
+  // Hintergrund-Sync kann die id einer offline angelegten plan_notes-Zeile jederzeit von
+  // localId auf die echte serverId umstellen (siehe Identitäts-Kommentar in sync-engine.js) —
+  // sonst würde savePlanNotes() nach einem erfolgreichen Hintergrund-Push mit einer veralteten
+  // id weiterarbeiten.
+  SyncEngine.onChange((entityType, info) => {
+    if (entityType !== "plan_notes" || !info.idRemaps) return;
+    const remap = info.idRemaps.find((r) => r.oldId === planNotesId);
+    if (remap) planNotesId = remap.newId;
+  });
+
+  /* ---------- Jahresplan-Ideen (Freitext, KI-relevant) ----------
+     Offline-Sync (Rollout): plan_notes wird über den natürlichen Schlüssel (Klasse+Schuljahr)
+     gesucht statt über eine dem Nutzer bekannte id — die id wird erst beim Laden ermittelt und
+     lokal gemerkt, damit savePlanNotes() weiß, ob SyncEngine.create oder .update zu rufen ist. */
   async function loadPlanNotes() {
     const ta = $("planNotes");
     if (!ta) return;
     if (planNotesTimer) { clearTimeout(planNotesTimer); planNotesTimer = null; }  // ausstehenden Save der alten Auswahl verwerfen (kein Cross-Klassen-Schreiben)
     const clsId = Number($("planClass").value), syId = Number($("planYear").value);
     const status = $("planNotesStatus");
-    if (!clsId || !syId) { ta.value = ""; planNotesKey = ""; if (status) status.textContent = ""; return; }
+    if (!clsId || !syId) { ta.value = ""; planNotesKey = ""; planNotesId = null; if (status) status.textContent = ""; return; }
     planNotesKey = clsId + "|" + syId;
     if (status) status.textContent = "";
     try {
-      const res = await API.get(`/planning/notes?classId=${clsId}&schoolYearId=${syId}`);
-      if (planNotesKey === clsId + "|" + syId) ta.value = res.text || "";
+      const all = await SyncEngine.materialize("plan_notes");
+      const match = all.find((n) => n.classId === clsId && n.schoolYearId === syId);
+      if (planNotesKey === clsId + "|" + syId) {
+        ta.value = match ? (match.text || "") : "";
+        planNotesId = match ? match.id : null;
+      }
     } catch (e) { /* stumm – Notizen sind optional */ }
   }
 
@@ -51,7 +69,12 @@ export function createStoffplanModule(ctx) {
     if (!clsId || !syId) { if (!silent) toast("Bitte Schuljahr und Klasse wählen.", false); return; }
     const status = $("planNotesStatus");
     try {
-      await API.put("/planning/notes", { classId: clsId, schoolYearId: syId, text: ta.value });
+      if (planNotesId == null) {
+        const created = await SyncEngine.create("plan_notes", { classId: clsId, schoolYearId: syId, text: ta.value });
+        planNotesId = created.id;
+      } else {
+        await SyncEngine.update("plan_notes", planNotesId, { text: ta.value });
+      }
       if (status) status.textContent = "Gespeichert.";
       if (!silent) toast("Ideen gespeichert.");
     } catch (e) { if (status) status.textContent = ""; toast(e.message, false); }

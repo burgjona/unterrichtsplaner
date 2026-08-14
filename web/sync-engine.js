@@ -19,6 +19,7 @@ const SyncEngine = (() => {
     todos: { apiPath: "/todos" },
     calendar_categories: { apiPath: "/calendar-categories" },
     school_years: { apiPath: "/school-years" },
+    plan_notes: { apiPath: "/planning/notes" },
   };
 
   const listeners = new Set();

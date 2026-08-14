@@ -334,3 +334,106 @@ def test_school_years_push_detects_conflict(client, auth):
     result = r.json()["results"][0]
     assert result["status"] == "conflict"
     assert result["serverEntity"]["label"] == "geaendert"
+
+
+# ---------- Rollout Tranche 1: plan_notes (natürlicher Schlüssel statt sichtbarer id) ----------
+
+def test_sync_log_table_and_plan_notes_triggers_exist(tmp_path):
+    conn = init_db(str(tmp_path / "schema.db"))
+    triggers = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
+    assert {
+        "trg_synclog_plan_notes_ai",
+        "trg_synclog_plan_notes_au",
+        "trg_synclog_plan_notes_ad",
+    } <= triggers
+    conn.close()
+
+
+def _make_class_and_year(client):
+    sy = client.post("/api/school-years", json={
+        "label": "2026/2027", "startDate": "2026-08-01", "endDate": "2027-07-31",
+    }).json()
+    cls = client.post("/api/classes", json={
+        "name": "8a", "subject": "Deutsch", "grade": 8, "schoolYearId": sy["id"], "weeklyHours": 4,
+    }).json()
+    return cls["id"], sy["id"]
+
+
+def test_plan_notes_get_has_null_id_when_no_row_yet(client, auth):
+    cls_id, sy_id = _make_class_and_year(client)
+    r = client.get(f"/api/planning/notes?classId={cls_id}&schoolYearId={sy_id}")
+    assert r.status_code == 200
+    assert r.json()["id"] is None
+    assert r.json()["text"] == ""
+
+
+def test_plan_notes_push_create_update_delete_lifecycle(client, auth):
+    cls_id, sy_id = _make_class_and_year(client)
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "plan_notes", "op": "create",
+        "payload": {"classId": cls_id, "schoolYearId": sy_id, "text": "Projektwoche im Mai"},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "applied"
+    pid, base_updated = result["entityId"], result["entity"]["updatedAt"]
+    assert client.get(
+        f"/api/planning/notes?classId={cls_id}&schoolYearId={sy_id}"
+    ).json()["id"] == pid
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_2", "entityType": "plan_notes", "op": "update", "entityId": pid,
+        "baseUpdatedAt": base_updated, "payload": {"text": "Lektüre im Herbst"},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "applied"
+    assert result["entity"]["text"] == "Lektüre im Herbst"
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_3", "entityType": "plan_notes", "op": "delete", "entityId": pid,
+        "baseUpdatedAt": result["entity"]["updatedAt"],
+    }]})
+    assert r.json()["results"][0]["status"] == "applied"
+    assert client.get(
+        f"/api/planning/notes?classId={cls_id}&schoolYearId={sy_id}"
+    ).json()["id"] is None
+
+
+def test_plan_notes_push_detects_update_conflict(client, auth):
+    cls_id, sy_id = _make_class_and_year(client)
+    created = client.put("/api/planning/notes", json={
+        "classId": cls_id, "schoolYearId": sy_id, "text": "v1",
+    }).json()
+    pid, base_updated = created["id"], created["updatedAt"]
+    assert client.put("/api/planning/notes", json={
+        "classId": cls_id, "schoolYearId": sy_id, "text": "von Gerät B",
+    }).status_code == 200
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "plan_notes", "op": "update", "entityId": pid,
+        "baseUpdatedAt": base_updated, "payload": {"text": "zu spaet von Gerät A"},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "conflict"
+    assert result["serverEntity"]["text"] == "von Gerät B"
+
+
+def test_plan_notes_double_create_race_is_error_not_silent_overwrite(client, auth):
+    # Zwei Geräte legen offline beide die ERSTE Notiz für dieselbe Klasse/Schuljahr an, ohne
+    # vorher voneinander zu wissen - das zweite INSERT darf die erste Version nicht still
+    # überschreiben (anders als beim alten Upsert-Endpunkt), sondern muss klar fehlschlagen.
+    cls_id, sy_id = _make_class_and_year(client)
+    r1 = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "locA", "entityType": "plan_notes", "op": "create",
+        "payload": {"classId": cls_id, "schoolYearId": sy_id, "text": "von Gerät A"},
+    }]})
+    assert r1.json()["results"][0]["status"] == "applied"
+
+    r2 = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "locB", "entityType": "plan_notes", "op": "create",
+        "payload": {"classId": cls_id, "schoolYearId": sy_id, "text": "von Gerät B"},
+    }]})
+    result2 = r2.json()["results"][0]
+    assert result2["status"] == "error"
+    assert client.get(
+        f"/api/planning/notes?classId={cls_id}&schoolYearId={sy_id}"
+    ).json()["text"] == "von Gerät A"

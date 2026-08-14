@@ -3192,7 +3192,7 @@ function getStoffplanModule() {
   if (!_stoffplanModulePromise) {
     _stoffplanModulePromise = import("./stoffplan.js").then((mod) => {
       _stoffplanModuleInstance = mod.createStoffplanModule({
-        $, esc, API, toast, state, refresh, setUndo,
+        $, esc, API, toast, state, refresh, setUndo, SyncEngine,
         deDate, nextMonday, parseIso, isoDate, openDatePicker,
         resetLocalUndo, restoreSequenzStunden, getLernbereiche, resolveTrack,
         downloadStoffPlanPdf, cascadeStoffPlanDates,
@@ -5400,6 +5400,7 @@ const SYNC_ENTITY_RENDERERS = {
   todos: (t) => ({ title: t.text, preview: t.done ? "erledigt" : "offen" }),
   calendar_categories: (c) => ({ title: c.name, preview: c.color }),
   school_years: (s) => ({ title: s.label, preview: `${s.startDate} – ${s.endDate}` }),
+  plan_notes: (n) => ({ title: "Jahresplan-Ideen", preview: n.text }),
 };
 
 let _syncConflictsModulePromise = null;

@@ -599,10 +599,24 @@ class PlanNoteIn(Base):
 
 
 class PlanNoteOut(Base):
+    id: Optional[int] = None  # None = für diese Klasse/dieses Schuljahr existiert noch keine Zeile
     class_id: int
     school_year_id: int
     text: str = ""
     updated_at: Optional[str] = None
+
+
+# Offline-Sync (Rollout): eigene Create/Update-Schemas, da plan_notes über den natürlichen
+# Schlüssel (class_id, school_year_id) statt eine für den Client sichtbare id adressiert wird —
+# der generische Sync-Push braucht aber eine echte id (siehe planning.py _apply_create/_apply_update).
+class PlanNoteSyncCreate(Base):
+    class_id: int
+    school_year_id: int
+    text: str = ""
+
+
+class PlanNoteSyncUpdate(Base):
+    text: str = ""
 
 
 # ---------- Lernziele (Meilenstein 11) — ans Dateiende (Konfliktvermeidung) ----------
