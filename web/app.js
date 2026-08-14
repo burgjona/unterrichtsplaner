@@ -739,12 +739,15 @@ async function loadAll() {
   // bleiben offline angelegte/geänderte Notizen sichtbar. pull() ist offline ein No-Op,
   // materialize() liefert dann den zuletzt bekannten Stand + Warteschlange.
   await SyncEngine.pull();
-  const [classes, lessons, reflections, open, materials, todos, notes, schoolYears, calendar, calendarCategories, asuvDrafts] = await Promise.all([
+  const [classes, lessons, reflections, open, materials, todosAll, notes, schoolYears, calendar, calendarCategories, asuvDrafts] = await Promise.all([
     API.get("/classes"), API.get("/lessons"), API.get("/reflections"),
-    API.get("/reflections/open"), API.get("/materials"), API.get("/todos"),
+    API.get("/reflections/open"), API.get("/materials"), SyncEngine.materialize("todos"),
     SyncEngine.materialize("notes"), API.get("/school-years"), API.get("/calendar"), API.get("/calendar-categories"),
     API.get("/asuv"),
   ]);
+  // Archivierte To-dos bleiben wie bisher außerhalb von state.todos (eigene Abfrage in der
+  // Archiv-Ansicht, renderArchivTodos) — materialize() liefert wie die DB-Tabelle alle Zeilen.
+  const todos = todosAll.filter((t) => t.archivedAt == null);
   let schoolDates = [];
   for (const sy of schoolYears) {
     try { schoolDates = schoolDates.concat(await API.get(`/school-years/${sy.id}/dates`)); }
@@ -1758,7 +1761,7 @@ function renderTodos() {
   });
   list.querySelectorAll("[data-todo]").forEach((cb) => {
     cb.onchange = async () => {
-      try { await API.put("/todos/" + cb.dataset.todo, { done: cb.checked }); await refresh(); }
+      try { await SyncEngine.update("todos", cb.dataset.todo, { done: cb.checked }); await refresh(); }
       catch (e) { toast(e.message, false); }
     };
   });
@@ -5285,7 +5288,7 @@ function wireEvents() {
 
   $("newTodoInput").addEventListener("keydown", async (e) => {
     if (e.key === "Enter" && e.target.value.trim()) {
-      try { await API.post("/todos", { text: e.target.value.trim(), source: "manuell" }); e.target.value = ""; await refresh(); }
+      try { await SyncEngine.create("todos", { text: e.target.value.trim(), source: "manuell" }); e.target.value = ""; await refresh(); }
       catch (err) { toast(err.message, false); }
     }
   });
@@ -5388,6 +5391,7 @@ function activeNotesSorted(filterFn) {
 // generischer Key-Value-Fallback.
 const SYNC_ENTITY_RENDERERS = {
   notes: (n) => ({ title: noteTitle(n), preview: notePreviewText(n) }),
+  todos: (t) => ({ title: t.text, preview: t.done ? "erledigt" : "offen" }),
 };
 
 let _syncConflictsModulePromise = null;
@@ -5514,4 +5518,14 @@ SyncEngine.onChange(async (entityType, info) => {
   state.notes = await SyncEngine.materialize("notes");
   renderCdNoteList();
   renderCdNoteEditor();
+});
+
+// Rollout (Tranche 1): todos — Heute-Ansicht nach Hintergrund-Sync aktuell halten. Keine
+// Auswahl-id zu remappen (Checkbox/Löschen-Button greifen nicht auf eine gehaltene id zu,
+// sondern lesen dataset bei jedem Render neu), daher einfacher als der notes-Fall.
+SyncEngine.onChange(async (entityType) => {
+  if (entityType !== "todos") return;
+  const all = await SyncEngine.materialize("todos");
+  state.todos = all.filter((t) => t.archivedAt == null);
+  renderTodos();
 });

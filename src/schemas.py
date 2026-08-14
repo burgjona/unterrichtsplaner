@@ -531,6 +531,7 @@ class TodoOut(Base):
     done: bool
     archived_at: Optional[str] = None
     created_at: str
+    updated_at: str
 
 
 # ---------- Notizen (U17) ----------

@@ -1,6 +1,8 @@
-"""Offline-Sync (Fundament, F6-Beweis): Migration, /api/sync/changes, /api/sync/push,
-Konflikterkennung — nur für die Beweis-Entität notes (siehe Plan „Offline-Modus mit
-Synchronisation"). Weitere Entitäten kommen erst in der Rollout-Phase dazu.
+"""Offline-Sync: Migration, /api/sync/changes, /api/sync/push, Konflikterkennung.
+Fundament-Beweis an notes (siehe Plan „Offline-Modus mit Synchronisation"); Rollout-Tranche 1
+fügt todos hinzu (unten) — beide Entitäten teilen sich den generischen sync.py-Router, daher
+wird die Kernlogik (Push-Konflikt, Cursor, unbekannte Entität) nur einmal an notes geprüft und
+bei todos nur noch auf das Trigger-/Schema-Setup sowie den Lifecycle fokussiert.
 """
 from src.db import init_db
 
@@ -173,3 +175,52 @@ def test_changes_filters_by_entities_param(client, auth):
     client.post("/api/notes", json={"scope": "allgemein", "bodyMd": "x"})
     assert client.get("/api/sync/changes?since=0&entities=lessons").json()["changes"] == []
     assert len(client.get("/api/sync/changes?since=0&entities=notes").json()["changes"]) == 1
+
+
+# ---------- Rollout Tranche 1: todos ----------
+
+def test_sync_log_table_and_todos_triggers_exist(tmp_path):
+    conn = init_db(str(tmp_path / "schema.db"))
+    triggers = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
+    assert {"trg_synclog_todos_ai", "trg_synclog_todos_au", "trg_synclog_todos_ad"} <= triggers
+    conn.close()
+
+
+def test_todos_push_create_update_delete_lifecycle(client, auth):
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "todos", "op": "create",
+        "payload": {"text": "Kopien vorbereiten", "source": "manuell"},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "applied"
+    assert result["entity"]["done"] is False
+    todo_id, base_updated = result["entityId"], result["entity"]["updatedAt"]
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_2", "entityType": "todos", "op": "update", "entityId": todo_id,
+        "baseUpdatedAt": base_updated, "payload": {"done": True},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "applied"
+    assert result["entity"]["done"] is True
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_3", "entityType": "todos", "op": "delete", "entityId": todo_id,
+        "baseUpdatedAt": result["entity"]["updatedAt"],
+    }]})
+    assert r.json()["results"][0]["status"] == "applied"
+    assert client.get("/api/todos").json() == []
+
+
+def test_todos_push_detects_conflict(client, auth):
+    created = client.post("/api/todos", json={"text": "x"}).json()
+    tid, base_updated = created["id"], created["updatedAt"]
+    assert client.put(f"/api/todos/{tid}", json={"done": True}).status_code == 200
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "todos", "op": "update", "entityId": tid,
+        "baseUpdatedAt": base_updated, "payload": {"text": "zu spät geändert"},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "conflict"
+    assert result["serverEntity"]["done"] is True

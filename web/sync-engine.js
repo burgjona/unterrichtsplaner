@@ -16,6 +16,7 @@
 const SyncEngine = (() => {
   const ENTITIES = {
     notes: { apiPath: "/notes" },
+    todos: { apiPath: "/todos" },
   };
 
   const listeners = new Set();
@@ -138,9 +139,11 @@ const SyncEngine = (() => {
   }
 
   async function findByAnyId(entityType, id) {
-    // id ist entweder eine serverId (Zahl) oder eine localId (String "loc_...").
+    // id ist entweder eine serverId (Zahl) oder eine localId (String "loc_..."). Aufrufer
+    // reichen teils rohe dataset-Strings durch (z. B. "5" statt 5) — IndexedDB-Index-Lookups
+    // sind typsensitiv, also robust auf Number normalisieren, sofern es keine localId ist.
     if (typeof id === "string" && id.startsWith("loc_")) return OfflineDB.get(entityType, id);
-    const hit = await OfflineDB.getByIndex(entityType, "serverId", id);
+    const hit = await OfflineDB.getByIndex(entityType, "serverId", Number(id));
     return hit || null;
   }
 
