@@ -437,3 +437,71 @@ def test_plan_notes_double_create_race_is_error_not_silent_overwrite(client, aut
     assert client.get(
         f"/api/planning/notes?classId={cls_id}&schoolYearId={sy_id}"
     ).json()["text"] == "von Gerät A"
+
+
+# ---------- Rollout Tranche 1: timetable_kinds ----------
+
+def test_sync_log_table_and_timetable_kinds_triggers_exist(tmp_path):
+    conn = init_db(str(tmp_path / "schema.db"))
+    triggers = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
+    assert {
+        "trg_synclog_timetable_kinds_ai",
+        "trg_synclog_timetable_kinds_au",
+        "trg_synclog_timetable_kinds_ad",
+    } <= triggers
+    conn.close()
+
+
+def test_timetable_kinds_push_create_update_delete_lifecycle(client, auth):
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "timetable_kinds", "op": "create",
+        "payload": {"name": "Aufsicht", "color": "#123456", "sortOrder": 5},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "applied"
+    assert result["entity"]["isDefault"] is False
+    kid, base_updated = result["entityId"], result["entity"]["updatedAt"]
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_2", "entityType": "timetable_kinds", "op": "update", "entityId": kid,
+        "baseUpdatedAt": base_updated, "payload": {"name": "Pausenaufsicht"},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "applied"
+    assert result["entity"]["name"] == "Pausenaufsicht"
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_3", "entityType": "timetable_kinds", "op": "delete", "entityId": kid,
+        "baseUpdatedAt": result["entity"]["updatedAt"],
+    }]})
+    assert r.json()["results"][0]["status"] == "applied"
+    assert kid not in [k["id"] for k in client.get("/api/stundenplan/kinds").json()]
+
+
+def test_timetable_kinds_push_detects_conflict(client, auth):
+    created = client.post("/api/stundenplan/kinds", json={"name": "x", "color": "#000000"}).json()
+    kid, base_updated = created["id"], created["updatedAt"]
+    assert client.put(f"/api/stundenplan/kinds/{kid}", json={"color": "#111111"}).status_code == 200
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "timetable_kinds", "op": "update", "entityId": kid,
+        "baseUpdatedAt": base_updated, "payload": {"color": "#zu-spaet"},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "conflict"
+    assert result["serverEntity"]["color"] == "#111111"
+
+
+def test_timetable_kinds_push_delete_default_is_error(client, auth):
+    # Seeding laeuft beim ersten GET (list_kinds/resolved) - hier ueber den bestehenden
+    # REST-Endpunkt ausloesen, um den echten Default-Typ zu bekommen.
+    kinds = client.get("/api/stundenplan/kinds").json()
+    default_kind = next(k for k in kinds if k["isDefault"])
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "timetable_kinds", "op": "delete",
+        "entityId": default_kind["id"], "baseUpdatedAt": default_kind["updatedAt"],
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "error"
+    assert "Standard-Typ" in result["detail"]

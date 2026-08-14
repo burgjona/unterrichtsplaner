@@ -5401,6 +5401,7 @@ const SYNC_ENTITY_RENDERERS = {
   calendar_categories: (c) => ({ title: c.name, preview: c.color }),
   school_years: (s) => ({ title: s.label, preview: `${s.startDate} – ${s.endDate}` }),
   plan_notes: (n) => ({ title: "Jahresplan-Ideen", preview: n.text }),
+  timetable_kinds: (k) => ({ title: k.name, preview: k.color }),
 };
 
 let _syncConflictsModulePromise = null;

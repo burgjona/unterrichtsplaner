@@ -963,6 +963,7 @@ class TimetableKindOut(Base):
     is_default: bool
     sort_order: int
     created_at: str
+    updated_at: str
 
 
 # --- Klingelraster-Slots ---

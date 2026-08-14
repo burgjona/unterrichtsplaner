@@ -133,8 +133,8 @@ def _seed_defaults(conn, user_id: int) -> None:
             conn.rollback()
             return
         conn.executemany(
-            "INSERT INTO timetable_kinds(user_id, name, color, sort_order, is_default) "
-            "VALUES (?,?,?,?,?)",
+            "INSERT INTO timetable_kinds(user_id, name, color, sort_order, is_default, updated_at) "
+            "VALUES (?,?,?,?,?, strftime('%Y-%m-%d %H:%M:%f','now'))",
             [(user_id, name, color, order, is_def) for name, color, order, is_def in DEFAULT_KINDS],
         )
         conn.executemany(
@@ -235,30 +235,26 @@ def list_kinds(conn=Depends(get_db), user_id: int = Depends(get_user_id)):
     return [TimetableKindOut(**dict(r)) for r in rows]
 
 
-@router.post("/kinds", response_model=TimetableKindOut, status_code=201)
-def create_kind(body: TimetableKindCreate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+def _apply_create_kind(conn, user_id, body: TimetableKindCreate) -> TimetableKindOut:
     cur = conn.execute(
-        "INSERT INTO timetable_kinds(user_id, name, color, sort_order) VALUES (?,?,?,?)",
+        "INSERT INTO timetable_kinds(user_id, name, color, sort_order, updated_at) "
+        "VALUES (?,?,?,?, strftime('%Y-%m-%d %H:%M:%f','now'))",
         (user_id, body.name, body.color, body.sort_order),
     )
-    conn.commit()
     return _get_kind(conn, user_id, cur.lastrowid)
 
 
-@router.put("/kinds/{kid}", response_model=TimetableKindOut)
-def update_kind(kid: int, body: TimetableKindUpdate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+def _apply_update_kind(conn, user_id, kid: int, body: TimetableKindUpdate) -> TimetableKindOut:
     row_or_404(_get_kind(conn, user_id, kid), "Typ")
     fields = body.model_dump(exclude_unset=True)     # is_default nicht im Schema → unveränderbar
     if fields:
-        cols = ", ".join(f"{k} = :{k}" for k in fields)
+        cols = ", ".join(f"{k} = :{k}" for k in fields) + ", updated_at = strftime('%Y-%m-%d %H:%M:%f','now')"
         fields.update(id=kid, uid=user_id)
         conn.execute(f"UPDATE timetable_kinds SET {cols} WHERE id = :id AND user_id = :uid", fields)
-        conn.commit()
     return _get_kind(conn, user_id, kid)
 
 
-@router.delete("/kinds/{kid}", status_code=204)
-def delete_kind(kid: int, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+def _apply_delete_kind(conn, user_id, kid: int) -> None:
     row = conn.execute(
         "SELECT * FROM timetable_kinds WHERE id = ? AND user_id = ?", (kid, user_id)
     ).fetchone()
@@ -276,7 +272,52 @@ def delete_kind(kid: int, conn=Depends(get_db), user_id: int = Depends(get_user_
             (default["id"], kid, user_id),
         )
     conn.execute("DELETE FROM timetable_kinds WHERE id = ? AND user_id = ?", (kid, user_id))
+
+
+@router.post("/kinds", response_model=TimetableKindOut, status_code=201)
+def create_kind(body: TimetableKindCreate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+    result = _apply_create_kind(conn, user_id, body)
     conn.commit()
+    return result
+
+
+@router.put("/kinds/{kid}", response_model=TimetableKindOut)
+def update_kind(kid: int, body: TimetableKindUpdate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+    result = _apply_update_kind(conn, user_id, kid, body)
+    conn.commit()
+    return result
+
+
+@router.delete("/kinds/{kid}", status_code=204)
+def delete_kind(kid: int, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+    _apply_delete_kind(conn, user_id, kid)
+    conn.commit()
+
+
+# ---------- Sync-Handler-Registry: timetable_kinds (src/routers/sync.py) ----------
+
+def _sync_fetch_kind(conn, user_id, entity_id):
+    return _get_kind(conn, user_id, entity_id)
+
+
+def _sync_create_kind(conn, user_id, payload: dict) -> TimetableKindOut:
+    return _apply_create_kind(conn, user_id, TimetableKindCreate(**payload))
+
+
+def _sync_update_kind(conn, user_id, entity_id, payload: dict) -> TimetableKindOut:
+    return _apply_update_kind(conn, user_id, entity_id, TimetableKindUpdate(**payload))
+
+
+def _sync_delete_kind(conn, user_id, entity_id) -> None:
+    _apply_delete_kind(conn, user_id, entity_id)
+
+
+SYNC_HANDLER_TIMETABLE_KINDS = {
+    "fetch": _sync_fetch_kind,
+    "create": _sync_create_kind,
+    "update": _sync_update_kind,
+    "delete": _sync_delete_kind,
+}
 
 
 # ---------------------------------------------------------------- Slots

@@ -26,6 +26,16 @@ const ttState = {
   editorsOpen: false,   // Editoren-Bereich (Klingelzeiten/Typen/A-B) ein-/ausgeklappt
 };
 
+// Offline-Sync (Rollout): Hintergrund-Sync-Ergebnisse für timetable_kinds übernehmen, auch
+// wenn die Stundenplan-Ansicht gerade nicht sichtbar ist (ttState wird trotzdem aktuell
+// gehalten, Re-Render nur falls schon initial geladen).
+SyncEngine.onChange(async (entityType) => {
+  if (entityType !== "timetable_kinds" || !ttState.loaded) return;
+  ttState.kinds = await ttMaterializeKinds();
+  ttRenderView();
+  if (ttState.editorsOpen) ttRenderEditors();
+});
+
 /* ---------- kleine Helfer ---------- */
 function ttTodayIso() {
   const d = new Date(), p = (n) => String(n).padStart(2, "0");
@@ -81,8 +91,12 @@ async function ttLoad() {
     const settings = await API.get("/stundenplan/settings");   // löst serverseitiges Seeding aus
     ttState.settings = settings;
     ttState.week = settings.currentWeekType || "A";            // Woche vorbelegen (nur beim Erst-Laden)
+    // Offline-Sync (Rollout): der obige Aufruf kann gerade erst serverseitig die Default-Typen
+    // geseedet haben — der Cursor-Stand aus einem früheren Seiten-Pull (loadAll) kennt die noch
+    // nicht. Erneut pullen, bevor materialisiert wird, sonst bleibt timetable_kinds leer.
+    await SyncEngine.pull();
     const [kinds, slots, plans] = await Promise.all([
-      API.get("/stundenplan/kinds"),
+      ttMaterializeKinds(),
       API.get("/stundenplan/slots"),
       API.get("/stundenplan/plans"),
     ]);
@@ -102,7 +116,14 @@ async function ttReloadEntries() {
     : [];
 }
 async function ttReloadSlots() { ttState.slots = await API.get("/stundenplan/slots"); }
-async function ttReloadKinds() { ttState.kinds = await API.get("/stundenplan/kinds"); }
+// Offline-Sync (Rollout): über die Sync-Engine statt direktem API.get, damit offline
+// angelegte/geänderte Typen sichtbar bleiben — materialize() sortiert nicht (IndexedDB
+// liefert nach localId), daher hier wie der bisherige Backend-Endpunkt nach sortOrder/id.
+async function ttMaterializeKinds() {
+  const all = await SyncEngine.materialize("timetable_kinds");
+  return all.slice().sort((a, b) => (a.sortOrder - b.sortOrder) || String(a.id).localeCompare(String(b.id)));
+}
+async function ttReloadKinds() { ttState.kinds = await ttMaterializeKinds(); }
 
 /* ---------- Ein-/Anzeigen ---------- */
 async function ttShow() {
@@ -556,13 +577,13 @@ function ttRenderKindsEditor() {
 function ttWireKindsEditor(wrap) {
   wrap.querySelectorAll("[data-tt-kindsave]").forEach((b) => {
     b.onclick = async () => {
-      const id = Number(b.dataset.ttKindsave);
+      const id = b.dataset.ttKindsave;   // opaque id (Zahl oder "loc_..." bei noch unsynced) — nicht per Number() erzwingen
       const row = wrap.querySelector(`[data-tt-kindrow="${id}"]`);
       const name = row.querySelector('[data-f="name"]').value.trim();
       const color = row.querySelector('[data-f="color"]').value;
       if (!name) { toast("Bitte einen Namen angeben.", false); return; }
       try {
-        await API.put("/stundenplan/kinds/" + id, { name, color });
+        await SyncEngine.update("timetable_kinds", id, { name, color });
         await ttReloadKinds(); ttRenderView(); ttRenderEditors(); toast("Typ gespeichert.");
       } catch (e) { toast(e.message, false); }
     };
@@ -571,7 +592,7 @@ function ttWireKindsEditor(wrap) {
     b.onclick = async () => {
       if (!confirm("Diesen Typ löschen? Einträge dieses Typs wechseln auf den Standard-Typ.")) return;
       try {
-        await API.del("/stundenplan/kinds/" + Number(b.dataset.ttKinddel));
+        await SyncEngine.remove("timetable_kinds", b.dataset.ttKinddel);
         await ttReloadKinds(); await ttReloadEntries();
         ttRenderView(); ttRenderEditors(); toast("Typ gelöscht.");
       } catch (e) { toast(e.message, false); }
@@ -584,7 +605,7 @@ function ttWireKindsEditor(wrap) {
     if (!name) { toast("Bitte einen Namen angeben.", false); return; }
     const maxSort = ttState.kinds.reduce((m, k) => Math.max(m, k.sortOrder), -1);
     try {
-      await API.post("/stundenplan/kinds", { name, color, sortOrder: maxSort + 1 });
+      await SyncEngine.create("timetable_kinds", { name, color, sortOrder: maxSort + 1 });
       await ttReloadKinds(); ttRenderView(); ttRenderEditors(); toast("Typ angelegt.");
     } catch (e) { toast(e.message, false); }
   };
