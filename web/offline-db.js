@@ -18,10 +18,10 @@
 
 const OfflineDB = (() => {
   const DB_NAME = "ldb_offline";
-  const DB_VERSION = 2;
+  const DB_VERSION = 3;
 
   // Entitäts-Stores: ein Eintrag pro synchronisierter Backend-Tabelle.
-  const ENTITY_STORES = ["notes", "todos"];
+  const ENTITY_STORES = ["notes", "todos", "calendar_categories"];
 
   let dbPromise = null;
 

@@ -17,6 +17,7 @@ const SyncEngine = (() => {
   const ENTITIES = {
     notes: { apiPath: "/notes" },
     todos: { apiPath: "/todos" },
+    calendar_categories: { apiPath: "/calendar-categories" },
   };
 
   const listeners = new Set();

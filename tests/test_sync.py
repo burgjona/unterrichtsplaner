@@ -62,10 +62,13 @@ def test_sync_endpoints_require_login(client):
 
 
 def test_changes_reflects_direct_rest_create(client, auth):
-    assert client.get("/api/sync/changes?since=0").json()["changes"] == []
+    # entities=notes filtert die 3 bei der Registrierung geseedeten Standard-Kalender-
+    # Kategorien heraus (siehe auth.py: Seeding lief früher lazy im GET-Endpunkt, jetzt bei
+    # der Registrierung, da das Frontend Kategorien nur noch über die Sync-Engine liest).
+    assert client.get("/api/sync/changes?since=0&entities=notes").json()["changes"] == []
     note = client.post("/api/notes", json={"scope": "allgemein", "bodyMd": "hallo"}).json()
 
-    data = client.get("/api/sync/changes?since=0").json()
+    data = client.get("/api/sync/changes?since=0&entities=notes").json()
     assert len(data["changes"]) == 1
     change = data["changes"][0]
     assert change["op"] == "upsert"
@@ -224,3 +227,56 @@ def test_todos_push_detects_conflict(client, auth):
     result = r.json()["results"][0]
     assert result["status"] == "conflict"
     assert result["serverEntity"]["done"] is True
+
+
+# ---------- Rollout Tranche 1: calendar_categories ----------
+
+def test_sync_log_table_and_calendar_categories_triggers_exist(tmp_path):
+    conn = init_db(str(tmp_path / "schema.db"))
+    triggers = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
+    assert {
+        "trg_synclog_calendar_categories_ai",
+        "trg_synclog_calendar_categories_au",
+        "trg_synclog_calendar_categories_ad",
+    } <= triggers
+    conn.close()
+
+
+def test_calendar_categories_push_create_update_delete_lifecycle(client, auth):
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "calendar_categories", "op": "create",
+        "payload": {"name": "Elternabend", "color": "#123456"},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "applied"
+    cid, base_updated = result["entityId"], result["entity"]["updatedAt"]
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_2", "entityType": "calendar_categories", "op": "update", "entityId": cid,
+        "baseUpdatedAt": base_updated, "payload": {"color": "#abcdef"},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "applied"
+    assert result["entity"]["color"] == "#abcdef"
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_3", "entityType": "calendar_categories", "op": "delete", "entityId": cid,
+        "baseUpdatedAt": result["entity"]["updatedAt"],
+    }]})
+    assert r.json()["results"][0]["status"] == "applied"
+    names = [c["name"] for c in client.get("/api/calendar-categories").json()]
+    assert "Elternabend" not in names
+
+
+def test_calendar_categories_push_detects_conflict(client, auth):
+    created = client.post("/api/calendar-categories", json={"name": "x", "color": "#000000"}).json()
+    cid, base_updated = created["id"], created["updatedAt"]
+    assert client.put(f"/api/calendar-categories/{cid}", json={"color": "#111111"}).status_code == 200
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "calendar_categories", "op": "update", "entityId": cid,
+        "baseUpdatedAt": base_updated, "payload": {"color": "#zu-spaet"},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "conflict"
+    assert result["serverEntity"]["color"] == "#111111"

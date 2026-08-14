@@ -12,6 +12,7 @@ from ..config import settings
 from ..deps import get_db, get_user_id
 from ..lib.security import generate_token, hash_password, verify_password
 from ..schemas import LoginIn, RegisterIn, UserOut
+from . import calendar_categories
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -55,6 +56,10 @@ def register(body: RegisterIn, response: Response, conn: sqlite3.Connection = De
         conn.commit()
     except sqlite3.IntegrityError:
         raise HTTPException(status_code=409, detail="E-Mail bereits vergeben.")
+    # Standard-Kalender-Kategorien hier statt beim ersten GET /calendar-categories seeden:
+    # seit dem Offline-Sync-Rollout liest das Frontend Kategorien über die Sync-Engine
+    # (GET /sync/changes), das lazy-Seeding im REST-List-Endpunkt würde also nie mehr feuern.
+    calendar_categories._seed_defaults(conn, cur.lastrowid)
     _start_session(conn, response, cur.lastrowid)  # direkt eingeloggt
     return _user_out(conn, cur.lastrowid)
 

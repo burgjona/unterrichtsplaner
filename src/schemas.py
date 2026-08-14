@@ -347,6 +347,7 @@ class CalendarCategoryOut(Base):
     color: str
     sort_order: int
     created_at: str
+    updated_at: str
 
 
 # ---------- Jahresplan-Import (U20) ----------

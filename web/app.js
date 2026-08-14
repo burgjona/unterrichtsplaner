@@ -739,15 +739,19 @@ async function loadAll() {
   // bleiben offline angelegte/geänderte Notizen sichtbar. pull() ist offline ein No-Op,
   // materialize() liefert dann den zuletzt bekannten Stand + Warteschlange.
   await SyncEngine.pull();
-  const [classes, lessons, reflections, open, materials, todosAll, notes, schoolYears, calendar, calendarCategories, asuvDrafts] = await Promise.all([
+  const [classes, lessons, reflections, open, materials, todosAll, notes, schoolYears, calendar, calendarCategoriesAll, asuvDrafts] = await Promise.all([
     API.get("/classes"), API.get("/lessons"), API.get("/reflections"),
     API.get("/reflections/open"), API.get("/materials"), SyncEngine.materialize("todos"),
-    SyncEngine.materialize("notes"), API.get("/school-years"), API.get("/calendar"), API.get("/calendar-categories"),
-    API.get("/asuv"),
+    SyncEngine.materialize("notes"), API.get("/school-years"), API.get("/calendar"),
+    SyncEngine.materialize("calendar_categories"), API.get("/asuv"),
   ]);
   // Archivierte To-dos bleiben wie bisher außerhalb von state.todos (eigene Abfrage in der
   // Archiv-Ansicht, renderArchivTodos) — materialize() liefert wie die DB-Tabelle alle Zeilen.
   const todos = todosAll.filter((t) => t.archivedAt == null);
+  // materialize() sortiert nicht (IndexedDB liefert nach localId) — Reihenfolge wie der
+  // bisherige Backend-Endpunkt (ORDER BY sort_order, id) hier client-seitig herstellen.
+  const calendarCategories = calendarCategoriesAll.slice()
+    .sort((a, b) => (a.sortOrder - b.sortOrder) || (String(a.id).localeCompare(String(b.id))));
   let schoolDates = [];
   for (const sy of schoolYears) {
     try { schoolDates = schoolDates.concat(await API.get(`/school-years/${sy.id}/dates`)); }
@@ -3058,13 +3062,13 @@ function renderCategoryManager() {
       const name = wrap.querySelector(`[data-cat-name="${id}"]`).value.trim();
       const color = wrap.querySelector(`[data-cat-color="${id}"]`).value;
       if (!name) { toast("Bitte einen Namen angeben.", false); return; }
-      try { await API.put("/calendar-categories/" + id, { name, color }); await refresh(); toast("Kategorie gespeichert."); }
+      try { await SyncEngine.update("calendar_categories", id, { name, color }); await refresh(); toast("Kategorie gespeichert."); }
       catch (e) { toast(e.message, false); }
     };
   });
   wrap.querySelectorAll("[data-cat-del]").forEach((b) => {
     b.onclick = async () => {
-      try { await API.del("/calendar-categories/" + b.dataset.catDel); await refresh(); toast("Kategorie gelöscht."); }
+      try { await SyncEngine.remove("calendar_categories", b.dataset.catDel); await refresh(); toast("Kategorie gelöscht."); }
       catch (e) { toast(e.message, false); }
     };
   });
@@ -3074,7 +3078,7 @@ async function addCategory() {
   const name = $("newCatName").value.trim(), color = $("newCatColor").value;
   if (!name) { toast("Bitte einen Namen angeben.", false); return; }
   try {
-    await API.post("/calendar-categories", { name, color });
+    await SyncEngine.create("calendar_categories", { name, color });
     $("newCatName").value = "";
     await refresh(); toast("Kategorie angelegt.");
   } catch (e) { toast(e.message, false); }
@@ -5392,6 +5396,7 @@ function activeNotesSorted(filterFn) {
 const SYNC_ENTITY_RENDERERS = {
   notes: (n) => ({ title: noteTitle(n), preview: notePreviewText(n) }),
   todos: (t) => ({ title: t.text, preview: t.done ? "erledigt" : "offen" }),
+  calendar_categories: (c) => ({ title: c.name, preview: c.color }),
 };
 
 let _syncConflictsModulePromise = null;
@@ -5528,4 +5533,15 @@ SyncEngine.onChange(async (entityType) => {
   const all = await SyncEngine.materialize("todos");
   state.todos = all.filter((t) => t.archivedAt == null);
   renderTodos();
+});
+
+// Rollout (Tranche 1): calendar_categories — Kategorie-Manager in den Einstellungen und
+// die Kalender-Legende hängen an state.calendarCategories.
+SyncEngine.onChange(async (entityType) => {
+  if (entityType !== "calendar_categories") return;
+  const all = await SyncEngine.materialize("calendar_categories");
+  state.calendarCategories = all.slice()
+    .sort((a, b) => (a.sortOrder - b.sortOrder) || (String(a.id).localeCompare(String(b.id))));
+  renderCategoryManager();
+  renderCalendarLegend();
 });
