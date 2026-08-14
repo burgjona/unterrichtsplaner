@@ -199,7 +199,7 @@ def lesson_materials(lid: int, conn=Depends(get_db), user_id: int = Depends(get_
     row_or_404(_fetch(conn, user_id, lid), "Stunde")
     rows = conn.execute(
         """SELECT m.* FROM materials m JOIN material_lessons ml ON ml.material_id = m.id
-           WHERE ml.lesson_id = ? AND m.user_id = ? ORDER BY m.id""",
+           WHERE ml.lesson_id = ? AND m.user_id = ? AND m.archived_at IS NULL ORDER BY m.id""",
         (lid, user_id),
     ).fetchall()
     return [MaterialOut(**dict(r)) for r in rows]

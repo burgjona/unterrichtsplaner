@@ -267,7 +267,36 @@ function readPhases() {
       });
     }
   });
+  // Puffer nach dem Abschluss: reines Minuten-Feld, darf leer bleiben, zählt nicht zur
+  // Pflichtsumme der vier Kernphasen (siehe validatePhaseTimes).
+  const bufferEl = $("phaseBuffer");
+  const bufferMinutes = bufferEl ? bufferEl.value.trim() : "";
+  if (bufferMinutes) {
+    phases.push({ phaseName: "Puffer", minutes: Number(bufferMinutes), socialForm: null });
+  }
   return phases;
+}
+
+// Live-Validierung: Einstieg+Erarbeitung+Sicherung+Abschluss müssen exakt der Stundendauer
+// (45/90 Min.) entsprechen. Puffer zählt bewusst nicht mit. Reine Anzeige (rot), blockiert
+// das Speichern nicht.
+function validatePhaseTimes() {
+  const duration = Number($("lessonDuration").value) || 45;
+  const sum = [0, 1, 2, 3].reduce((acc, i) => acc + (Number($("time" + i).value) || 0), 0);
+  const mismatch = sum !== duration;
+  [0, 1, 2, 3].forEach((i) => { const el = $("time" + i); if (el) el.classList.toggle("input-error", mismatch); });
+  const msg = $("phaseTimeError");
+  if (msg) {
+    msg.textContent = mismatch
+      ? `Summe der Phasenzeiten (Einstieg–Abschluss): ${sum} von ${duration} Min.`
+      : "";
+    msg.classList.toggle("hidden", !mismatch);
+  }
+}
+function clearPhaseTimeError() {
+  [0, 1, 2, 3].forEach((i) => { const el = $("time" + i); if (el) el.classList.remove("input-error"); });
+  const msg = $("phaseTimeError");
+  if (msg) { msg.textContent = ""; msg.classList.add("hidden"); }
 }
 
 /* ---------- Sozialform-Monotonie-Warnung (regelbasiert, kein KI-Call) ----------
@@ -383,8 +412,12 @@ function clearLessonForm() {
   if ($("lessonMaterials")) $("lessonMaterials").innerHTML = "";
   $("lessonClass").value = "";
   $("lessonDuration").value = "45";
+  if ($("lessonTime")) $("lessonTime").value = "";
+  if ($("lessonSlot")) $("lessonSlot").value = "";
   phaseNames.forEach((_, i) =>
     ["time", "method", "material", "teacher", "student", "gme"].forEach((k) => ($(k + i).value = "")));
+  if ($("phaseBuffer")) $("phaseBuffer").value = "";
+  clearPhaseTimeError();
   resetMeyerGrid("meyerPlanGrid");
   $("diff").value = "ja";
   $("lernen").value = "ja";
@@ -416,6 +449,7 @@ function planLessonFromCalendarEntry(e) {
     if (cls.grade != null) $("lessonGrade").value = String(cls.grade);
   }
   $("lessonDate").value = e.entryDate || "";
+  if ($("lessonTime")) $("lessonTime").value = e.allDay ? "" : (e.startTime || "");
   updateLessonLbOptions(null);
   updateSozialformMonotonyHint();
   pendingCalendarEntryLink = e.id;
@@ -453,6 +487,9 @@ function loadLessonIntoForm(l) {
   updateSozialformMonotonyHint();
   $("lessonDate").value = l.date || "";
   $("lessonDuration").value = String(l.durationMinutes || 45);
+  $("lessonTime").value = l.time || "";
+  const matchingSlot = (lessonSlotsCache || []).find((s) => s.startTime === l.time);
+  $("lessonSlot").value = matchingSlot ? String(matchingSlot.id) : "";
   lessonZiele = (l.lernziele || []).map((z) => ({
     kind: z.kind === "grob" ? "grob" : "fein", text: z.text || "",
     bloomStufe: z.bloomStufe || null, phaseSortOrder: z.phaseSortOrder == null ? null : Number(z.phaseSortOrder),
@@ -476,6 +513,9 @@ function loadLessonIntoForm(l) {
     $("teacher" + i).value = p.teacherActivity || ""; $("student" + i).value = p.studentActivity || "";
     $("gme" + i).value = p.gme || "";
   });
+  const bufferPhase = (l.phases || []).find((p) => p.phaseName === "Puffer");
+  if ($("phaseBuffer")) $("phaseBuffer").value = bufferPhase && bufferPhase.minutes != null ? bufferPhase.minutes : "";
+  validatePhaseTimes();
   $("editHintTitle").textContent = l.title || "";
   $("editHint").classList.remove("hidden");
   // Freie Stunde ohne Lernbereich: KI-Einordnungshinweis anbieten.
@@ -489,15 +529,46 @@ function loadLessonIntoForm(l) {
   loadLessonMaterials(l.id);
 }
 
+// Stunde duplizieren: alle Felder wie beim Bearbeiten übernehmen, aber ohne die bestehende
+// ID (Speichern legt eine neue Stunde an) und ohne Datum/Material – Klasse und Datum lassen
+// sich danach frei ändern, bevor gespeichert wird.
+function duplicateLessonIntoForm(l) {
+  loadLessonIntoForm(l);
+  editingLessonId = null;
+  $("lessonDate").value = "";
+  if ($("lessonMaterials")) $("lessonMaterials").innerHTML = '<p class="muted small">Noch kein Material verknüpft.</p>';
+  $("editHint").classList.add("hidden");
+  toast("Stunde dupliziert – Klasse/Datum prüfen und speichern.", true);
+}
+
 async function loadLessonMaterials(lessonId) {
   const wrap = $("lessonMaterials");
   if (!wrap) return;
   try {
     const mats = await API.get(`/lessons/${lessonId}/materials`);
     wrap.innerHTML = mats.length
-      ? mats.map((m) => `<div class="file-chip"><span><a href="/api/materials/${m.id}/download">${esc(m.filename)}</a></span></div>`).join("")
+      ? mats.map((m) => `<div class="file-chip"><span><a href="/api/materials/${m.id}/download">${esc(m.filename)}</a></span><button class="btn small danger" data-del-mat="${m.id}">✕</button></div>`).join("")
       : '<p class="muted small">Noch kein Material verknüpft.</p>';
+    wireMaterialDeleteButtons(wrap, () => loadLessonMaterials(lessonId));
   } catch (e) { wrap.innerHTML = ""; }
+}
+
+// Löschen (Archivieren) von Material direkt aus einer Stunden-Materialliste heraus —
+// gleiches Verhalten wie in der Materialbibliothek: Archiv statt Hard-Delete, per Undo wiederherstellbar.
+function wireMaterialDeleteButtons(wrap, onDeleted) {
+  wrap.querySelectorAll("[data-del-mat]").forEach((b) => {
+    b.onclick = async (ev) => {
+      ev.stopPropagation();
+      const id = b.dataset.delMat;
+      if (!confirm("Material archivieren? Es lässt sich im Archiv wiederherstellen.")) return;
+      try {
+        await API.post("/materials/" + id + "/archive");
+        toast("Material archiviert.");
+        setUndo("Material archiviert.", async () => { await API.post("/materials/" + id + "/restore"); await onDeleted(); });
+        await onDeleted();
+      } catch (e) { toast(e.message, false); }
+    };
+  });
 }
 
 /* ---------- U29: LB-Zuordnung in der Unterrichtsplanung (aus aktivem Stoffverteilungsplan) ---------- */
@@ -705,6 +776,7 @@ async function getLernbereiche(c) {
 
 function renderAll() {
   renderClassTable();
+  renderLessonFilterOptions();
   renderLessonTable();
   renderTodayList();
   renderWeekOverview();
@@ -713,6 +785,7 @@ function renderAll() {
   renderOpenReflections();
   renderTodos();
   renderClassSelects();
+  renderLessonSubjectOptions();
   renderClassToggles();
   renderSchoolYears();
   renderCategoryManager();
@@ -1319,19 +1392,47 @@ function getSeatPlanModule() {
 }
 /* =================== /U18: Sitzplan =================== */
 
+// Filteroptionen für "Gespeicherte Stunden" (Klasse/Fach dynamisch aus vorhandenen Daten,
+// Typ aus der festen Liste des Stundentyp-Selects) – aktuelle Auswahl bleibt beim Neu-Rendern erhalten.
+function renderLessonFilterOptions() {
+  const clsSel = $("lessonFilterClass");
+  if (clsSel) {
+    const current = clsSel.value;
+    clsSel.innerHTML = '<option value="">Alle Klassen</option>' +
+      state.classes.map((c) => `<option value="${c.id}">${esc(c.name)} (${esc(c.subject)})</option>`).join("");
+    if (state.classes.some((c) => String(c.id) === current)) clsSel.value = current;
+  }
+  const subSel = $("lessonFilterSubject");
+  if (subSel) {
+    const current = subSel.value;
+    const subjects = Array.from(new Set(state.lessons.map((l) => l.subject).filter(Boolean))).sort((a, b) => a.localeCompare(b, "de"));
+    subSel.innerHTML = '<option value="">Alle Fächer</option>' + subjects.map((s) => `<option value="${esc(s)}">${esc(s)}</option>`).join("");
+    if (subjects.includes(current)) subSel.value = current;
+  }
+  const typeSel = $("lessonFilterType");
+  if (typeSel && typeSel.options.length <= 1 && $("lessonType")) {
+    typeSel.innerHTML = '<option value="">Alle Typen</option>' +
+      Array.from($("lessonType").options).map((o) => `<option value="${esc(o.value)}">${esc(o.textContent)}</option>`).join("");
+  }
+}
 function renderLessonTable() {
   const b = document.querySelector("#lessonTable tbody");
   b.innerHTML = "";
-  state.lessons.forEach((l) => {
-    const tr = document.createElement("tr");
-    const werk = l.bibox && l.bibox.werk ? `${l.bibox.werk} ${l.bibox.seite || ""}` : "–";
-    tr.innerHTML =
-      `<td>${esc(l.title)}</td><td>${esc(l.subject)}</td><td>${esc(l.grade || "")}</td>` +
-      `<td>${esc(l.lessonType || "")}</td><td>${esc(werk)}</td>`;
-    tr.style.cursor = "pointer";
-    tr.onclick = () => openLessonModal(l);
-    b.appendChild(tr);
-  });
+  const fClass = $("lessonFilterClass") ? $("lessonFilterClass").value : "";
+  const fSubject = $("lessonFilterSubject") ? $("lessonFilterSubject").value : "";
+  const fType = $("lessonFilterType") ? $("lessonFilterType").value : "";
+  state.lessons
+    .filter((l) => (!fClass || String(l.classId) === fClass) && (!fSubject || l.subject === fSubject) && (!fType || l.lessonType === fType))
+    .forEach((l) => {
+      const tr = document.createElement("tr");
+      const werk = l.bibox && l.bibox.werk ? `${l.bibox.werk} ${l.bibox.seite || ""}` : "–";
+      tr.innerHTML =
+        `<td>${esc(l.title)}</td><td>${esc(l.subject)}</td><td>${esc(l.grade || "")}</td>` +
+        `<td>${esc(l.lessonType || "")}</td><td>${esc(werk)}</td>`;
+      tr.style.cursor = "pointer";
+      tr.onclick = () => openLessonModal(l);
+      b.appendChild(tr);
+    });
 }
 
 function todayFallbackList(list, todayStr) {
@@ -1665,6 +1766,22 @@ function renderTodos() {
 }
 
 /* ---------- Auswahllisten / Filter / Schuljahre ---------- */
+// Fach-Auswahl in der Unterrichtsplanung: feste Grundfächer + bereits verwendete freie
+// Fächer (z. B. für Vertretungsstunden ohne eigenen Lehrplan) aus vorhandenen Stunden – so
+// bleibt ein einmal angelegtes Fach dauerhaft im Dropdown, ohne eigene Fächerverwaltung.
+const LESSON_SUBJECT_DEFAULTS = ["Deutsch", "WTH"];
+function renderLessonSubjectOptions() {
+  const sel = $("lessonSubject");
+  if (!sel) return;
+  const current = sel.value;
+  const extra = Array.from(new Set(state.lessons.map((l) => l.subject).filter(Boolean)))
+    .filter((s) => !LESSON_SUBJECT_DEFAULTS.includes(s))
+    .sort((a, b) => a.localeCompare(b, "de"));
+  const subjects = LESSON_SUBJECT_DEFAULTS.concat(extra);
+  sel.innerHTML = subjects.map((s) => `<option value="${esc(s)}">${esc(s)}</option>`).join("")
+    + '<option value="__new__">+ Neues Fach anlegen…</option>';
+  if (subjects.includes(current)) sel.value = current;
+}
 function renderClassSelects() {
   const opts = state.classes.map((c) => `<option value="${c.id}">${esc(c.name)} (${esc(c.subject)})</option>`).join("");
   $("lessonClass").innerHTML = '<option value="">– keine –</option>' + opts;
@@ -2180,6 +2297,21 @@ async function fillCalEntrySlotSelect() {
 }
 function closeCalEntryPanel() { const p = $("calEntryPanel"); if (p) p.classList.add("hidden"); }
 
+// Stunden-Auswahl in der Unterrichtsplanung (wie im "Neuer Termin"-Panel): Auswahl einer
+// Stunde aus den Klingelzeiten füllt die Uhrzeit; "– manuell –" lässt sie frei editierbar.
+async function fillLessonSlotSelect() {
+  const sel = $("lessonSlot");
+  if (!sel) return;
+  if (!lessonSlotsCache) {
+    try { lessonSlotsCache = (await API.get("/stundenplan/slots")).filter((s) => s.slotType === "lesson"); }
+    catch (e) { lessonSlotsCache = []; }
+  }
+  const current = sel.value;
+  sel.innerHTML = '<option value="">– manuell –</option>' +
+    lessonSlotsCache.map((s) => `<option value="${s.id}" data-start="${esc(s.startTime)}">${esc(s.label)} · ${esc(s.startTime)}–${esc(s.endTime)}</option>`).join("");
+  sel.value = current;
+}
+
 // U15: lbCode → Block-Objekt des aktiven Stoffplans einer Klasse (leeres Objekt ohne Plan).
 function activePlanBlocksByCode(classId) {
   const ap = state.activePlans[classId];
@@ -2494,6 +2626,17 @@ function catById(id) { return id == null ? null : state.calendarCategories.find(
 function entryClassIds(e) {
   return (e.classIds && e.classIds.length) ? e.classIds : (e.classId != null ? [e.classId] : []);
 }
+// Klassen-Kennzeichnung für Kalendertermine in Tages-/Wochenansicht: "(Name, Fach)",
+// bei mehreren Klassen je Klasse durch "; " getrennt. Ohne zugeordnete Klasse leer.
+function entryClassSuffix(e) {
+  const ids = entryClassIds(e);
+  if (!ids.length) return "";
+  const labels = ids.map((cid) => {
+    const c = state.classes.find((x) => x.id === cid);
+    return c ? `${c.name}, ${c.subject}` : null;
+  }).filter(Boolean);
+  return labels.length ? ` (${labels.join("; ")})` : "";
+}
 function entriesForDate(dStr) {
   const vis = visibleClassIds();
   // Klassenlose Termine sind immer sichtbar; mehrtägige Termine erscheinen an jedem Tag
@@ -2568,7 +2711,7 @@ function renderCalendar() {
           const color = cat ? calTtSafeColor(cat.color) : null;
           const style = color ? ` style="background:${color};color:${readableTextColor(color)}"` : "";
           const time = (!e.allDay && e.startTime) ? esc(e.startTime) + " " : "";
-          return `<div class="cal-entry ${esc(e.entryType)}" data-lesson="${e.lessonId == null ? "" : e.lessonId}" data-entry-id="${e.id}"${style}>${time}${esc(e.title)}</div>`;
+          return `<div class="cal-entry ${esc(e.entryType)}" data-lesson="${e.lessonId == null ? "" : e.lessonId}" data-entry-id="${e.id}"${style}>${time}${esc(e.title)}${esc(entryClassSuffix(e))}</div>`;
         }).join("");
     cell.innerHTML = `<div class="cal-daynum">${d.getDate()}</div>` + stripHtml + entriesHtml;
     return cell;
@@ -2667,7 +2810,7 @@ function renderDayAgenda(dStr) {
     const style = color ? ` style="background:${color};color:${readableTextColor(color)}"` : "";
     const time = e.allDay ? "Ganztägig" : ([e.startTime, e.endTime].filter(Boolean).join(" – ") || "—");
     return `<div class="cal-day-agenda-item ${esc(e.entryType)}" data-lesson="${e.lessonId == null ? "" : e.lessonId}" data-entry-id="${e.id}"${style}>` +
-      `<span class="cal-day-agenda-time">${esc(time)}</span><span class="cal-day-agenda-title">${esc(e.title)}${e.room ? ` <span class="muted small">· Zimmer ${esc(e.room)}</span>` : ""}</span></div>`;
+      `<span class="cal-day-agenda-time">${esc(time)}</span><span class="cal-day-agenda-title">${esc(e.title)}${esc(entryClassSuffix(e))}${e.room ? ` <span class="muted small">· Zimmer ${esc(e.room)}</span>` : ""}</span></div>`;
   }).join("") : `<p class="muted small cal-day-agenda-empty">${calOnlyTt ? "Termine ausgeblendet (Filter „Nur Stundenplan“)." : "Keine Termine an diesem Tag."}</p>`;
   list.querySelectorAll(".cal-day-agenda-item").forEach((el) => {
     const lid = el.dataset.lesson;
@@ -3100,6 +3243,7 @@ function openLessonModal(l) {
     `<div class="modal-overlay" id="modalOverlay"><div class="modal-box">
       <button class="modal-close" id="modalCloseBtn">Schließen</button>
       <button class="btn small secondary" id="modalAsuvBtn" style="float:right; margin-right:10px;">ASUV-Entwurf</button>
+      <button class="btn small secondary" id="modalDuplicateBtn" style="float:right; margin-right:10px;">Duplizieren</button>
       <button class="btn small secondary" id="modalEditBtn" style="float:right; margin-right:10px;">Stunde bearbeiten</button>
       <button class="btn small danger" id="modalDeleteBtn" style="float:right; margin-right:10px;">Löschen</button>
       <h2>${esc(l.title)}</h2>
@@ -3119,6 +3263,7 @@ function openLessonModal(l) {
   $("modalCloseBtn").onclick = closeModal;
   $("modalAsuvBtn").onclick = () => { closeModal(); showView("asuv"); loadAsuv(l.id); };
   $("modalEditBtn").onclick = () => { closeModal(); showView("stunde"); loadLessonIntoForm(l); };
+  $("modalDuplicateBtn").onclick = () => { closeModal(); showView("stunde"); duplicateLessonIntoForm(l); };
   $("modalDeleteBtn").onclick = async () => {
     if (!window.confirm("Diese Stunde wirklich löschen?")) return;
     try {
@@ -3148,8 +3293,9 @@ async function loadModalMaterials(l) {
   try {
     const mats = await API.get(`/lessons/${l.id}/materials`);
     wrap.innerHTML = mats.length
-      ? mats.map((m) => `<div class="file-chip"><span><a href="/api/materials/${m.id}/download">${esc(m.filename)}</a></span></div>`).join("")
+      ? mats.map((m) => `<div class="file-chip"><span><a href="/api/materials/${m.id}/download">${esc(m.filename)}</a></span><button class="btn small danger" data-del-mat="${m.id}">✕</button></div>`).join("")
       : '<p class="muted small">Noch kein Material verknüpft.</p>';
+    wireMaterialDeleteButtons(wrap, () => loadModalMaterials(l));
   } catch (e) { wrap.innerHTML = ""; }
 }
 function closeModal() { $("modalRoot").innerHTML = ""; }
@@ -3185,6 +3331,7 @@ async function saveLesson() {
     classId: $("lessonClass").value ? Number($("lessonClass").value) : null,
     lernbereichId: $("lessonLb") && $("lessonLb").value ? Number($("lessonLb").value) : null,
     date: $("lessonDate").value || null,
+    time: $("lessonTime").value || null,
     klafki: {
       gegenwart: $("klafki1").value, zukunft: $("klafki2").value, exemplarisch: $("klafki3").value,
       zugang: $("klafki4").value, struktur: $("klafki5").value,
@@ -3201,7 +3348,7 @@ async function saveLesson() {
     if (editingLessonId) {
       saved = await API.put("/lessons/" + editingLessonId, body);
     } else {
-      saved = await API.post("/lessons", { ...body, time: null });
+      saved = await API.post("/lessons", body);
     }
     if (isNew && pendingLessonMaterialFile) {
       const fd = new FormData();
@@ -4951,6 +5098,29 @@ function wireEvents() {
   $("cancelEditBtn").onclick = () => { resetLessonEditState(); clearLessonForm(); toast("Formular geleert – neue Stunde."); };
   $("deleteLessonBtn").onclick = deleteLesson;
   $("lessonClass").addEventListener("change", () => { updateLessonLbOptions(null); updateLessonSeqOptions(); updateSozialformMonotonyHint(); });
+  fillLessonSlotSelect();
+  $("lessonSlot").addEventListener("change", () => {
+    const opt = $("lessonSlot").selectedOptions[0];
+    if (opt && opt.dataset.start) $("lessonTime").value = opt.dataset.start;
+  });
+  $("phases").addEventListener("input", (ev) => { if (/^time\d$/.test(ev.target.id || "")) validatePhaseTimes(); });
+  $("lessonDuration").addEventListener("change", validatePhaseTimes);
+  ["lessonFilterClass", "lessonFilterSubject", "lessonFilterType"].forEach((id) => {
+    const el = $(id);
+    if (el) el.addEventListener("change", renderLessonTable);
+  });
+  $("lessonSubject").addEventListener("change", () => {
+    const sel = $("lessonSubject");
+    if (sel.value !== "__new__") return;
+    const name = (window.prompt("Name des neuen Fachs (z. B. für Vertretungsstunden):") || "").trim();
+    if (!name) { sel.value = LESSON_SUBJECT_DEFAULTS[0]; return; }
+    if (!Array.from(sel.options).some((o) => o.value === name)) {
+      const opt = document.createElement("option");
+      opt.value = name; opt.textContent = name;
+      sel.insertBefore(opt, sel.querySelector('option[value="__new__"]'));
+    }
+    sel.value = name;
+  });
   $("lessonMatUpload").onclick = async () => {
     const f = $("lessonMatFile").files[0];
     if (!f) { toast("Bitte eine Datei wählen.", false); return; }

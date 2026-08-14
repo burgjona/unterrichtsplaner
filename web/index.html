@@ -544,6 +544,10 @@
           <div><label>Datum</label><input id="lessonDate" type="date" /><div class="hint">Mit Datum erscheint die Stunde automatisch im Kalender.</div></div>
           <div><label>Stundendauer</label><select id="lessonDuration"><option value="45">45 Minuten (Einzelstunde)</option><option value="90">90 Minuten (Doppelstunde)</option></select></div>
         </div>
+        <div class="row">
+          <div><label>Stunde (optional)</label><select id="lessonSlot"><option value="">– manuell –</option></select></div>
+          <div><label>Uhrzeit</label><input id="lessonTime" type="time" /></div>
+        </div>
         <div id="lessonLbRow" class="row hidden" style="margin-top:10px;">
           <div>
             <label>Lernbereich (aus Stoffverteilungsplan, optional)</label>
@@ -575,6 +579,11 @@
       <div class="card" style="margin-top:14px;">
         <h3>Phasentabelle</h3>
         <div id="phases"></div>
+        <p class="phase-time-error hidden" id="phaseTimeError"></p>
+        <div class="phase-buffer">
+          <label>Puffer (Min., optional)</label>
+          <input placeholder="darf leer bleiben" id="phaseBuffer" style="max-width:160px;" />
+        </div>
       </div>
 
       <div class="card" style="margin-top:14px;">
@@ -621,6 +630,11 @@
 
       <div class="card" style="margin-top:14px;">
         <h3>Gespeicherte Stunden</h3>
+        <div class="row-3" style="margin-bottom:10px;">
+          <div><label>Klasse</label><select id="lessonFilterClass"><option value="">Alle Klassen</option></select></div>
+          <div><label>Fach</label><select id="lessonFilterSubject"><option value="">Alle Fächer</option></select></div>
+          <div><label>Typ</label><select id="lessonFilterType"><option value="">Alle Typen</option></select></div>
+        </div>
         <div class="table-scroll"><table id="lessonTable"><thead><tr><th>Thema</th><th>Fach</th><th>Stufe</th><th>Typ</th><th>Lehrwerk</th></tr></thead><tbody></tbody></table></div>
       </div>
     </section>
