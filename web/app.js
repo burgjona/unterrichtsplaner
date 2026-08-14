@@ -734,10 +734,15 @@ async function offerSeqCalendarEntry(seqId, seqInfo, lessonDate) {
 
 /* ---------- Laden & Rendern ---------- */
 async function loadAll() {
+  // notes: über die Sync-Engine (Pull holt Server-Änderungen in OfflineDB, materialize()
+  // legt noch unbestätigte lokale Mutationen darüber) statt direkt per API.get — dadurch
+  // bleiben offline angelegte/geänderte Notizen sichtbar. pull() ist offline ein No-Op,
+  // materialize() liefert dann den zuletzt bekannten Stand + Warteschlange.
+  await SyncEngine.pull();
   const [classes, lessons, reflections, open, materials, todos, notes, schoolYears, calendar, calendarCategories, asuvDrafts] = await Promise.all([
     API.get("/classes"), API.get("/lessons"), API.get("/reflections"),
     API.get("/reflections/open"), API.get("/materials"), API.get("/todos"),
-    API.get("/notes"), API.get("/school-years"), API.get("/calendar"), API.get("/calendar-categories"),
+    SyncEngine.materialize("notes"), API.get("/school-years"), API.get("/calendar"), API.get("/calendar-categories"),
     API.get("/asuv"),
   ]);
   let schoolDates = [];
@@ -943,7 +948,7 @@ function renderCdNoteList() {
     wrap.querySelectorAll("[data-note-id]").forEach((el) => {
       el.onclick = async () => {
         await flushCdNoteSave();
-        cdNoteSelectedId = Number(el.dataset.noteId);
+        cdNoteSelectedId = parseNoteId(el.dataset.noteId);
         cdNoteIsDraft = false;
         renderCdNoteList();
         renderCdNoteEditor();
@@ -1004,14 +1009,14 @@ async function saveCdNote() {
   try {
     if (cdNoteIsDraft) {
       if (!body.trim()) { cdNoteSaving = false; return; }   // leere Entwürfe nicht anlegen
-      const created = await API.post("/notes", { scope: "klasse", classId: cdNoteClassId, bodyMd: body });
+      const created = await SyncEngine.create("notes", { scope: "klasse", classId: cdNoteClassId, bodyMd: body });
       state.notes.push(created);
       cdNoteIsDraft = false;
       cdNoteSelectedId = created.id;
       renderCdNoteList();
       promoteCdDraftFoot();
     } else if (cdNoteSelectedId != null) {
-      const updated = await API.put(`/notes/${cdNoteSelectedId}`, { bodyMd: body });
+      const updated = await SyncEngine.update("notes", cdNoteSelectedId, { bodyMd: body });
       const idx = state.notes.findIndex((n) => n.id === cdNoteSelectedId);
       if (idx >= 0) state.notes[idx] = updated;
       renderCdNoteList();
@@ -3463,7 +3468,8 @@ function applyGoogleStatus() {
     else cBadge.textContent = g.lastSync ? `verbunden – zuletzt ${g.lastSync}` : "verbunden";
   }
   const cBtn = $("calGoogleSyncBtn");
-  if (cBtn) cBtn.disabled = !g.keySet;
+  // F5: Google-Kalender-Sync ist wie die KI-Funktionen zwingend online (externer Service).
+  if (cBtn) cBtn.disabled = !g.keySet || navigator.onLine === false;
 }
 
 // Status sicherstellen, wenn der Kalender geöffnet wird, ohne dass zuvor die Einstellungen liefen.
@@ -3489,6 +3495,7 @@ const GOOGLE_AUTO_THROTTLE_MS = 2 * 60 * 1000;   // A: nicht öfter als alle 2 M
 async function autoSyncGoogle(rerender) {
   if (googleSyncing) return;
   if (document.visibilityState === "hidden") return;  // im Hintergrund-Tab nicht syncen
+  if (navigator.onLine === false) return;              // F5: offline gar nicht erst versuchen
   await ensureGoogleStatus();
   if (!state.google || !state.google.keySet) return;  // nur mit hinterlegtem Schlüssel
   googleSyncing = true;
@@ -3794,9 +3801,17 @@ function exportAsuv(fmt) {
 
 /* ---------- KI (Meilenstein 7) ---------- */
 function applyAiGating(active) {
+  // F5: KI-Funktionen brauchen zwingend die externe Anthropic-API — offline zusätzlich
+  // ausgrauen (unabhängig vom API-Key-Status), damit kein Klick einen garantiert
+  // fehlschlagenden Request auslöst.
+  const offline = navigator.onLine === false;
+  const effectiveActive = active && !offline;
   ["aiPlanBtn", "stoffAiBtn", "seqAiBtn", "asuvAiBtn", "aiLernzieleBtn", "asuvEinordnungBtn", "stundeEinordnungBtn", "spAiBtn"].forEach((id) => {
     const b = $(id);
-    if (b) { b.disabled = !active; b.title = active ? "" : "Kein API-Key hinterlegt – in den Einstellungen eintragen"; }
+    if (b) {
+      b.disabled = !effectiveActive;
+      b.title = effectiveActive ? "" : offline ? "Offline nicht verfügbar" : "Kein API-Key hinterlegt – in den Einstellungen eintragen";
+    }
   });
 }
 async function refreshAiStatus() {
@@ -5018,6 +5033,8 @@ function wireEvents() {
     if (q) runGlobalSearch(q);
   });
   wireCmdPalette();   // U27 (Variante C): Kommando-Palette (⌘K / Strg+K / „/")
+  const scBtn = $("syncConflictBtn");
+  if (scBtn) scBtn.onclick = () => getSyncConflictsModule().then((m) => m.openOverlay());
 
   // U17-Umbau: Notizen-Arbeitsbereich (neue Notiz, Suche)
   $("notizNewBtn").onclick = () => getNotizenModule().then((m) => m.startNewDraft());
@@ -5354,17 +5371,51 @@ function noteDateLabel(iso) {
   const [y, m, d] = datePart.split("-");
   return y ? `${d}.${m}.${y}` : "";
 }
+// dataset-Werte sind immer Strings; eine synchronisierte Notiz hat eine numerische Server-id
+// (muss für Vergleiche mit n.id zurück in eine Zahl), eine noch nicht synchronisierte Notiz
+// eine "loc_..."-localId (muss String bleiben) — siehe Identitäts-Kommentar in sync-engine.js.
+function parseNoteId(raw) {
+  return /^\d+$/.test(raw) ? Number(raw) : raw;
+}
 function activeNotesSorted(filterFn) {
   return state.notes
     .filter((n) => n.archivedAt == null && (!filterFn || filterFn(n)))
     .sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || ""));
 }
 
+// Offline-Sync (F5): Vorschau-Renderer je Entität für die generische Konflikt-UI —
+// pro Rollout-Entität hier um einen Eintrag ergänzen; ohne Eintrag greift dort ein
+// generischer Key-Value-Fallback.
+const SYNC_ENTITY_RENDERERS = {
+  notes: (n) => ({ title: noteTitle(n), preview: notePreviewText(n) }),
+};
+
+let _syncConflictsModulePromise = null;
+function getSyncConflictsModule() {
+  if (!_syncConflictsModulePromise) {
+    _syncConflictsModulePromise = import("./sync-conflicts.js").then((mod) => mod.createSyncConflictsModule({
+      $, esc, toast, SyncEngine, entityRenderers: SYNC_ENTITY_RENDERERS,
+    }));
+  }
+  return _syncConflictsModulePromise;
+}
+
+// Sidebar-Badge: zeigt/versteckt sich je nachdem, ob ungelöste Sync-Konflikte vorliegen
+// (jede Entität, nicht nur notes) — aktualisiert bei jeder SyncEngine-Änderung.
+async function updateSyncConflictBadge() {
+  const btn = $("syncConflictBtn");
+  if (!btn) return;
+  const conflicts = await SyncEngine.getConflicts();
+  btn.classList.toggle("hidden", conflicts.length === 0);
+  const label = $("syncConflictBtnLabel");
+  if (label) label.textContent = `Sync-Konflikte (${conflicts.length})`;
+}
+
 let _notizenModulePromise = null;
 function getNotizenModule() {
   if (!_notizenModulePromise) {
     _notizenModulePromise = import("./notizen.js").then((mod) => mod.createNotizenModule({
-      $, esc, API, toast, state, refresh,
+      $, esc, API, toast, state, refresh, SyncEngine, parseNoteId,
       noteTitle, notePreviewText, noteScopeLabel, noteDateLabel, activeNotesSorted,
     }));
   }
@@ -5427,8 +5478,11 @@ document.addEventListener("DOMContentLoaded", init);
    - Meldet fehlgeschlagene Schreibversuche offline als klare Toast-Meldung. */
 function updateOfflineBanner() {
   const banner = $("offlineBanner");
-  if (!banner) return;
-  banner.classList.toggle("hidden", navigator.onLine !== false);
+  if (banner) banner.classList.toggle("hidden", navigator.onLine !== false);
+  // Online-Gating (F5) für zwingend netzabhängige Features an dieselbe online/offline-
+  // Umschaltung koppeln, die auch das Banner steuert.
+  applyAiGating(state.aiActive);
+  applyGoogleStatus();
 }
 function initOfflineSupport() {
   // Service Worker registrieren (nur über HTTPS/localhost verfügbar; robust gekapselt).
@@ -5440,5 +5494,24 @@ function initOfflineSupport() {
   window.addEventListener("online", updateOfflineBanner);
   window.addEventListener("offline", updateOfflineBanner);
   updateOfflineBanner();
+  SyncEngine.init();
+  SyncEngine.onChange(updateSyncConflictBadge);
+  updateSyncConflictBadge();
 }
 /* ===== Ende U23-Block =============================================================== */
+
+/* ===== Offline-Sync (Fundament, F4): Klassen-Detail-Mini-Notizen (cdNote*) auf
+   Hintergrund-Sync-Ergebnisse reagieren lassen — Pull/Push laufen unabhängig vom aktuell
+   sichtbaren View; ohne diese Subscription bliebe state.notes nach einem Hintergrund-Sync
+   veraltet, bis der Nutzer manuell neu lädt. Die parallele Notizen-Hauptansicht abonniert
+   unabhängig in notizen.js selbst (eigene Selektions-Variable, siehe dortiger Kommentar). */
+SyncEngine.onChange(async (entityType, info) => {
+  if (entityType !== "notes") return;
+  if (info.idRemaps) {
+    const remap = info.idRemaps.find((r) => r.oldId === cdNoteSelectedId);
+    if (remap) cdNoteSelectedId = remap.newId;
+  }
+  state.notes = await SyncEngine.materialize("notes");
+  renderCdNoteList();
+  renderCdNoteEditor();
+});

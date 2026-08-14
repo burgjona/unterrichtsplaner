@@ -213,6 +213,17 @@ input.input-error { border-color: var(--bad); background: color-mix(in srgb, var
 .modal-box h2 { margin-top:0; color:var(--primary-dark); }
 .modal-close { float:right; border:0; background:#e9f8ec; color:var(--primary-dark); border-radius:9px; padding:7px 11px; cursor:pointer; font-family:inherit; }
 .modal-section { margin-top:14px; padding-top:12px; border-top:1px solid var(--line); }
+/* Offline-Sync (F5): Konfliktauflösung-Overlay (sync-conflicts.js). */
+.conflict-item { border:1px solid var(--line); border-radius:12px; padding:12px; margin-bottom:12px; }
+.conflict-item-head { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+.conflict-versions { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.conflict-version { background:var(--surface-2); border-radius:9px; padding:9px 11px; min-width:0; }
+.conflict-version-label { font-size:11px; font-weight:var(--fw-bold); color:var(--muted); text-transform:uppercase; margin-bottom:4px; }
+.conflict-entity-title { font-weight:var(--fw-bold); word-break:break-word; }
+.conflict-entity-preview { font-size:12.5px; color:var(--muted); margin-top:3px; white-space:pre-wrap; }
+.conflict-entity-fallback { font-size:12px; }
+.conflict-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+@media (max-width: 600px) { .conflict-versions { grid-template-columns:1fr; } }
 .mini-meyer-chip { display:inline-block; padding:5px 8px; border-radius:7px; font-size:11px; margin:2px; color:white; }
 .cal-grid { display:grid; grid-template-columns: repeat(7, minmax(0,1fr)); gap:6px; }
 .cal-grid.with-kw { grid-template-columns: 28px repeat(7, minmax(0,1fr)); }
@@ -616,6 +627,13 @@ input.input-error { border-color: var(--bad); background: color-mix(in srgb, var
   margin-left:auto; font-size:10.5px; font-weight:var(--fw-bold); letter-spacing:.02em; white-space:nowrap;
   background:rgba(0,0,0,0.22); color:#d7ffe6; border-radius:6px; padding:2px 7px;
 }
+/* Offline-Sync (F5): Sidebar-Badge für ungelöste Konflikte — wie .nav-search-btn, aber
+   auffällig warnfarben, da er auf eine nötige Nutzerentscheidung hinweist. */
+.nav-sync-conflict-btn {
+  background:var(--badge-bad-bg, #fecaca); color:var(--badge-bad-text, #7f1d1d);
+  border-color:transparent; font-weight:var(--fw-bold);
+}
+.nav-sync-conflict-btn:hover { background:var(--badge-bad-bg, #fecaca); filter:brightness(0.96); }
 /* Kräftige Aktiv-Kante links am aktiven Nav-Eintrag (nur zusätzlich zum bestehenden Aktiv-BG) */
 .nav-btn { position:relative; }
 .nav-btn.active::before {

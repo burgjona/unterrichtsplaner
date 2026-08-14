@@ -13,8 +13,24 @@
    app.js und werden hier nur über ctx gelesen, nicht verschoben. */
 
 export function createNotizenModule(ctx) {
-  const { $, esc, API, toast, state, refresh, noteTitle, notePreviewText, noteScopeLabel,
-          noteDateLabel, activeNotesSorted } = ctx;
+  const { $, esc, API, toast, state, refresh, SyncEngine, parseNoteId, noteTitle, notePreviewText,
+          noteScopeLabel, noteDateLabel, activeNotesSorted } = ctx;
+
+  // Offline-Sync (F4): Hintergrund-Pull/Push kann state.notes/die id einer offline neu
+  // angelegten Notiz jederzeit ändern (siehe Identitäts-Kommentar in sync-engine.js) — auch
+  // während diese View gerade NICHT sichtbar ist. renderNotizen() selbst prüft $("notizList")
+  // und ist ein No-Op, wenn die View nicht aktiv ist.
+  SyncEngine.onChange(async (entityType, info) => {
+    if (entityType !== "notes") return;
+    if (info.idRemaps) {
+      const remap = info.idRemaps.find((r) => r.oldId === notizSelectedId);
+      if (remap) notizSelectedId = remap.newId;
+    }
+    // Eigenständig neu materialisieren statt sich auf die Listener-Reihenfolge mit app.js zu
+    // verlassen (dort wird state.notes bei derselben Benachrichtigung ebenfalls aktualisiert).
+    state.notes = await SyncEngine.materialize("notes");
+    renderNotizen();
+  });
 
   let notizSelectedId = null;      // id der im Editor offenen Notiz, oder null
   let notizIsDraft = false;        // true = Editor zeigt eine neue, noch ungespeicherte Notiz
@@ -54,7 +70,7 @@ export function createNotizenModule(ctx) {
     wrap.querySelectorAll("[data-note-id]").forEach((el) => {
       el.onclick = async () => {
         await flushNotizSave();
-        notizSelectedId = Number(el.dataset.noteId);
+        notizSelectedId = parseNoteId(el.dataset.noteId);
         notizIsDraft = false;
         renderNotizList();
         renderNotizMain();
@@ -160,7 +176,7 @@ export function createNotizenModule(ctx) {
     try {
       if (notizIsDraft) {
         if (!body.trim()) { notizSaving = false; return; }   // leere Entwürfe nicht anlegen
-        const created = await API.post("/notes", {
+        const created = await SyncEngine.create("notes", {
           scope: notizDraftScope,
           classId: notizDraftScope === "klasse" ? notizDraftClassId : null,
           bodyMd: body,
@@ -171,7 +187,7 @@ export function createNotizenModule(ctx) {
         renderNotizList();
         promoteNotizDraftHead(created);
       } else if (notizSelectedId != null) {
-        const updated = await API.put(`/notes/${notizSelectedId}`, { bodyMd: body });
+        const updated = await SyncEngine.update("notes", notizSelectedId, { bodyMd: body });
         const idx = state.notes.findIndex((n) => n.id === notizSelectedId);
         if (idx >= 0) state.notes[idx] = updated;
         renderNotizList();

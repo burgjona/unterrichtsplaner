@@ -25,8 +25,11 @@ def _get(conn, user_id, nid):
     return NoteOut(**dict(row)) if row else None
 
 
-@router.post("", response_model=NoteOut, status_code=201)
-def create(body: NoteCreate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+# ---------- Reine Apply-Funktionen (kein commit) — von REST-Endpunkten UND vom
+# generischen Sync-Push (src/routers/sync.py) genutzt, damit die Geschäftslogik nur
+# einmal existiert. Committed wird jeweils vom Aufrufer, pro Mutation einzeln. ----------
+
+def _apply_create(conn, user_id, body: NoteCreate) -> NoteOut:
     if body.scope not in ("allgemein", "klasse"):
         raise HTTPException(status_code=400, detail="scope muss 'allgemein' oder 'klasse' sein.")
     class_id = None
@@ -45,8 +48,34 @@ def create(body: NoteCreate, conn=Depends(get_db), user_id: int = Depends(get_us
         "INSERT INTO notes(user_id, scope, class_id, school_year_id, body_md) VALUES (?,?,?,?,?)",
         (user_id, body.scope, class_id, school_year_id, body.body_md or ""),
     )
-    conn.commit()
     return _get(conn, user_id, cur.lastrowid)
+
+
+def _apply_update(conn, user_id, nid: int, body: NoteUpdate) -> NoteOut:
+    # Millisekunden-Auflösung (statt datetime('now')) ist hier Pflicht, nicht Kosmetik:
+    # der Sync-Push (sync.py) erkennt Konflikte über den Vergleich von updated_at-Werten;
+    # bei Sekundenauflösung würden zwei Schreibvorgänge in derselben Sekunde denselben
+    # Wert bekommen und ein echter Konflikt bliebe unentdeckt (Datenverlust trotz
+    # Optimistic-Concurrency). Künftige Rollout-Entitäten sollten dasselbe Muster nutzen.
+    row_or_404(_get(conn, user_id, nid), "Notiz")
+    conn.execute(
+        "UPDATE notes SET body_md = ?, updated_at = strftime('%Y-%m-%d %H:%M:%f','now') WHERE id = ? AND user_id = ?",
+        (body.body_md or "", nid, user_id),
+    )
+    return _get(conn, user_id, nid)
+
+
+def _apply_delete(conn, user_id, nid: int) -> None:
+    cur = conn.execute("DELETE FROM notes WHERE id = ? AND user_id = ?", (nid, user_id))
+    if cur.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Notiz nicht gefunden.")
+
+
+@router.post("", response_model=NoteOut, status_code=201)
+def create(body: NoteCreate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+    result = _apply_create(conn, user_id, body)
+    conn.commit()
+    return result
 
 
 @router.get("", response_model=List[NoteOut])
@@ -80,20 +109,16 @@ def list_(
 
 @router.put("/{nid}", response_model=NoteOut)
 def update(nid: int, body: NoteUpdate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
-    row_or_404(_get(conn, user_id, nid), "Notiz")
-    conn.execute(
-        "UPDATE notes SET body_md = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?",
-        (body.body_md or "", nid, user_id),
-    )
+    result = _apply_update(conn, user_id, nid, body)
     conn.commit()
-    return _get(conn, user_id, nid)
+    return result
 
 
 @router.post("/{nid}/archive", response_model=NoteOut)
 def archive(nid: int, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
     row_or_404(_get(conn, user_id, nid), "Notiz")
     conn.execute(
-        "UPDATE notes SET archived_at = datetime('now'), updated_at = datetime('now') "
+        "UPDATE notes SET archived_at = datetime('now'), updated_at = strftime('%Y-%m-%d %H:%M:%f','now') "
         "WHERE id = ? AND user_id = ?",
         (nid, user_id),
     )
@@ -105,7 +130,7 @@ def archive(nid: int, conn=Depends(get_db), user_id: int = Depends(get_user_id))
 def restore(nid: int, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
     row_or_404(_get(conn, user_id, nid), "Notiz")
     conn.execute(
-        "UPDATE notes SET archived_at = NULL, updated_at = datetime('now') "
+        "UPDATE notes SET archived_at = NULL, updated_at = strftime('%Y-%m-%d %H:%M:%f','now') "
         "WHERE id = ? AND user_id = ?",
         (nid, user_id),
     )
@@ -115,7 +140,33 @@ def restore(nid: int, conn=Depends(get_db), user_id: int = Depends(get_user_id))
 
 @router.delete("/{nid}", status_code=204)
 def delete(nid: int, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
-    cur = conn.execute("DELETE FROM notes WHERE id = ? AND user_id = ?", (nid, user_id))
+    _apply_delete(conn, user_id, nid)
     conn.commit()
-    if cur.rowcount == 0:
-        raise HTTPException(status_code=404, detail="Notiz nicht gefunden.")
+
+
+# ---------- Sync-Handler-Registry (src/routers/sync.py) ----------
+# Payloads kommen als camelCase-Dict aus der Mutation-Queue; NoteCreate/NoteUpdate
+# akzeptieren das dank populate_by_name (Base-Konfiguration in schemas.py).
+
+def _sync_fetch(conn, user_id, entity_id):
+    return _get(conn, user_id, entity_id)
+
+
+def _sync_create(conn, user_id, payload: dict) -> NoteOut:
+    return _apply_create(conn, user_id, NoteCreate(**payload))
+
+
+def _sync_update(conn, user_id, entity_id, payload: dict) -> NoteOut:
+    return _apply_update(conn, user_id, entity_id, NoteUpdate(**payload))
+
+
+def _sync_delete(conn, user_id, entity_id) -> None:
+    _apply_delete(conn, user_id, entity_id)
+
+
+SYNC_HANDLER = {
+    "fetch": _sync_fetch,
+    "create": _sync_create,
+    "update": _sync_update,
+    "delete": _sync_delete,
+}

@@ -1152,3 +1152,44 @@ class StoffPlanBlockCombinedOut(StoffPlanBlockOut):
 
 class StoffPlanCombinedOut(StoffPlanOut):
     blocks: List[StoffPlanBlockCombinedOut] = []
+
+
+# ---------- Offline-Sync (Fundament) ----------
+class SyncChangeOut(Base):
+    seq: int
+    entity_type: str
+    entity_id: int
+    op: str                          # 'upsert' | 'delete'
+    entity: Optional[Dict] = None    # None bei op='delete' (bereits camelCase-serialisiert)
+
+
+class SyncChangesOut(Base):
+    changes: List[SyncChangeOut]
+    next_cursor: int
+    has_more: bool
+
+
+class SyncMutationIn(Base):
+    client_id: str                   # vom Client vergebene Korrelations-ID (i.d.R. localId)
+    entity_type: str
+    op: str                          # 'create' | 'update' | 'delete'
+    entity_id: Optional[int] = None  # None bei 'create'
+    base_updated_at: Optional[str] = None  # Basis für Optimistic-Concurrency bei 'update'/'delete'
+    payload: Dict = Field(default_factory=dict)
+
+
+class SyncPushIn(Base):
+    mutations: List[SyncMutationIn]
+
+
+class SyncMutationResult(Base):
+    client_id: str
+    status: str                      # 'applied' | 'conflict' | 'error'
+    entity_id: Optional[int] = None
+    entity: Optional[Dict] = None
+    server_entity: Optional[Dict] = None
+    detail: Optional[str] = None
+
+
+class SyncPushOut(Base):
+    results: List[SyncMutationResult]
