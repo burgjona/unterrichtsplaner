@@ -50,13 +50,15 @@ def _sync_calendar_entry(conn, user_id: int, lesson_id: int) -> None:
     if l["date"]:
         if existing:
             conn.execute(
-                "UPDATE calendar_entries SET title = ?, entry_date = ?, class_id = ? WHERE id = ?",
+                "UPDATE calendar_entries SET title = ?, entry_date = ?, class_id = ?, "
+                "updated_at = strftime('%Y-%m-%d %H:%M:%f','now') WHERE id = ?",
                 (l["title"], l["date"], l["class_id"], existing["id"]),
             )
         else:
             conn.execute(
-                "INSERT INTO calendar_entries(user_id, class_id, lesson_id, title, entry_date, entry_type, auto_generated) "
-                "VALUES (?,?,?,?,?, 'normal', 1)",
+                "INSERT INTO calendar_entries"
+                "(user_id, class_id, lesson_id, title, entry_date, entry_type, auto_generated, updated_at) "
+                "VALUES (?,?,?,?,?, 'normal', 1, strftime('%Y-%m-%d %H:%M:%f','now'))",
                 (user_id, l["class_id"], lesson_id, l["title"], l["date"]),
             )
     elif existing:
@@ -64,7 +66,11 @@ def _sync_calendar_entry(conn, user_id: int, lesson_id: int) -> None:
             conn.execute("DELETE FROM calendar_entries WHERE id = ?", (existing["id"],))
         else:
             # manueller Termin bleibt erhalten, verliert aber die Verknüpfung.
-            conn.execute("UPDATE calendar_entries SET lesson_id = NULL WHERE id = ?", (existing["id"],))
+            conn.execute(
+                "UPDATE calendar_entries SET lesson_id = NULL, "
+                "updated_at = strftime('%Y-%m-%d %H:%M:%f','now') WHERE id = ?",
+                (existing["id"],),
+            )
 
 
 def _lesson_values(body, klafki: Klafki, bibox: Bibox, meyer_plan) -> dict:

@@ -18,6 +18,7 @@ from ..deps import get_db, get_user_id
 from ..schemas import (
     SyncChangeOut, SyncChangesOut, SyncMutationIn, SyncMutationResult, SyncPushIn, SyncPushOut,
 )
+from . import calendar as calendar_router
 from . import calendar_categories as calendar_categories_router
 from . import classes as classes_router
 from . import lessons as lessons_router
@@ -46,6 +47,7 @@ ENTITY_REGISTRY = {
     "timetable_plans": stundenplan_router.SYNC_HANDLER_TIMETABLE_PLANS,
     "timetable_entries": stundenplan_router.SYNC_HANDLER_TIMETABLE_ENTRIES,
     "timetable_overrides": stundenplan_router.SYNC_HANDLER_TIMETABLE_OVERRIDES,
+    "calendar_entries": calendar_router.SYNC_HANDLER,
     "tropenplan_slots": stundenplan_router.SYNC_HANDLER_TROPENPLAN_SLOTS,
 }
 

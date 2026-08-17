@@ -327,7 +327,7 @@ def sync(conn: sqlite3.Connection, user_id: int) -> dict:
 
     conn.execute(
         """UPDATE user_settings
-             SET google_last_sync = datetime('now'), google_sync_token = ?
+             SET google_last_sync = strftime('%Y-%m-%d %H:%M:%f','now'), google_sync_token = ?
            WHERE user_id = ?""",
         (new_token, user_id),
     )

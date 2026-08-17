@@ -30,6 +30,7 @@ const SyncEngine = (() => {
     stoff_plans: { apiPath: "/stoff-plans" },
     timetable_entries: { apiPath: "/stundenplan/entries" },
     timetable_overrides: { apiPath: "/stundenplan/overrides" },
+    calendar_entries: { apiPath: "/calendar" },
   };
 
   const listeners = new Set();

@@ -1086,3 +1086,76 @@ def test_timetable_overrides_push_update_is_rejected(client, auth):
     result = r.json()["results"][0]
     assert result["status"] == "error"
     assert "nicht bearbeitet" in result["detail"]
+
+
+# ---------- Rollout Tranche 3 (letzte Einheit): calendar_entries ----------
+
+def test_sync_log_calendar_entries_triggers_exist(tmp_path):
+    conn = init_db(str(tmp_path / "schema.db"))
+    triggers = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
+    assert {
+        "trg_synclog_calendar_entries_ai", "trg_synclog_calendar_entries_au",
+        "trg_synclog_calendar_entries_ad",
+    } <= triggers
+    conn.close()
+
+
+def test_calendar_entries_push_create_update_lifecycle(client, auth):
+    cls_id, _ = _make_class_and_year(client)
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "calendar_entries", "op": "create",
+        "payload": {"title": "Elternabend", "entryDate": "2027-03-01", "classIds": [cls_id]},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "applied"
+    assert result["entity"]["classIds"] == [cls_id]
+    eid, base_updated = result["entityId"], result["entity"]["updatedAt"]
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_2", "entityType": "calendar_entries", "op": "update", "entityId": eid,
+        "baseUpdatedAt": base_updated, "payload": {"title": "Elternabend (verschoben)"},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "applied"
+    assert result["entity"]["title"] == "Elternabend (verschoben)"
+
+    # Generischer Sync-Op 'delete' bildet auf Soft-Archiv ab (analog classes.py) — kein
+    # Hard-Delete, Eintrag bleibt über den REST-Endpunkt weiterhin auffindbar (archiviert).
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_3", "entityType": "calendar_entries", "op": "delete", "entityId": eid,
+        "baseUpdatedAt": result["entity"]["updatedAt"],
+    }]})
+    assert r.json()["results"][0]["status"] == "applied"
+    assert eid not in [e["id"] for e in client.get("/api/calendar").json()]
+    assert eid in [e["id"] for e in client.get("/api/calendar?archived=true").json()]
+
+
+def test_calendar_entries_push_detects_conflict(client, auth):
+    created = client.post("/api/calendar", json={"title": "x", "entryDate": "2027-03-05"}).json()
+    eid, base_updated = created["id"], created["updatedAt"]
+    assert client.put(f"/api/calendar/{eid}", json={"title": "geaendert"}).status_code == 200
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "calendar_entries", "op": "update", "entityId": eid,
+        "baseUpdatedAt": base_updated, "payload": {"title": "zu spaet"},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "conflict"
+    assert result["serverEntity"]["title"] == "geaendert"
+
+
+def test_calendar_entries_auto_generated_from_lesson_bumps_updated_at(client, auth):
+    # Regressionstest für den Fix in lessons.py::_sync_calendar_entry (updated_at wurde dort
+    # bislang nie gesetzt) — sonst würde sync_log zwar feuern, aber ein Client, der den
+    # Auto-Eintrag schon kennt, könnte die spätere Verschiebung nie konfliktfrei einordnen.
+    lesson = client.post("/api/lessons", json={
+        "title": "Mit Termin", "subject": "Deutsch", "date": "2027-04-01",
+    }).json()
+    entries = client.get("/api/calendar").json()
+    auto = next(e for e in entries if e["lessonId"] == lesson["id"])
+    assert auto["updatedAt"] is not None
+    first_updated = auto["updatedAt"]
+
+    client.put(f"/api/lessons/{lesson['id']}", json={"date": "2027-04-02"})
+    auto2 = next(e for e in client.get("/api/calendar").json() if e["lessonId"] == lesson["id"])
+    assert auto2["updatedAt"] != first_updated

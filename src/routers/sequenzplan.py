@@ -204,7 +204,8 @@ def apply_calendar_entry(sid: int, body: SequenzStundeCalendarEntryIn, conn=Depe
         raise HTTPException(status_code=400, detail="Die verknüpfte Stunde hat noch kein Datum.")
     with conn:
         cur = conn.execute(
-            "UPDATE calendar_entries SET entry_type = ? WHERE lesson_id = ? AND auto_generated = 1",
+            "UPDATE calendar_entries SET entry_type = ?, "
+            "updated_at = strftime('%Y-%m-%d %H:%M:%f','now') WHERE lesson_id = ? AND auto_generated = 1",
             (body.type, row["lesson_id"]),
         )
         if cur.rowcount == 0:
@@ -290,7 +291,8 @@ def _sync_calendar_entry_date(conn, lesson_id: int, new_date: str) -> None:
     """Hält den automatisch erzeugten Kalendereintrag einer verschobenen Stunde synchron
     (analog routers/lessons.py::_sync_calendar_entry, hier nur der Datums-Teil)."""
     conn.execute(
-        "UPDATE calendar_entries SET entry_date = ? WHERE lesson_id = ? AND auto_generated = 1",
+        "UPDATE calendar_entries SET entry_date = ?, "
+        "updated_at = strftime('%Y-%m-%d %H:%M:%f','now') WHERE lesson_id = ? AND auto_generated = 1",
         (new_date, lesson_id),
     )
 

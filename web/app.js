@@ -748,12 +748,16 @@ async function loadAll() {
   // bleiben offline angelegte/geänderte Notizen sichtbar. pull() ist offline ein No-Op,
   // materialize() liefert dann den zuletzt bekannten Stand + Warteschlange.
   await SyncEngine.pull();
-  const [classesAll, lessonsAll, reflections, open, materials, todosAll, notes, schoolYearsAll, calendar, calendarCategoriesAll, asuvDrafts] = await Promise.all([
+  const [classesAll, lessonsAll, reflections, open, materials, todosAll, notes, schoolYearsAll, calendarAll, calendarCategoriesAll, asuvDrafts] = await Promise.all([
     SyncEngine.materialize("classes"), SyncEngine.materialize("lessons"), API.get("/reflections"),
     API.get("/reflections/open"), API.get("/materials"), SyncEngine.materialize("todos"),
-    SyncEngine.materialize("notes"), SyncEngine.materialize("school_years"), API.get("/calendar"),
+    SyncEngine.materialize("notes"), SyncEngine.materialize("school_years"), SyncEngine.materialize("calendar_entries"),
     SyncEngine.materialize("calendar_categories"), API.get("/asuv"),
   ]);
+  // Archivierte Termine bleiben wie bisher außerhalb von state.calendar (eigene Abfrage in
+  // der Archiv-Ansicht, renderArchivKalender), Reihenfolge wie ORDER BY entry_date.
+  const calendar = calendarAll.filter((e) => e.archivedAt == null)
+    .sort((a, b) => String(a.entryDate).localeCompare(String(b.entryDate)));
   // materialize() sortiert nicht — Reihenfolge wie der bisherige Backend-Endpunkt
   // (ORDER BY id, hier über createdAt als stabiles Anlage-Datum nachgebildet).
   const lessons = lessonsAll.slice()
@@ -1983,8 +1987,10 @@ async function renderArchivKalender() {
   if (!wrap) return;
   wrap.innerHTML = '<p class="muted small">Wird geladen …</p>';
   let rows = [];
-  try { rows = await API.get("/calendar?archived=true"); }
-  catch (e) { wrap.innerHTML = `<p class="muted small">${esc(e.message)}</p>`; return; }
+  try {
+    const all = await SyncEngine.materialize("calendar_entries");
+    rows = all.filter((e) => e.archivedAt != null);
+  } catch (e) { wrap.innerHTML = `<p class="muted small">${esc(e.message)}</p>`; return; }
   wrap.innerHTML = "";
   if (!rows.length) { wrap.innerHTML = '<p class="muted small">Keine archivierten Termine.</p>'; return; }
   rows.forEach((e) => {
@@ -2816,7 +2822,7 @@ function renderCalendar() {
         el.onclick = () => { const l = state.lessons.find((x) => String(x.id) === lid); if (l) openLessonModal(l); };
       } else if (el.dataset.entryId) {
         // U26: manueller/Google-/Import-Termin → Bearbeiten-Modal (wie Google Kalender).
-        el.onclick = () => openCalendarEventModal(Number(el.dataset.entryId));
+        el.onclick = () => openCalendarEventModal(el.dataset.entryId);
       }
     });
     // U29: Klick auf die Tageszahl öffnet die Tages-Agenda (wie in der Monatsansicht),
@@ -2864,7 +2870,7 @@ function renderDayAgenda(dStr) {
   list.querySelectorAll(".cal-day-agenda-item").forEach((el) => {
     const lid = el.dataset.lesson;
     if (lid) el.onclick = () => { const l = state.lessons.find((x) => String(x.id) === lid); if (l) openLessonModal(l); };
-    else if (el.dataset.entryId) el.onclick = () => openCalendarEventModal(Number(el.dataset.entryId));
+    else if (el.dataset.entryId) el.onclick = () => openCalendarEventModal(el.dataset.entryId);
   });
   const addBtn = $("calDayAgendaAddBtn");
   if (addBtn) addBtn.onclick = () => openCalEntryPanel(dStr);
@@ -2878,7 +2884,7 @@ async function saveCalendarEntry() {
   if (endDate && endDate < date) { toast("Enddatum darf nicht vor dem Startdatum liegen.", false); return; }
   const allDay = $("calEntryAllDay").checked;
   try {
-    await API.post("/calendar", {
+    await SyncEngine.create("calendar_entries", {
       title, entryDate: date, endDate,
       allDay,
       startTime: allDay ? null : ($("calEntryStartTime").value || null),
@@ -2904,7 +2910,7 @@ async function saveCalendarEntry() {
 // U26: Klick auf einen (nicht stundengebundenen) Termin öffnet ein Bearbeiten-Modal
 // (wie Google Kalender). Google-verknüpfte Termine sind bearbeitbar und mit Badge markiert.
 function openCalendarEventModal(entryId) {
-  const e = state.calendar.find((x) => x.id === entryId);
+  const e = state.calendar.find((x) => String(x.id) === String(entryId));
   if (!e) return;
   const catOpts = `<option value="">— keine —</option>` +
     state.calendarCategories.map((c) => `<option value="${c.id}"${c.id === e.categoryId ? " selected" : ""}>${esc(c.name)}</option>`).join("");
@@ -2964,7 +2970,7 @@ async function saveCalendarEventModal(id) {
   if (endDate && endDate < date) { toast("Enddatum darf nicht vor dem Startdatum liegen.", false); return; }
   const allDay = $("evtAllDay").checked;
   try {
-    await API.put("/calendar/" + id, {
+    await SyncEngine.update("calendar_entries", id, {
       title, entryDate: date, endDate, allDay,
       startTime: allDay ? null : ($("evtStartTime").value || null),
       endTime: allDay ? null : ($("evtEndTime").value || null),
@@ -2983,7 +2989,10 @@ async function saveCalendarEventModal(id) {
 async function deleteCalendarEventModal(id) {
   if (!confirm("Diesen Termin archivieren? Er lässt sich im Archiv (Reiter „Termine“) wiederherstellen.")) return;
   try {
-    await API.post("/calendar/" + id + "/archive");
+    // Generischer Sync-Op 'delete' bildet auf Soft-Archiv ab (siehe SYNC_HANDLER-Kommentar in
+    // calendar.py) — Undo nutzt weiterhin die REST-/restore-Route (online-only, analog
+    // classes/todos: restore ist die seltene Ausnahme, kein alltäglicher Offline-Fall).
+    await SyncEngine.remove("calendar_entries", id);
     closeModal();
     await refresh(); toast("Termin archiviert.");
     setUndo("Termin archiviert.", async () => {
@@ -3428,14 +3437,18 @@ async function saveLesson() {
       const linkId = pendingCalendarEntryLink;
       pendingCalendarEntryLink = null;
       try {
-        await API.put("/calendar/" + linkId, { lessonId: saved.id });
+        await SyncEngine.update("calendar_entries", linkId, { lessonId: saved.id });
         // Das Anlegen der Stunde hat nebenbei einen eigenen Auto-Kalendereintrag erzeugt
         // (der Termin, aus dem heraus geplant wurde, war dem Backend zu dem Zeitpunkt noch
-        // nicht bekannt) — den verwaisten Duplikat-Eintrag entfernen.
-        const dupes = (await API.get("/calendar")).filter(
+        // nicht bekannt) — den verwaisten Duplikat-Eintrag entfernen. Dieser Auto-Eintrag
+        // entstand als reiner Server-Seiteneffekt (nicht über eine eigene Client-Mutation),
+        // daher erst pull() (holt ihn per sync/changes in die OfflineDB), sonst würde
+        // materialize() ihn nicht kennen und der Duplikat-Eintrag bliebe stehen.
+        await SyncEngine.pull();
+        const dupes = (await SyncEngine.materialize("calendar_entries")).filter(
           (c) => c.lessonId === saved.id && c.id !== linkId && c.autoGenerated
         );
-        for (const d of dupes) await API.del("/calendar/" + d.id);
+        for (const d of dupes) await SyncEngine.remove("calendar_entries", d.id);
       } catch (e2) { toast("Stunde gespeichert, Verknüpfung mit dem Termin ist aber fehlgeschlagen: " + e2.message, false); }
     }
     for (const seqId of pendingSeqLinkIds) {
@@ -5460,6 +5473,7 @@ const SYNC_ENTITY_RENDERERS = {
   stoff_plans: (p) => ({ title: p.title, preview: `${(p.blocks || []).length} Blöcke · ${p.status}` }),
   timetable_entries: (e) => ({ title: e.label || "Stundenplan-Eintrag", preview: `${e.weekday != null ? ttWEEKDAYS[e.weekday] : ""} · ${e.weekType}` }),
   timetable_overrides: (o) => ({ title: o.label || "Vertretung", preview: o.date }),
+  calendar_entries: (e) => ({ title: e.title, preview: e.entryDate }),
 };
 
 let _syncConflictsModulePromise = null;
@@ -5667,6 +5681,19 @@ SyncEngine.onChange(async (entityType) => {
 SyncEngine.onChange(async (entityType) => {
   if (entityType !== "timetable_overrides") return;
   calTtCache.clear();
+  await renderTodayList();
+  await renderWeekOverview();
+  renderCalendar();
+});
+
+// Rollout (Tranche 3 — letzte Einheit): calendar_entries. Archivierte Einträge bleiben wie
+// bisher außerhalb von state.calendar (eigene Abfrage in renderArchivKalender, analog
+// classes/todos), Reihenfolge wie ORDER BY entry_date.
+SyncEngine.onChange(async (entityType) => {
+  if (entityType !== "calendar_entries") return;
+  const all = await SyncEngine.materialize("calendar_entries");
+  state.calendar = all.filter((e) => e.archivedAt == null)
+    .sort((a, b) => String(a.entryDate).localeCompare(String(b.entryDate)));
   await renderTodayList();
   await renderWeekOverview();
   renderCalendar();

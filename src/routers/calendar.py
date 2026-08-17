@@ -59,8 +59,7 @@ def _category_owned(conn, user_id, category_id) -> bool:
     ).fetchone() is not None
 
 
-@router.post("", response_model=CalendarOut, status_code=201)
-def create(body: CalendarCreate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+def _apply_create_calendar(conn, user_id: int, body: CalendarCreate) -> CalendarOut:
     # Kategorie (falls gesetzt) muss dem Nutzer gehören.
     if body.category_id is not None and not _category_owned(conn, user_id, body.category_id):
         raise HTTPException(status_code=400, detail="Unbekannte Kategorie.")
@@ -69,7 +68,7 @@ def create(body: CalendarCreate, conn=Depends(get_db), user_id: int = Depends(ge
             """INSERT INTO calendar_entries
                (user_id, class_id, lesson_id, school_year_id, title, entry_date, end_date,
                 start_time, end_time, all_day, entry_type, category_id, is_fixed, room, notes, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))""",
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, strftime('%Y-%m-%d %H:%M:%f','now'))""",
             (user_id, body.class_id, body.lesson_id, body.school_year_id, body.title,
              body.entry_date, body.end_date, body.start_time, body.end_time,
              int(body.all_day), body.entry_type, body.category_id, int(body.is_fixed), body.room,
@@ -77,10 +76,16 @@ def create(body: CalendarCreate, conn=Depends(get_db), user_id: int = Depends(ge
         )
         if body.class_ids:
             _set_entry_classes(conn, user_id, cur.lastrowid, body.class_ids)
-        conn.commit()
     except sqlite3.IntegrityError as exc:
         raise HTTPException(status_code=400, detail=f"Ungültiger Eintrag: {exc}")
     return _get(conn, user_id, cur.lastrowid)
+
+
+@router.post("", response_model=CalendarOut, status_code=201)
+def create(body: CalendarCreate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+    result = _apply_create_calendar(conn, user_id, body)
+    conn.commit()
+    return result
 
 
 @router.get("", response_model=List[CalendarOut])
@@ -121,8 +126,7 @@ def get_(cid: int, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
     return row_or_404(_get(conn, user_id, cid), "Kalendereintrag")
 
 
-@router.put("/{cid}", response_model=CalendarOut)
-def update(cid: int, body: CalendarUpdate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+def _apply_update_calendar(conn, user_id: int, cid: int, body: CalendarUpdate) -> CalendarOut:
     row_or_404(_get(conn, user_id, cid), "Kalendereintrag")
     fields = body.model_dump(exclude_unset=True)
     if fields.get("category_id") is not None and not _category_owned(conn, user_id, fields["category_id"]):
@@ -136,25 +140,39 @@ def update(cid: int, body: CalendarUpdate, conn=Depends(get_db), user_id: int = 
         fields["all_day"] = int(fields["all_day"])
     if fields:
         cols = ", ".join(f"{k} = :{k}" for k in fields)
-        cols += ", updated_at = datetime('now')"  # Last-write-wins für Google-Sync (U21)
+        cols += ", updated_at = strftime('%Y-%m-%d %H:%M:%f','now')"  # Last-write-wins für Google-Sync (U21)
         fields.update(id=cid, uid=user_id)
         conn.execute(
             f"UPDATE calendar_entries SET {cols} WHERE id = :id AND user_id = :uid", fields
         )
-        conn.commit()
     elif class_ids is not None:
-        conn.commit()
+        conn.execute(
+            "UPDATE calendar_entries SET updated_at = strftime('%Y-%m-%d %H:%M:%f','now') "
+            "WHERE id = ? AND user_id = ?",
+            (cid, user_id),
+        )
     return _get(conn, user_id, cid)
+
+
+@router.put("/{cid}", response_model=CalendarOut)
+def update(cid: int, body: CalendarUpdate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+    result = _apply_update_calendar(conn, user_id, cid, body)
+    conn.commit()
+    return result
+
+
+def _apply_archive_calendar(conn, user_id: int, cid: int) -> None:
+    row_or_404(_get(conn, user_id, cid), "Kalendereintrag")
+    conn.execute(
+        "UPDATE calendar_entries SET archived_at = strftime('%Y-%m-%d %H:%M:%f','now'), "
+        "updated_at = strftime('%Y-%m-%d %H:%M:%f','now') WHERE id = ? AND user_id = ?",
+        (cid, user_id),
+    )
 
 
 @router.post("/{cid}/archive", response_model=CalendarOut)
 def archive(cid: int, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
-    row_or_404(_get(conn, user_id, cid), "Kalendereintrag")
-    conn.execute(
-        "UPDATE calendar_entries SET archived_at = datetime('now'), updated_at = datetime('now') "
-        "WHERE id = ? AND user_id = ?",
-        (cid, user_id),
-    )
+    _apply_archive_calendar(conn, user_id, cid)
     conn.commit()
     return _get(conn, user_id, cid)
 
@@ -163,8 +181,8 @@ def archive(cid: int, conn=Depends(get_db), user_id: int = Depends(get_user_id))
 def restore(cid: int, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
     row_or_404(_get(conn, user_id, cid), "Kalendereintrag")
     conn.execute(
-        "UPDATE calendar_entries SET archived_at = NULL, updated_at = datetime('now') "
-        "WHERE id = ? AND user_id = ?",
+        "UPDATE calendar_entries SET archived_at = NULL, "
+        "updated_at = strftime('%Y-%m-%d %H:%M:%f','now') WHERE id = ? AND user_id = ?",
         (cid, user_id),
     )
     conn.commit()
@@ -177,6 +195,35 @@ def delete(cid: int, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
     conn.commit()
     if cur.rowcount == 0:
         raise HTTPException(status_code=404, detail="Kalendereintrag nicht gefunden.")
+
+
+# ---------- Sync-Handler-Registry: calendar_entries (src/routers/sync.py) ----------
+# class_ids sind eingebettet im Payload (kein eigener entity_type, analog stoff_plan_blocks).
+# Generischer Sync-Op 'delete' = Soft-Archiv (analog classes.py) — Hard-Delete/restore bleiben
+# online-only REST, wie bei notes/todos/classes.
+
+def _sync_fetch_calendar(conn, user_id, entity_id):
+    return _get(conn, user_id, entity_id)
+
+
+def _sync_create_calendar(conn, user_id, payload: dict) -> CalendarOut:
+    return _apply_create_calendar(conn, user_id, CalendarCreate(**payload))
+
+
+def _sync_update_calendar(conn, user_id, entity_id, payload: dict) -> CalendarOut:
+    return _apply_update_calendar(conn, user_id, entity_id, CalendarUpdate(**payload))
+
+
+def _sync_delete_calendar(conn, user_id, entity_id) -> None:
+    _apply_archive_calendar(conn, user_id, entity_id)
+
+
+SYNC_HANDLER = {
+    "fetch": _sync_fetch_calendar,
+    "create": _sync_create_calendar,
+    "update": _sync_update_calendar,
+    "delete": _sync_delete_calendar,
+}
 
 
 # ---------- Google-Kalender-Sync (U21) ----------
@@ -306,8 +353,8 @@ def import_commit(body: ImportCommitIn, conn: sqlite3.Connection = Depends(get_d
         try:
             cur = conn.execute(
                 """INSERT INTO calendar_entries
-                   (user_id, title, entry_date, end_date, all_day, entry_type, category_id)
-                   VALUES (?,?,?,?,1,'normal',?)""",
+                   (user_id, title, entry_date, end_date, all_day, entry_type, category_id, updated_at)
+                   VALUES (?,?,?,?,1,'normal',?, strftime('%Y-%m-%d %H:%M:%f','now'))""",
                 (user_id, e.titel.strip(), e.datum, end_date, e.category_id),
             )
             created_ids.append(cur.lastrowid)
