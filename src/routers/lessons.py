@@ -152,8 +152,7 @@ def _fetch(conn, user_id, lid):
     ).fetchone()
 
 
-@router.post("", response_model=LessonOut, status_code=201)
-def create(body: LessonCreate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+def _apply_create_lesson(conn, user_id: int, body: LessonCreate) -> LessonOut:
     vals = _lesson_values(body, body.klafki, body.bibox, body.meyer_plan)
     vals["user_id"] = user_id
     cols = ", ".join(["user_id", *_LESSON_COLS])
@@ -167,6 +166,11 @@ def create(body: LessonCreate, conn=Depends(get_db), user_id: int = Depends(get_
     except sqlite3.IntegrityError as exc:
         raise HTTPException(status_code=400, detail=f"Ungültige Referenz: {exc}")
     return _row_to_out(conn, _fetch(conn, user_id, cur.lastrowid))
+
+
+@router.post("", response_model=LessonOut, status_code=201)
+def create(body: LessonCreate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+    return _apply_create_lesson(conn, user_id, body)
 
 
 @router.get("", response_model=List[LessonOut])
@@ -205,8 +209,7 @@ def lesson_materials(lid: int, conn=Depends(get_db), user_id: int = Depends(get_
     return [MaterialOut(**dict(r)) for r in rows]
 
 
-@router.put("/{lid}", response_model=LessonOut)
-def update(lid: int, body: LessonUpdate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+def _apply_update_lesson(conn, user_id: int, lid: int, body: LessonUpdate) -> LessonOut:
     row_or_404(_fetch(conn, user_id, lid), "Stunde")
     data = body.model_dump(exclude_unset=True)
     sets = {}
@@ -224,12 +227,19 @@ def update(lid: int, body: LessonUpdate, conn=Depends(get_db), user_id: int = De
         sets.update(bibox_werk=b.werk, bibox_seite=b.seite, bibox_notiz=b.notiz)
     if "meyer_plan" in data:
         sets["meyer_plan_json"] = json.dumps(body.meyer_plan) if body.meyer_plan is not None else None
+    # phases/lernziele werden eingebettet im lessons-Sync-Payload transportiert (kein eigener
+    # entity_type) — ändern sie sich ohne sonstige Spaltenänderung, muss updated_at trotzdem
+    # bumpen, sonst bleibt sync_log stumm und andere Geräte sehen die neuen Phasen nie.
+    touches_children = ("phases" in data and body.phases is not None) or \
+        ("lernziele" in data and body.lernziele is not None)
     with conn:
-        if sets:
+        if sets or touches_children:
             cols = ", ".join(f"{k} = :{k}" for k in sets)
+            cols = f"{cols}, " if cols else ""
             sets.update(id=lid, uid=user_id)
             conn.execute(
-                f"UPDATE lessons SET {cols}, updated_at = datetime('now') WHERE id = :id AND user_id = :uid",
+                f"UPDATE lessons SET {cols}updated_at = strftime('%Y-%m-%d %H:%M:%f','now') "
+                f"WHERE id = :id AND user_id = :uid",
                 sets,
             )
         if "phases" in data and body.phases is not None:
@@ -242,11 +252,50 @@ def update(lid: int, body: LessonUpdate, conn=Depends(get_db), user_id: int = De
     return _row_to_out(conn, _fetch(conn, user_id, lid))
 
 
-@router.delete("/{lid}", status_code=204)
-def delete(lid: int, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+@router.put("/{lid}", response_model=LessonOut)
+def update(lid: int, body: LessonUpdate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+    return _apply_update_lesson(conn, user_id, lid, body)
+
+
+def _apply_delete_lesson(conn, user_id: int, lid: int) -> None:
     # Auto-Kalendereintrag der Stunde mit entfernen (manuelle bleiben via ON DELETE SET NULL).
     conn.execute("DELETE FROM calendar_entries WHERE lesson_id = ? AND auto_generated = 1", (lid,))
     cur = conn.execute("DELETE FROM lessons WHERE id = ? AND user_id = ?", (lid, user_id))
     conn.commit()
     if cur.rowcount == 0:
         raise HTTPException(status_code=404, detail="Stunde nicht gefunden.")
+
+
+@router.delete("/{lid}", status_code=204)
+def delete(lid: int, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+    _apply_delete_lesson(conn, user_id, lid)
+
+
+# ---------- Sync-Handler-Registry: lessons (src/routers/sync.py) ----------
+# phases/lernziele sind eingebettet im Payload (Nutzer-Entscheidung: kein eigener
+# entity_type, siehe _apply_update_lesson-Kommentar) — sync.py behandelt lessons daher wie
+# jede andere Einzeltabellen-Entität.
+
+def _sync_fetch_lesson(conn, user_id, entity_id):
+    row = _fetch(conn, user_id, entity_id)
+    return _row_to_out(conn, row) if row is not None else None
+
+
+def _sync_create_lesson(conn, user_id, payload: dict) -> LessonOut:
+    return _apply_create_lesson(conn, user_id, LessonCreate(**payload))
+
+
+def _sync_update_lesson(conn, user_id, entity_id, payload: dict) -> LessonOut:
+    return _apply_update_lesson(conn, user_id, entity_id, LessonUpdate(**payload))
+
+
+def _sync_delete_lesson(conn, user_id, entity_id) -> None:
+    _apply_delete_lesson(conn, user_id, entity_id)
+
+
+SYNC_HANDLER = {
+    "fetch": _sync_fetch_lesson,
+    "create": _sync_create_lesson,
+    "update": _sync_update_lesson,
+    "delete": _sync_delete_lesson,
+}

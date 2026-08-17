@@ -6,6 +6,12 @@
       "runtimeExecutable": ".venv/bin/python",
       "runtimeArgs": ["-m", "uvicorn", "src.main:app", "--host", "127.0.0.1", "--port", "8097"],
       "port": 8097
+    },
+    {
+      "name": "offlinetest",
+      "runtimeExecutable": "/private/tmp/claude-501/-Users-joad-Claude-Projects-Unterrichtsplaner/0163da88-6cd8-47a3-a92f-1e541804b670/scratchpad/offlinetest/run.sh",
+      "runtimeArgs": [],
+      "port": 8199
     }
   ]
 }
