@@ -35,6 +35,13 @@ SyncEngine.onChange(async (entityType) => {
   ttRenderView();
   if (ttState.editorsOpen) ttRenderEditors();
 });
+SyncEngine.onChange(async (entityType) => {
+  if (entityType !== "timetable_slots" || !ttState.loaded) return;
+  ttState.slots = await ttMaterializeSlots();
+  await ttReloadEntries();   // Klingelraster-Änderungen können Einträge betreffen (CASCADE)
+  ttRenderView();
+  if (ttState.editorsOpen) ttRenderEditors();
+});
 
 /* ---------- kleine Helfer ---------- */
 function ttTodayIso() {
@@ -97,7 +104,7 @@ async function ttLoad() {
     await SyncEngine.pull();
     const [kinds, slots, plans] = await Promise.all([
       ttMaterializeKinds(),
-      API.get("/stundenplan/slots"),
+      ttMaterializeSlots(),
       API.get("/stundenplan/plans"),
     ]);
     ttState.kinds = kinds;
@@ -115,7 +122,13 @@ async function ttReloadEntries() {
     ? await API.get("/stundenplan/entries?planId=" + ttState.planId)
     : [];
 }
-async function ttReloadSlots() { ttState.slots = await API.get("/stundenplan/slots"); }
+// Offline-Sync (Rollout): analog ttMaterializeKinds — Reihenfolge wie der bisherige
+// Backend-Endpunkt (ORDER BY position, id) client-seitig herstellen.
+async function ttMaterializeSlots() {
+  const all = await SyncEngine.materialize("timetable_slots");
+  return all.slice().sort((a, b) => (a.position - b.position) || String(a.id).localeCompare(String(b.id)));
+}
+async function ttReloadSlots() { ttState.slots = await ttMaterializeSlots(); }
 // Offline-Sync (Rollout): über die Sync-Engine statt direktem API.get, damit offline
 // angelegte/geänderte Typen sichtbar bleiben — materialize() sortiert nicht (IndexedDB
 // liefert nach localId), daher hier wie der bisherige Backend-Endpunkt nach sortOrder/id.
@@ -516,7 +529,7 @@ function ttRenderSlotsEditor() {
 function ttWireSlotsEditor(wrap) {
   wrap.querySelectorAll("[data-tt-slotsave]").forEach((b) => {
     b.onclick = async () => {
-      const id = Number(b.dataset.ttSlotsave);
+      const id = b.dataset.ttSlotsave;   // opaque id — nicht per Number() erzwingen (siehe Kinds-Editor)
       const tr = wrap.querySelector(`[data-tt-slotrow="${id}"]`);
       const g = (f) => tr.querySelector(`[data-f="${f}"]`).value;
       const body = {
@@ -526,7 +539,7 @@ function ttWireSlotsEditor(wrap) {
       if (!body.label) { toast("Bitte ein Label angeben.", false); return; }
       if (!body.startTime || !body.endTime) { toast("Bitte Start- und Endzeit angeben.", false); return; }
       try {
-        await API.put("/stundenplan/slots/" + id, body);
+        await SyncEngine.update("timetable_slots", id, body);
         await ttReloadSlots(); await ttReloadEntries();
         ttRenderView(); ttRenderEditors(); toast("Klingelzeit gespeichert.");
       } catch (e) { toast(e.message, false); }
@@ -536,7 +549,7 @@ function ttWireSlotsEditor(wrap) {
     b.onclick = async () => {
       if (!confirm("Diese Zeile löschen? Daran hängende Einträge werden entfernt.")) return;
       try {
-        await API.del("/stundenplan/slots/" + Number(b.dataset.ttSlotdel));
+        await SyncEngine.remove("timetable_slots", b.dataset.ttSlotdel);
         await ttReloadSlots(); await ttReloadEntries();
         ttRenderView(); ttRenderEditors(); toast("Klingelzeit gelöscht.");
       } catch (e) { toast(e.message, false); }
@@ -546,7 +559,7 @@ function ttWireSlotsEditor(wrap) {
   if (add) add.onclick = async () => {
     const maxPos = ttState.slots.reduce((m, s) => Math.max(m, s.position), -1);
     try {
-      await API.post("/stundenplan/slots",
+      await SyncEngine.create("timetable_slots",
         { position: maxPos + 1, slotType: "lesson", label: "Neu", startTime: "07:00", endTime: "07:45" });
       await ttReloadSlots(); ttRenderView(); ttRenderEditors(); toast("Zeile hinzugefügt.");
     } catch (e) { toast(e.message, false); }

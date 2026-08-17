@@ -505,3 +505,60 @@ def test_timetable_kinds_push_delete_default_is_error(client, auth):
     result = r.json()["results"][0]
     assert result["status"] == "error"
     assert "Standard-Typ" in result["detail"]
+
+
+# ---------- Rollout Tranche 1: timetable_slots ----------
+
+def test_sync_log_table_and_timetable_slots_triggers_exist(tmp_path):
+    conn = init_db(str(tmp_path / "schema.db"))
+    triggers = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
+    assert {
+        "trg_synclog_timetable_slots_ai",
+        "trg_synclog_timetable_slots_au",
+        "trg_synclog_timetable_slots_ad",
+    } <= triggers
+    conn.close()
+
+
+def test_timetable_slots_push_create_update_delete_lifecycle(client, auth):
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "timetable_slots", "op": "create",
+        "payload": {
+            "position": 20, "slotType": "lesson", "label": "9. Stunde",
+            "startTime": "15:00", "endTime": "15:45",
+        },
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "applied"
+    sid, base_updated = result["entityId"], result["entity"]["updatedAt"]
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_2", "entityType": "timetable_slots", "op": "update", "entityId": sid,
+        "baseUpdatedAt": base_updated, "payload": {"label": "9. Stunde (spät)"},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "applied"
+    assert result["entity"]["label"] == "9. Stunde (spät)"
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_3", "entityType": "timetable_slots", "op": "delete", "entityId": sid,
+        "baseUpdatedAt": result["entity"]["updatedAt"],
+    }]})
+    assert r.json()["results"][0]["status"] == "applied"
+    assert sid not in [s["id"] for s in client.get("/api/stundenplan/slots").json()]
+
+
+def test_timetable_slots_push_detects_conflict(client, auth):
+    created = client.post("/api/stundenplan/slots", json={
+        "position": 21, "slotType": "lesson", "label": "x", "startTime": "16:00", "endTime": "16:45",
+    }).json()
+    sid, base_updated = created["id"], created["updatedAt"]
+    assert client.put(f"/api/stundenplan/slots/{sid}", json={"label": "geaendert"}).status_code == 200
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "timetable_slots", "op": "update", "entityId": sid,
+        "baseUpdatedAt": base_updated, "payload": {"label": "zu spaet"},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "conflict"
+    assert result["serverEntity"]["label"] == "geaendert"

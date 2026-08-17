@@ -20,6 +20,8 @@ const SyncEngine = (() => {
     calendar_categories: { apiPath: "/calendar-categories" },
     school_years: { apiPath: "/school-years" },
     plan_notes: { apiPath: "/planning/notes" },
+    timetable_kinds: { apiPath: "/stundenplan/kinds" },
+    timetable_slots: { apiPath: "/stundenplan/slots" },
   };
 
   const listeners = new Set();
@@ -152,7 +154,20 @@ const SyncEngine = (() => {
 
   // ---------- Pull: Änderungen seit Cursor holen, lokale Basiszeilen nachziehen ----------
 
-  async function pull() {
+  let pullChain = Promise.resolve();
+
+  // Läufe serialisieren wie beim Push (pushChain) — mehrere gleichzeitige Aufrufer
+  // (SyncEngine.init() beim Start, loadAll() bei jedem Reload, ein View-eigener Pull wie
+  // in stundenplan.js) haben sonst denselben Cursor-Race: zwei parallele Läufe lesen
+  // "syncCursor" auf demselben (alten) Stand, verarbeiten überlappende Änderungsfenster und
+  // überschreiben sich gegenseitig beim Schreiben nach IndexedDB — konkret beobachtet: von
+  // 7 gleichzeitig geseedeten Stundenplan-Typen kamen nur die letzten 2 im lokalen Store an.
+  function pull() {
+    pullChain = pullChain.then(() => pullOnce()).catch(() => {});
+    return pullChain;
+  }
+
+  async function pullOnce() {
     if (!isOnline()) return;
     let cursor = await OfflineDB.getMeta("syncCursor", 0);
     const entityParam = Object.keys(ENTITIES).join(",");

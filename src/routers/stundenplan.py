@@ -138,8 +138,8 @@ def _seed_defaults(conn, user_id: int) -> None:
             [(user_id, name, color, order, is_def) for name, color, order, is_def in DEFAULT_KINDS],
         )
         conn.executemany(
-            "INSERT INTO timetable_slots(user_id, position, slot_type, label, start_time, end_time) "
-            "VALUES (?,?,?,?,?,?)",
+            "INSERT INTO timetable_slots(user_id, position, slot_type, label, start_time, end_time, updated_at) "
+            "VALUES (?,?,?,?,?,?, strftime('%Y-%m-%d %H:%M:%f','now'))",
             [(user_id, pos, stype, label, start, end)
              for pos, stype, label, start, end in DEFAULT_SLOTS],
         )
@@ -337,36 +337,76 @@ def list_slots(conn=Depends(get_db), user_id: int = Depends(get_user_id)):
     return [TimetableSlotOut(**dict(r)) for r in rows]
 
 
-@router.post("/slots", response_model=TimetableSlotOut, status_code=201)
-def create_slot(body: TimetableSlotCreate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+def _apply_create_slot(conn, user_id, body: TimetableSlotCreate) -> TimetableSlotOut:
     cur = conn.execute(
-        "INSERT INTO timetable_slots(user_id, position, slot_type, label, start_time, end_time) "
-        "VALUES (?,?,?,?,?,?)",
+        "INSERT INTO timetable_slots(user_id, position, slot_type, label, start_time, end_time, updated_at) "
+        "VALUES (?,?,?,?,?,?, strftime('%Y-%m-%d %H:%M:%f','now'))",
         (user_id, body.position, body.slot_type, body.label, body.start_time, body.end_time),
     )
-    conn.commit()
     return _get_slot(conn, user_id, cur.lastrowid)
+
+
+def _apply_update_slot(conn, user_id, sid: int, body: TimetableSlotUpdate) -> TimetableSlotOut:
+    row_or_404(_get_slot(conn, user_id, sid), "Slot")
+    fields = body.model_dump(exclude_unset=True)
+    if fields:
+        cols = ", ".join(f"{k} = :{k}" for k in fields) + ", updated_at = strftime('%Y-%m-%d %H:%M:%f','now')"
+        fields.update(id=sid, uid=user_id)
+        conn.execute(f"UPDATE timetable_slots SET {cols} WHERE id = :id AND user_id = :uid", fields)
+    return _get_slot(conn, user_id, sid)
+
+
+def _apply_delete_slot(conn, user_id, sid: int) -> None:
+    # Einträge mit diesem Anker-Slot verschwinden per DB-CASCADE (slot_id).
+    cur = conn.execute("DELETE FROM timetable_slots WHERE id = ? AND user_id = ?", (sid, user_id))
+    if cur.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Slot nicht gefunden.")
+
+
+@router.post("/slots", response_model=TimetableSlotOut, status_code=201)
+def create_slot(body: TimetableSlotCreate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+    result = _apply_create_slot(conn, user_id, body)
+    conn.commit()
+    return result
 
 
 @router.put("/slots/{sid}", response_model=TimetableSlotOut)
 def update_slot(sid: int, body: TimetableSlotUpdate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
-    row_or_404(_get_slot(conn, user_id, sid), "Slot")
-    fields = body.model_dump(exclude_unset=True)
-    if fields:
-        cols = ", ".join(f"{k} = :{k}" for k in fields)
-        fields.update(id=sid, uid=user_id)
-        conn.execute(f"UPDATE timetable_slots SET {cols} WHERE id = :id AND user_id = :uid", fields)
-        conn.commit()
-    return _get_slot(conn, user_id, sid)
+    result = _apply_update_slot(conn, user_id, sid, body)
+    conn.commit()
+    return result
 
 
 @router.delete("/slots/{sid}", status_code=204)
 def delete_slot(sid: int, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
-    # Einträge mit diesem Anker-Slot verschwinden per DB-CASCADE (slot_id).
-    cur = conn.execute("DELETE FROM timetable_slots WHERE id = ? AND user_id = ?", (sid, user_id))
+    _apply_delete_slot(conn, user_id, sid)
     conn.commit()
-    if cur.rowcount == 0:
-        raise HTTPException(status_code=404, detail="Slot nicht gefunden.")
+
+
+# ---------- Sync-Handler-Registry: timetable_slots (src/routers/sync.py) ----------
+
+def _sync_fetch_slot(conn, user_id, entity_id):
+    return _get_slot(conn, user_id, entity_id)
+
+
+def _sync_create_slot(conn, user_id, payload: dict) -> TimetableSlotOut:
+    return _apply_create_slot(conn, user_id, TimetableSlotCreate(**payload))
+
+
+def _sync_update_slot(conn, user_id, entity_id, payload: dict) -> TimetableSlotOut:
+    return _apply_update_slot(conn, user_id, entity_id, TimetableSlotUpdate(**payload))
+
+
+def _sync_delete_slot(conn, user_id, entity_id) -> None:
+    _apply_delete_slot(conn, user_id, entity_id)
+
+
+SYNC_HANDLER_TIMETABLE_SLOTS = {
+    "fetch": _sync_fetch_slot,
+    "create": _sync_create_slot,
+    "update": _sync_update_slot,
+    "delete": _sync_delete_slot,
+}
 
 
 # ---------------------------------------------------------------- Pläne

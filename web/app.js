@@ -271,8 +271,13 @@ function readPhases() {
   // Pflichtsumme der vier Kernphasen (siehe validatePhaseTimes).
   const bufferEl = $("phaseBuffer");
   const bufferMinutes = bufferEl ? bufferEl.value.trim() : "";
-  if (bufferMinutes) {
-    phases.push({ phaseName: "Puffer", minutes: Number(bufferMinutes), socialForm: null });
+  const bufferTeacher = $("bufferTeacher") ? $("bufferTeacher").value.trim() : "";
+  const bufferStudent = $("bufferStudent") ? $("bufferStudent").value.trim() : "";
+  if (bufferMinutes || bufferTeacher || bufferStudent) {
+    phases.push({
+      phaseName: "Puffer", minutes: bufferMinutes ? Number(bufferMinutes) : null, socialForm: null,
+      teacherActivity: bufferTeacher, studentActivity: bufferStudent,
+    });
   }
   return phases;
 }
@@ -417,6 +422,8 @@ function clearLessonForm() {
   phaseNames.forEach((_, i) =>
     ["time", "method", "material", "teacher", "student", "gme"].forEach((k) => ($(k + i).value = "")));
   if ($("phaseBuffer")) $("phaseBuffer").value = "";
+  if ($("bufferTeacher")) $("bufferTeacher").value = "";
+  if ($("bufferStudent")) $("bufferStudent").value = "";
   clearPhaseTimeError();
   resetMeyerGrid("meyerPlanGrid");
   $("diff").value = "ja";
@@ -515,6 +522,8 @@ function loadLessonIntoForm(l) {
   });
   const bufferPhase = (l.phases || []).find((p) => p.phaseName === "Puffer");
   if ($("phaseBuffer")) $("phaseBuffer").value = bufferPhase && bufferPhase.minutes != null ? bufferPhase.minutes : "";
+  if ($("bufferTeacher")) $("bufferTeacher").value = (bufferPhase && bufferPhase.teacherActivity) || "";
+  if ($("bufferStudent")) $("bufferStudent").value = (bufferPhase && bufferPhase.studentActivity) || "";
   validatePhaseTimes();
   $("editHintTitle").textContent = l.title || "";
   $("editHint").classList.remove("hidden");
@@ -5402,6 +5411,7 @@ const SYNC_ENTITY_RENDERERS = {
   school_years: (s) => ({ title: s.label, preview: `${s.startDate} – ${s.endDate}` }),
   plan_notes: (n) => ({ title: "Jahresplan-Ideen", preview: n.text }),
   timetable_kinds: (k) => ({ title: k.name, preview: k.color }),
+  timetable_slots: (s) => ({ title: s.label, preview: `${s.startTime}–${s.endTime}` }),
 };
 
 let _syncConflictsModulePromise = null;

@@ -34,6 +34,7 @@ ENTITY_REGISTRY = {
     "school_years": school_years_router.SYNC_HANDLER,
     "plan_notes": planning_router.SYNC_HANDLER,
     "timetable_kinds": stundenplan_router.SYNC_HANDLER_TIMETABLE_KINDS,
+    "timetable_slots": stundenplan_router.SYNC_HANDLER_TIMETABLE_SLOTS,
 }
 
 PAGE_SIZE = 500

@@ -991,6 +991,7 @@ class TimetableSlotOut(Base):
     start_time: str
     end_time: str
     created_at: str
+    updated_at: str
 
 
 # --- Pläne ---
