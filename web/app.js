@@ -1312,11 +1312,19 @@ function cascadeStoffPlanDates(box, fromIndex) {
 }
 
 let detailStudents = [];
+// Offline-Sync (Rollout Tranche 2): materialize() liefert ALLE Schüler des Nutzers (wie die
+// IndexedDB-Tabelle) — hier client-seitig nach Klasse filtern und wie der bisherige Backend-
+// Endpunkt (ORDER BY sort_order, id) sortieren.
+async function materializeStudentsForClass(cid) {
+  const all = await SyncEngine.materialize("students");
+  return all.filter((s) => s.classId === cid)
+    .sort((a, b) => (a.sortOrder - b.sortOrder) || String(a.id).localeCompare(String(b.id)));
+}
 async function renderClassStudents() {
   const wrap = $("cdStudentList");
   if (!wrap) return;
   try {
-    detailStudents = await API.get(`/classes/${detailClassId}/students`);
+    detailStudents = await materializeStudentsForClass(detailClassId);
   } catch (e) { toast(e.message, false); return; }
   // U18: Sitzplan-Dropdowns hängen an der Schülerliste – nach (Neu-)Laden aktualisieren.
   // Nur re-rendern, wenn das Sitzplan-Modul bereits geladen ist (kein Nachladen erzwingen).
@@ -1341,30 +1349,32 @@ async function renderClassStudents() {
     inp.onchange = async () => {
       const name = inp.value.trim();
       if (!name) { renderClassStudents(); return; }
-      try { await API.put("/students/" + inp.dataset.studentName, { name }); toast("Name gespeichert."); }
+      try { await SyncEngine.update("students", inp.dataset.studentName, { name }); toast("Name gespeichert."); }
       catch (e) { toast(e.message, false); }
     };
   });
   wrap.querySelectorAll("[data-student-del]").forEach((btn) => {
     btn.onclick = async () => {
-      try { await API.del("/students/" + btn.dataset.studentDel); await renderClassStudents(); toast("Schüler entfernt."); }
+      try { await SyncEngine.remove("students", btn.dataset.studentDel); await renderClassStudents(); toast("Schüler entfernt."); }
       catch (e) { toast(e.message, false); }
     };
   });
+  // Opaque id (Zahl oder "loc_..." bei noch unsynced) — nicht per Number() erzwingen (siehe
+  // Kinds-/Slots-Editor im Stundenplan).
   wrap.querySelectorAll("[data-student-up]").forEach((btn) =>
-    (btn.onclick = () => moveStudent(Number(btn.dataset.studentUp), -1)));
+    (btn.onclick = () => moveStudent(btn.dataset.studentUp, -1)));
   wrap.querySelectorAll("[data-student-down]").forEach((btn) =>
-    (btn.onclick = () => moveStudent(Number(btn.dataset.studentDown), 1)));
+    (btn.onclick = () => moveStudent(btn.dataset.studentDown, 1)));
 }
 
 async function moveStudent(sid, dir) {
-  const idx = detailStudents.findIndex((s) => s.id === sid);
+  const idx = detailStudents.findIndex((s) => String(s.id) === String(sid));
   const other = idx + dir;
   if (idx < 0 || other < 0 || other >= detailStudents.length) return;
   const a = detailStudents[idx], b = detailStudents[other];
   try {
-    await API.put("/students/" + a.id, { sortOrder: b.sortOrder });
-    await API.put("/students/" + b.id, { sortOrder: a.sortOrder });
+    await SyncEngine.update("students", a.id, { sortOrder: b.sortOrder });
+    await SyncEngine.update("students", b.id, { sortOrder: a.sortOrder });
     await renderClassStudents();
   } catch (e) { toast(e.message, false); }
 }
@@ -1373,7 +1383,7 @@ async function addStudent() {
   const name = $("cdStudentName").value.trim();
   if (!name) return;
   try {
-    await API.post(`/classes/${detailClassId}/students`, { name });
+    await SyncEngine.create("students", { classId: detailClassId, name });
     $("cdStudentName").value = "";
     await renderClassStudents(); toast("Schüler hinzugefügt.");
   } catch (e) { toast(e.message, false); }
@@ -1382,8 +1392,10 @@ async function addStudent() {
 async function addStudentsBulk() {
   const names = $("cdStudentBulk").value.split("\n").map((n) => n.trim()).filter(Boolean);
   if (!names.length) { toast("Keine Namen eingegeben.", false); return; }
+  // Kein Bulk-Op im generischen Sync-Modell (eine Mutation = eine Entität) — einzeln anlegen,
+  // wie es die Sync-Engine ohnehin für jeden Schüler tun würde.
   try {
-    await API.post(`/classes/${detailClassId}/students/bulk`, { names });
+    for (const name of names) await SyncEngine.create("students", { classId: detailClassId, name });
     $("cdStudentBulk").value = "";
     await renderClassStudents(); toast(`${names.length} Namen hinzugefügt.`);
   } catch (e) { toast(e.message, false); }
@@ -5418,6 +5430,7 @@ const SYNC_ENTITY_RENDERERS = {
   timetable_slots: (s) => ({ title: s.label, preview: `${s.startTime}–${s.endTime}` }),
   tropenplan_slots: (s) => ({ title: s.label, preview: `${s.startTime}–${s.endTime}` }),
   classes: (c) => ({ title: c.name, preview: `${c.subject} · Klasse ${c.grade}` }),
+  students: (s) => ({ title: s.name, preview: `Position ${s.sortOrder}` }),
 };
 
 let _syncConflictsModulePromise = null;
@@ -5586,4 +5599,11 @@ SyncEngine.onChange(async (entityType) => {
     .sort((a, b) => String(a.name).localeCompare(String(b.name)));
   renderClassTable();
   renderClassSelects();
+});
+
+// Rollout (Tranche 2): students — nur relevant, während die Klassen-Detailseite offen ist.
+SyncEngine.onChange(async (entityType) => {
+  if (entityType !== "students" || !detailClassId) return;
+  if (!document.getElementById("cdStudentList")) return; // Detailseite gerade nicht sichtbar
+  await renderClassStudents();
 });

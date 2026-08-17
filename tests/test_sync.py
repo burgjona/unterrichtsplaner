@@ -692,3 +692,67 @@ def test_classes_hard_delete_and_restore_stay_rest_only(client, auth):
     assert client.post(f"/api/classes/{cid}/restore").status_code == 200
     assert client.delete(f"/api/classes/{cid}?hard=true").status_code == 204
     assert client.get("/api/classes?includeArchived=true").json() == []
+
+
+# ---------- Rollout Tranche 2: students ----------
+
+def test_sync_log_table_and_students_triggers_exist(tmp_path):
+    conn = init_db(str(tmp_path / "schema.db"))
+    triggers = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
+    assert {
+        "trg_synclog_students_ai",
+        "trg_synclog_students_au",
+        "trg_synclog_students_ad",
+    } <= triggers
+    conn.close()
+
+
+def test_students_push_create_update_delete_lifecycle(client, auth):
+    cls = client.post("/api/classes", json={"name": "8a", "subject": "Deutsch", "grade": 8}).json()
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "students", "op": "create",
+        "payload": {"classId": cls["id"], "name": "Max"},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "applied"
+    assert result["entity"]["sortOrder"] == 0
+    sid, base_updated = result["entityId"], result["entity"]["updatedAt"]
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_2", "entityType": "students", "op": "update", "entityId": sid,
+        "baseUpdatedAt": base_updated, "payload": {"name": "Maximilian"},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "applied"
+    assert result["entity"]["name"] == "Maximilian"
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_3", "entityType": "students", "op": "delete", "entityId": sid,
+        "baseUpdatedAt": result["entity"]["updatedAt"],
+    }]})
+    assert r.json()["results"][0]["status"] == "applied"
+    assert client.get(f"/api/classes/{cls['id']}/students").json() == []
+
+
+def test_students_push_detects_conflict(client, auth):
+    cls = client.post("/api/classes", json={"name": "8a", "subject": "Deutsch", "grade": 8}).json()
+    created = client.post(f"/api/classes/{cls['id']}/students", json={"name": "x"}).json()
+    sid, base_updated = created["id"], created["updatedAt"]
+    assert client.put(f"/api/students/{sid}", json={"name": "geaendert"}).status_code == 200
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "students", "op": "update", "entityId": sid,
+        "baseUpdatedAt": base_updated, "payload": {"name": "zu spaet"},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "conflict"
+    assert result["serverEntity"]["name"] == "geaendert"
+
+
+def test_students_push_create_unknown_class_is_error(client, auth):
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "students", "op": "create",
+        "payload": {"classId": 999999, "name": "Phantom"},
+    }]})
+    assert r.json()["results"][0]["status"] == "error"

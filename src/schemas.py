@@ -659,6 +659,16 @@ class StudentOut(Base):
     name: str
     sort_order: int
     created_at: str
+    updated_at: str
+
+
+# Offline-Sync (Rollout): eigenes Create-Schema mit class_id im Body — der REST-Endpunkt
+# nimmt die Klasse über den URL-Pfad (/classes/{cid}/students), der generische Sync-Push
+# kennt aber nur ein payload-Objekt pro Mutation (siehe planning.py PlanNoteSyncCreate
+# für dasselbe Muster).
+class StudentSyncCreate(Base):
+    class_id: int
+    name: str
 
 
 # ---------- Darstellung / Appearance (Meilenstein 12, U9) — ans Dateiende (Konfliktvermeidung) ----------

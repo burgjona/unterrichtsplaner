@@ -23,6 +23,7 @@ from . import classes as classes_router
 from . import notes as notes_router
 from . import planning as planning_router
 from . import school_years as school_years_router
+from . import students as students_router
 from . import stundenplan as stundenplan_router
 from . import todos as todos_router
 
@@ -34,6 +35,7 @@ ENTITY_REGISTRY = {
     "calendar_categories": calendar_categories_router.SYNC_HANDLER,
     "school_years": school_years_router.SYNC_HANDLER,
     "classes": classes_router.SYNC_HANDLER,
+    "students": students_router.SYNC_HANDLER,
     "plan_notes": planning_router.SYNC_HANDLER,
     "timetable_kinds": stundenplan_router.SYNC_HANDLER_TIMETABLE_KINDS,
     "timetable_slots": stundenplan_router.SYNC_HANDLER_TIMETABLE_SLOTS,
