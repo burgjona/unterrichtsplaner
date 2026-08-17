@@ -45,6 +45,7 @@ ENTITY_REGISTRY = {
     "timetable_slots": stundenplan_router.SYNC_HANDLER_TIMETABLE_SLOTS,
     "timetable_plans": stundenplan_router.SYNC_HANDLER_TIMETABLE_PLANS,
     "timetable_entries": stundenplan_router.SYNC_HANDLER_TIMETABLE_ENTRIES,
+    "timetable_overrides": stundenplan_router.SYNC_HANDLER_TIMETABLE_OVERRIDES,
     "tropenplan_slots": stundenplan_router.SYNC_HANDLER_TROPENPLAN_SLOTS,
 }
 

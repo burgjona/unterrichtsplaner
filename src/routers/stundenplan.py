@@ -655,8 +655,7 @@ def _get_override(conn, user_id, oid):
     return TimetableOverrideOut(**dict(row)) if row else None
 
 
-@router.post("/overrides", response_model=TimetableOverrideOut, status_code=201)
-def create_override(body: TimetableOverrideCreate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+def _apply_create_override(conn, user_id: int, body: TimetableOverrideCreate) -> TimetableOverrideOut:
     _require_owned(conn, "timetable_slots", body.slot_id, user_id, "Slot")
     _require_owned(conn, "timetable_kinds", body.kind_id, user_id, "Typ")
     if body.class_id is not None:
@@ -668,21 +667,64 @@ def create_override(body: TimetableOverrideCreate, conn=Depends(get_db), user_id
     _validate_span(conn, user_id, body.slot_id, body.span_slots)
     cur = conn.execute(
         "INSERT INTO timetable_overrides"
-        "(user_id, date, slot_id, kind_id, class_id, span_slots, label, room, color) "
-        "VALUES (?,?,?,?,?,?,?,?,?)",
+        "(user_id, date, slot_id, kind_id, class_id, span_slots, label, room, color, updated_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?, strftime('%Y-%m-%d %H:%M:%f','now'))",
         (user_id, body.date, body.slot_id, body.kind_id, body.class_id,
          body.span_slots, body.label, body.room, body.color),
     )
-    conn.commit()
     return _get_override(conn, user_id, cur.lastrowid)
+
+
+@router.post("/overrides", response_model=TimetableOverrideOut, status_code=201)
+def create_override(body: TimetableOverrideCreate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+    result = _apply_create_override(conn, user_id, body)
+    conn.commit()
+    return result
+
+
+def _apply_delete_override(conn, user_id: int, oid: int) -> None:
+    cur = conn.execute("DELETE FROM timetable_overrides WHERE id = ? AND user_id = ?", (oid, user_id))
+    if cur.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Vertretung nicht gefunden.")
 
 
 @router.delete("/overrides/{oid}", status_code=204)
 def delete_override(oid: int, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
-    cur = conn.execute("DELETE FROM timetable_overrides WHERE id = ? AND user_id = ?", (oid, user_id))
+    _apply_delete_override(conn, user_id, oid)
     conn.commit()
-    if cur.rowcount == 0:
-        raise HTTPException(status_code=404, detail="Vertretung nicht gefunden.")
+
+
+# ---------- Sync-Handler-Registry: timetable_overrides (src/routers/sync.py) ----------
+# Kein Update-Konzept (auch im bestehenden REST kein PUT) — eine Vertretung wird ersetzt,
+# indem sie gelöscht und neu angelegt wird. _apply_update_override existiert nur, damit der
+# generische sync.py-Dispatcher bei einer (aktuell vom Frontend nie gesendeten) "update"-
+# Mutation eine klare Fehlermeldung statt eines rohen KeyError liefert.
+
+def _sync_fetch_override(conn, user_id, entity_id):
+    return _get_override(conn, user_id, entity_id)
+
+
+def _sync_create_override(conn, user_id, payload: dict) -> TimetableOverrideOut:
+    return _apply_create_override(conn, user_id, TimetableOverrideCreate(**payload))
+
+
+def _apply_update_override(conn, user_id, entity_id, payload: dict) -> TimetableOverrideOut:
+    raise HTTPException(
+        status_code=400,
+        detail="Vertretungen können nicht bearbeitet werden, nur neu angelegt oder gelöscht.",
+    )
+
+
+def _sync_delete_override(conn, user_id, entity_id) -> None:
+    _apply_delete_override(conn, user_id, entity_id)
+
+
+SYNC_HANDLER_TIMETABLE_OVERRIDES = {
+    "fetch": _sync_fetch_override,
+    "create": _sync_create_override,
+    "update": _apply_update_override,
+    "delete": _sync_delete_override,
+}
 
 
 # ---------------------------------------------------------------- Settings

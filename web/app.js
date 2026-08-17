@@ -2603,7 +2603,7 @@ async function calOnlyTtRenderMonth(mondayStrs, gen) {
 async function calTtDeleteOverride(overrideId) {
   if (!confirm("Diese Vertretung wirklich entfernen?")) return;
   try {
-    await API.del("/stundenplan/overrides/" + overrideId);
+    await SyncEngine.remove("timetable_overrides", overrideId);
     calTtCache.clear();
     await renderTodayList();
     await renderWeekOverview();
@@ -2999,9 +2999,14 @@ async function deleteCalendarEventModal(id) {
 async function openVertretungModal() {
   let slots, kinds;
   try {
+    // /stundenplan/settings löst serverseitig das Seeding der Default-Typen/Klingelzeiten aus
+    // (analog ttLoad() in stundenplan.js) — bei einem frisch angelegten Konto, das die
+    // Stundenplan-Ansicht noch nie geöffnet hat, wären timetable_kinds/_slots sonst leer.
+    await API.get("/stundenplan/settings");
+    await SyncEngine.pull();
     [slots, kinds] = await Promise.all([
-      API.get("/stundenplan/slots"),
-      API.get("/stundenplan/kinds"),
+      SyncEngine.materialize("timetable_slots"),
+      SyncEngine.materialize("timetable_kinds"),
     ]);
   } catch (e) { toast(e.message, false); return; }
   const lessonSlots = slots.filter((s) => s.slotType === "lesson");
@@ -3039,11 +3044,16 @@ async function openVertretungModal() {
 async function saveVertretung(kindId) {
   const label = $("vtLabel").value.trim();
   const date = $("vtDate").value;
-  const slotId = Number($("vtSlot").value);
+  const slotId = $("vtSlot").value;
   if (!label) { toast("Bitte Fach/Klasse angeben.", false); return; }
   if (!date) { toast("Bitte ein Datum angeben.", false); return; }
   try {
-    await API.post("/stundenplan/overrides", { date, slotId, kindId, label });
+    // ttFkValue (stundenplan.js, teilt sich den globalen Scope) wrappt eine noch nicht
+    // synchronisierte "loc_..."-id als $localId-Platzhalter statt sie per Number() zu NaN
+    // zu machen — siehe dortiger Kommentar.
+    await SyncEngine.create("timetable_overrides", {
+      date, slotId: ttFkValue(slotId), kindId: ttFkValue(kindId), label,
+    });
     closeModal();
     calTtCache.clear();               // Woche(n) neu vom Server holen (Override eingerechnet)
     await renderTodayList();
@@ -5449,6 +5459,7 @@ const SYNC_ENTITY_RENDERERS = {
   lessons: (l) => ({ title: l.title, preview: `${l.subject}${l.date ? " · " + l.date : ""}` }),
   stoff_plans: (p) => ({ title: p.title, preview: `${(p.blocks || []).length} Blöcke · ${p.status}` }),
   timetable_entries: (e) => ({ title: e.label || "Stundenplan-Eintrag", preview: `${e.weekday != null ? ttWEEKDAYS[e.weekday] : ""} · ${e.weekType}` }),
+  timetable_overrides: (o) => ({ title: o.label || "Vertretung", preview: o.date }),
 };
 
 let _syncConflictsModulePromise = null;
@@ -5647,4 +5658,16 @@ SyncEngine.onChange(async (entityType) => {
   if (_stoffplanModuleInstance) await _stoffplanModuleInstance.loadStoffPlans();
   if (document.getElementById("cdStoffPlans")) await renderClassDetailStoffPlans();
   await loadActivePlans();   // state.activePlans wird von Kalender/Präsentation erst beim nächsten eigenen Render gelesen
+});
+
+// Rollout (Tranche 3): timetable_overrides — fließen serverseitig in /stundenplan/resolved
+// ein (blasse Stundenplan-Ebene im Kalender), das der Client per calTtCache cached. Nach
+// Hintergrund-Sync bleibt nur die Cache-Invalidierung + ein Re-Render nötig, kein eigener
+// Materialize-Zyklus (die Wochenansicht holt sich die aufgelöste Ansicht ohnehin neu vom Server).
+SyncEngine.onChange(async (entityType) => {
+  if (entityType !== "timetable_overrides") return;
+  calTtCache.clear();
+  await renderTodayList();
+  await renderWeekOverview();
+  renderCalendar();
 });

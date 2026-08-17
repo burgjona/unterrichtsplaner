@@ -1090,6 +1090,7 @@ class TimetableOverrideOut(Base):
     room: Optional[str] = None
     color: Optional[str] = None
     created_at: str
+    updated_at: str
 
 
 # --- Einstellungen (A/B-Wochen-Parität) ---

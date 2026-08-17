@@ -1043,3 +1043,46 @@ def test_timetable_entries_push_detects_conflict(client, auth):
     result = r.json()["results"][0]
     assert result["status"] == "conflict"
     assert result["serverEntity"]["label"] == "geaendert"
+
+
+# ---------- Rollout Tranche 3: timetable_overrides (kein Update-Konzept, nur create/delete) ----------
+
+def test_sync_log_timetable_overrides_triggers_exist(tmp_path):
+    conn = init_db(str(tmp_path / "schema.db"))
+    triggers = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
+    assert {"trg_synclog_timetable_overrides_ai", "trg_synclog_timetable_overrides_ad"} <= triggers
+    conn.close()
+
+
+def test_timetable_overrides_push_create_delete_lifecycle(client, auth):
+    slot_id = next(s["id"] for s in client.get("/api/stundenplan/slots").json() if s["slotType"] == "lesson")
+    kind_id = client.get("/api/stundenplan/kinds").json()[0]["id"]
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "timetable_overrides", "op": "create",
+        "payload": {"date": "2027-01-15", "slotId": slot_id, "kindId": kind_id, "label": "Vertretung"},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "applied"
+    oid, base_updated = result["entityId"], result["entity"]["updatedAt"]
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_2", "entityType": "timetable_overrides", "op": "delete", "entityId": oid,
+        "baseUpdatedAt": base_updated,
+    }]})
+    assert r.json()["results"][0]["status"] == "applied"
+
+
+def test_timetable_overrides_push_update_is_rejected(client, auth):
+    slot_id = next(s["id"] for s in client.get("/api/stundenplan/slots").json() if s["slotType"] == "lesson")
+    kind_id = client.get("/api/stundenplan/kinds").json()[0]["id"]
+    created = client.post("/api/stundenplan/overrides", json={
+        "date": "2027-01-16", "slotId": slot_id, "kindId": kind_id, "label": "x",
+    }).json()
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "timetable_overrides", "op": "update",
+        "entityId": created["id"], "baseUpdatedAt": created["updatedAt"], "payload": {"label": "y"},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "error"
+    assert "nicht bearbeitet" in result["detail"]
