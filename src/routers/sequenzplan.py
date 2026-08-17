@@ -84,8 +84,7 @@ def suggest_date(block_id: int = Query(alias="blockId"), after: Optional[str] = 
     return {"date": slot["date"] if slot else None}
 
 
-@router.post("", response_model=SequenzStundeOut, status_code=201)
-def create(body: SequenzStundeCreate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+def _apply_create_sequenz(conn, user_id, body: SequenzStundeCreate) -> SequenzStundeOut:
     if not body.title.strip():
         raise HTTPException(status_code=400, detail="Titel darf nicht leer sein.")
     _load_block(conn, user_id, body.block_id)
@@ -97,21 +96,26 @@ def create(body: SequenzStundeCreate, conn=Depends(get_db), user_id: int = Depen
         sort_order = row["n"]
     else:
         sort_order = body.sort_order
-    with conn:
-        cur = conn.execute(
-            "INSERT INTO sequenz_stunden "
-            "(user_id, block_id, sort_order, title, grobziel, notes, is_lk, is_referat, "
-            " is_komplexe_arbeit, is_klassenarbeit, weitere_notenart, date) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-            (user_id, body.block_id, sort_order, body.title.strip(), body.grobziel, body.notes,
-             int(body.is_lk), int(body.is_referat), int(body.is_komplexe_arbeit),
-             int(body.is_klassenarbeit), body.weitere_notenart, body.date),
-        )
+    cur = conn.execute(
+        "INSERT INTO sequenz_stunden "
+        "(user_id, block_id, sort_order, title, grobziel, notes, is_lk, is_referat, "
+        " is_komplexe_arbeit, is_klassenarbeit, weitere_notenart, date, updated_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?, strftime('%Y-%m-%d %H:%M:%f','now'))",
+        (user_id, body.block_id, sort_order, body.title.strip(), body.grobziel, body.notes,
+         int(body.is_lk), int(body.is_referat), int(body.is_komplexe_arbeit),
+         int(body.is_klassenarbeit), body.weitere_notenart, body.date),
+    )
     return _out(_fetch(conn, user_id, cur.lastrowid))
 
 
-@router.put("/{sid}", response_model=SequenzStundeOut)
-def update(sid: int, body: SequenzStundeUpdate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+@router.post("", response_model=SequenzStundeOut, status_code=201)
+def create(body: SequenzStundeCreate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+    result = _apply_create_sequenz(conn, user_id, body)
+    conn.commit()
+    return result
+
+
+def _apply_update_sequenz(conn, user_id, sid: int, body: SequenzStundeUpdate) -> SequenzStundeOut:
     row_or_404(_fetch(conn, user_id, sid), "Sequenzstunde")
     data = body.model_dump(exclude_unset=True)
     sets = {}
@@ -126,21 +130,64 @@ def update(sid: int, body: SequenzStundeUpdate, conn=Depends(get_db), user_id: i
     if sets:
         cols = ", ".join(f"{k} = :{k}" for k in sets)
         sets.update(id=sid, uid=user_id)
-        with conn:
-            conn.execute(
-                f"UPDATE sequenz_stunden SET {cols}, updated_at = datetime('now') "
-                "WHERE id = :id AND user_id = :uid",
-                sets,
-            )
+        conn.execute(
+            f"UPDATE sequenz_stunden SET {cols}, updated_at = strftime('%Y-%m-%d %H:%M:%f','now') "
+            "WHERE id = :id AND user_id = :uid",
+            sets,
+        )
     return _out(_fetch(conn, user_id, sid))
+
+
+@router.put("/{sid}", response_model=SequenzStundeOut)
+def update(sid: int, body: SequenzStundeUpdate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+    result = _apply_update_sequenz(conn, user_id, sid, body)
+    conn.commit()
+    return result
+
+
+def _apply_delete_sequenz(conn, user_id, sid: int) -> None:
+    cur = conn.execute("DELETE FROM sequenz_stunden WHERE id = ? AND user_id = ?", (sid, user_id))
+    if cur.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Sequenzstunde nicht gefunden.")
 
 
 @router.delete("/{sid}", status_code=204)
 def delete(sid: int, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
-    cur = conn.execute("DELETE FROM sequenz_stunden WHERE id = ? AND user_id = ?", (sid, user_id))
+    _apply_delete_sequenz(conn, user_id, sid)
     conn.commit()
-    if cur.rowcount == 0:
-        raise HTTPException(status_code=404, detail="Sequenzstunde nicht gefunden.")
+
+
+# ---------- Sync-Handler-Registry: sequenz_stunden (src/routers/sync.py) ----------
+# Nur Kern-CRUD ist sync-fähig. reorder/link/apply-calendar-entry/shift bleiben Online-REST:
+# reorder verlangt zwingend das vollständige Set aller Block-ids (fragil bei einer Queue aus
+# unabhängigen Einzel-Mutationen), shift berechnet live den nächsten freien Stundenplan-Slot
+# und verschiebt kaskadierend verknüpfte lessons-Termine — beides braucht ohnehin den
+# aktuellen Serverstand, kein sinnvoller Offline-Anwendungsfall (analog "Kumulierte Ansicht"
+# in stoffplan.js, die schon vor dieser Einheit bewusst online-only blieb).
+
+def _sync_fetch_sequenz(conn, user_id, entity_id):
+    row = _fetch(conn, user_id, entity_id)
+    return _out(row) if row is not None else None
+
+
+def _sync_create_sequenz(conn, user_id, payload: dict) -> SequenzStundeOut:
+    return _apply_create_sequenz(conn, user_id, SequenzStundeCreate(**payload))
+
+
+def _sync_update_sequenz(conn, user_id, entity_id, payload: dict) -> SequenzStundeOut:
+    return _apply_update_sequenz(conn, user_id, entity_id, SequenzStundeUpdate(**payload))
+
+
+def _sync_delete_sequenz(conn, user_id, entity_id) -> None:
+    _apply_delete_sequenz(conn, user_id, entity_id)
+
+
+SYNC_HANDLER = {
+    "fetch": _sync_fetch_sequenz,
+    "create": _sync_create_sequenz,
+    "update": _sync_update_sequenz,
+    "delete": _sync_delete_sequenz,
+}
 
 
 @router.post("/reorder", response_model=List[SequenzStundeOut])
@@ -153,10 +200,16 @@ def reorder(body: SequenzStundeReorderIn, conn=Depends(get_db), user_id: int = D
         raise HTTPException(status_code=400, detail="ordered_ids muss genau alle Stunden des Blocks enthalten.")
     with conn:
         for i, sid in enumerate(body.ordered_ids):
+            # updated_at NUR bei tatsächlicher sort_order-Änderung bumpen — sonst würde jeder
+            # Aufruf (auch ohne echte Umsortierung, z. B. direkt nach dem Speichern einer
+            # einzelnen Karte) den Offline-Sync-Client mit einem stillen, unsichtbaren Update
+            # aus dem Tritt bringen (dessen lokal gecachtes updatedAt würde beim nächsten
+            # Bearbeiten dieser Karte einen falschen Konflikt auslösen).
             conn.execute(
-                "UPDATE sequenz_stunden SET sort_order = ?, updated_at = datetime('now') "
-                "WHERE id = ? AND user_id = ?",
-                (i, sid, user_id),
+                "UPDATE sequenz_stunden SET sort_order = ?, "
+                "updated_at = strftime('%Y-%m-%d %H:%M:%f','now') "
+                "WHERE id = ? AND user_id = ? AND sort_order != ?",
+                (i, sid, user_id, i),
             )
     rows = conn.execute(
         "SELECT * FROM sequenz_stunden WHERE block_id = ? AND user_id = ? ORDER BY sort_order, id",
@@ -181,7 +234,7 @@ def link(sid: int, body: SequenzStundeLinkIn, conn=Depends(get_db), user_id: int
             raise HTTPException(status_code=400, detail="Diese Stunde ist bereits mit 2 Sequenzstunden verknüpft.")
     with conn:
         conn.execute(
-            "UPDATE sequenz_stunden SET lesson_id = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?",
+            "UPDATE sequenz_stunden SET lesson_id = ?, updated_at = strftime('%Y-%m-%d %H:%M:%f','now') WHERE id = ? AND user_id = ?",
             (body.lesson_id, sid, user_id),
         )
     return _out(_fetch(conn, user_id, sid))
@@ -314,7 +367,7 @@ def shift(sid: int, body: SequenzStundeShiftIn, conn=Depends(get_db), user_id: i
             (block_id, user_id, row["sort_order"]),
         ).fetchall()
         conn.execute(
-            "UPDATE sequenz_stunden SET sort_order = sort_order + 1, updated_at = datetime('now') "
+            "UPDATE sequenz_stunden SET sort_order = sort_order + 1, updated_at = strftime('%Y-%m-%d %H:%M:%f','now') "
             "WHERE block_id = ? AND user_id = ? AND sort_order >= ?",
             (block_id, user_id, row["sort_order"]),
         )
@@ -332,7 +385,7 @@ def shift(sid: int, body: SequenzStundeShiftIn, conn=Depends(get_db), user_id: i
                 if nxt is None:
                     continue
                 conn.execute(
-                    "UPDATE lessons SET date = ?, time = ?, updated_at = datetime('now') WHERE id = ?",
+                    "UPDATE lessons SET date = ?, time = ?, updated_at = strftime('%Y-%m-%d %H:%M:%f','now') WHERE id = ?",
                     (nxt["date"], nxt["time"], lesson["id"]),
                 )
                 _sync_calendar_entry_date(conn, lesson["id"], nxt["date"])

@@ -98,10 +98,12 @@ async function runUndo() {
 // Ersetzt alle Sequenzstunden eines Blocks 1:1 durch targetRows (löschen + neu anlegen –
 // einfacher und robuster als ein Diff, IDs müssen dabei nicht erhalten bleiben).
 async function restoreSequenzStunden(blockId, targetRows) {
-  const current = await API.get(`/sequenz-stunden?blockId=${blockId}`);
-  for (const r of current) await API.del(`/sequenz-stunden/${r.id}`);
+  const current = await SyncEngine.materialize("sequenz_stunden").then(
+    (all) => all.filter((r) => r.blockId === blockId)
+  );
+  for (const r of current) await SyncEngine.remove("sequenz_stunden", r.id);
   for (const t of targetRows) {
-    await API.post("/sequenz-stunden", {
+    await SyncEngine.create("sequenz_stunden", {
       blockId, title: t.title, grobziel: t.grobziel || null,
       isLk: t.isLk, isReferat: t.isReferat, isKomplexeArbeit: t.isKomplexeArbeit,
       isKlassenarbeit: t.isKlassenarbeit, weitereNotenart: t.weitereNotenart || null,
@@ -5510,6 +5512,7 @@ const SYNC_ENTITY_RENDERERS = {
   calendar_entries: (e) => ({ title: e.title, preview: e.entryDate }),
   reflections: (r) => ({ title: r.lessonTitle || "Reflexion", preview: r.ampelSummary || "" }),
   asuv_drafts: (a) => ({ title: "ASUV-Entwurf", preview: a.ziele ? a.ziele.slice(0, 60) : "" }),
+  sequenz_stunden: (s) => ({ title: s.title, preview: s.date || "kein Datum" }),
 };
 
 let _syncConflictsModulePromise = null;

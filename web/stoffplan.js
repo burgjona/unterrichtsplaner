@@ -523,11 +523,12 @@ export function createStoffplanModule(ctx) {
       const snapshots = [];   // { blockId, rows } je Block, für Rückgängig
       for (const b of kumuliertBlocks) {
         let original = [];
-        try { original = await API.get(`/sequenz-stunden?blockId=${b.id}`); } catch (e) { /* best effort */ }
+        try { original = await SyncEngine.materialize("sequenz_stunden").then((all) => all.filter((r) => r.blockId === b.id)); }
+        catch (e) { /* best effort */ }
         snapshots.push({ blockId: b.id, rows: original });
         const keepIds = new Set(b.cards.filter((c) => c.id != null).map((c) => c.id));
         for (const o of original) {
-          if (!keepIds.has(o.id)) await API.del(`/sequenz-stunden/${o.id}`);
+          if (!keepIds.has(o.id)) await SyncEngine.remove("sequenz_stunden", o.id);
         }
         for (const c of b.cards) {
           const body = {
@@ -537,14 +538,21 @@ export function createStoffplanModule(ctx) {
             date: c.date || null,
           };
           if (c.id == null) {
-            const created = await API.post("/sequenz-stunden", body);
+            // reorder unten braucht zwingend die echte Server-id (eigener REST-Call, kein
+            // Sync-Payload) — createAndSync statt create, analog saveLesson()/deleteStoffPlan().
+            const created = await SyncEngine.createAndSync("sequenz_stunden", body);
             c.id = created.id;
           } else {
-            await API.put(`/sequenz-stunden/${c.id}`, body);
+            await SyncEngine.update("sequenz_stunden", c.id, body);
           }
         }
         if (b.cards.length) {
           await API.post("/sequenz-stunden/reorder", { blockId: b.id, orderedIds: b.cards.map((c) => c.id) });
+          // reorder ist ein eigener REST-Call (kein Sync-Payload) und kann updatedAt serverseitig
+          // weiter bumpen (echte Umsortierung) — ohne pull() bliebe der lokale Cache dieser
+          // Karten hinter dem Server zurück und die nächste Bearbeitung liefe in einen falschen
+          // Konflikt (bereits beobachtet, siehe Backend-Fix in _apply_one/reorder).
+          await SyncEngine.pull();
         }
       }
       toast("Sequenzstunden gespeichert.");

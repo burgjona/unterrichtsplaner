@@ -33,6 +33,7 @@ const SyncEngine = (() => {
     calendar_entries: { apiPath: "/calendar" },
     reflections: { apiPath: "/reflections" },
     asuv_drafts: { apiPath: "/lessons" },
+    sequenz_stunden: { apiPath: "/sequenz-stunden" },
   };
 
   const listeners = new Set();

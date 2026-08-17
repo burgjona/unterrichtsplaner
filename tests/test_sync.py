@@ -1266,3 +1266,65 @@ def test_asuv_drafts_push_delete_is_rejected(client, auth):
         "entityId": lesson["id"], "baseUpdatedAt": created["updatedAt"],
     }]})
     assert r.json()["results"][0]["status"] == "error"
+
+
+# ---------- Rollout Tranche 4 (letzte Einheit): sequenz_stunden ----------
+
+def _make_stoff_block(client):
+    cls_id, sy_id = _make_class_and_year(client)
+    plan = client.post("/api/stoff-plans", json={
+        "classId": cls_id, "schoolYearId": sy_id, "title": "Plan",
+        "blocks": [{"lbCode": "D8.1", "title": "Kurzgeschichten", "ustd": 10}],
+    }).json()
+    return plan["blocks"][0]["id"]
+
+
+def test_sync_log_sequenz_stunden_triggers_exist(tmp_path):
+    conn = init_db(str(tmp_path / "schema.db"))
+    triggers = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
+    assert {
+        "trg_synclog_sequenz_stunden_ai", "trg_synclog_sequenz_stunden_au",
+        "trg_synclog_sequenz_stunden_ad",
+    } <= triggers
+    conn.close()
+
+
+def test_sequenz_stunden_push_create_update_delete_lifecycle(client, auth):
+    block_id = _make_stoff_block(client)
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "sequenz_stunden", "op": "create",
+        "payload": {"blockId": block_id, "title": "Einstieg in die Kurzgeschichte"},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "applied"
+    sid, base_updated = result["entityId"], result["entity"]["updatedAt"]
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_2", "entityType": "sequenz_stunden", "op": "update", "entityId": sid,
+        "baseUpdatedAt": base_updated, "payload": {"title": "Einstieg (überarbeitet)"},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "applied"
+    assert result["entity"]["title"] == "Einstieg (überarbeitet)"
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_3", "entityType": "sequenz_stunden", "op": "delete", "entityId": sid,
+        "baseUpdatedAt": result["entity"]["updatedAt"],
+    }]})
+    assert r.json()["results"][0]["status"] == "applied"
+    assert sid not in [s["id"] for s in client.get(f"/api/sequenz-stunden?blockId={block_id}").json()]
+
+
+def test_sequenz_stunden_push_detects_conflict(client, auth):
+    block_id = _make_stoff_block(client)
+    created = client.post("/api/sequenz-stunden", json={"blockId": block_id, "title": "x"}).json()
+    sid, base_updated = created["id"], created["updatedAt"]
+    assert client.put(f"/api/sequenz-stunden/{sid}", json={"title": "geaendert"}).status_code == 200
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "sequenz_stunden", "op": "update", "entityId": sid,
+        "baseUpdatedAt": base_updated, "payload": {"title": "zu spaet"},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "conflict"
+    assert result["serverEntity"]["title"] == "geaendert"
