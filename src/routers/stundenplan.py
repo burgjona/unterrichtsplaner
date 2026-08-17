@@ -550,8 +550,7 @@ def list_entries(
     return [TimetableEntryOut(**dict(r)) for r in rows]
 
 
-@router.post("/entries", response_model=TimetableEntryOut, status_code=201)
-def create_entry(body: TimetableEntryCreate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+def _apply_create_entry(conn, user_id: int, body: TimetableEntryCreate) -> TimetableEntryOut:
     _require_owned(conn, "timetable_plans", body.plan_id, user_id, "Plan")
     _require_owned(conn, "timetable_slots", body.slot_id, user_id, "Slot")
     _require_owned(conn, "timetable_kinds", body.kind_id, user_id, "Typ")
@@ -560,17 +559,22 @@ def create_entry(body: TimetableEntryCreate, conn=Depends(get_db), user_id: int 
     _validate_span(conn, user_id, body.slot_id, body.span_slots)
     cur = conn.execute(
         "INSERT INTO timetable_entries"
-        "(user_id, plan_id, slot_id, kind_id, class_id, weekday, week_type, span_slots, label, room, color) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        "(user_id, plan_id, slot_id, kind_id, class_id, weekday, week_type, span_slots, label, room, color, updated_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?, strftime('%Y-%m-%d %H:%M:%f','now'))",
         (user_id, body.plan_id, body.slot_id, body.kind_id, body.class_id, body.weekday,
          body.week_type, body.span_slots, body.label, body.room, body.color),
     )
-    conn.commit()
     return _get_entry(conn, user_id, cur.lastrowid)
 
 
-@router.put("/entries/{eid}", response_model=TimetableEntryOut)
-def update_entry(eid: int, body: TimetableEntryUpdate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+@router.post("/entries", response_model=TimetableEntryOut, status_code=201)
+def create_entry(body: TimetableEntryCreate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+    result = _apply_create_entry(conn, user_id, body)
+    conn.commit()
+    return result
+
+
+def _apply_update_entry(conn, user_id: int, eid: int, body: TimetableEntryUpdate) -> TimetableEntryOut:
     existing = _entry_row(conn, user_id, eid)
     row_or_404(existing, "Eintrag")
     fields = body.model_dump(exclude_unset=True)
@@ -591,20 +595,56 @@ def update_entry(eid: int, body: TimetableEntryUpdate, conn=Depends(get_db), use
         cols = ", ".join(f"{k} = :{k}" for k in fields)
         fields.update(id=eid, uid=user_id)
         conn.execute(
-            f"UPDATE timetable_entries SET {cols}, updated_at = datetime('now') "
+            f"UPDATE timetable_entries SET {cols}, updated_at = strftime('%Y-%m-%d %H:%M:%f','now') "
             "WHERE id = :id AND user_id = :uid",
             fields,
         )
-        conn.commit()
     return _get_entry(conn, user_id, eid)
+
+
+@router.put("/entries/{eid}", response_model=TimetableEntryOut)
+def update_entry(eid: int, body: TimetableEntryUpdate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+    result = _apply_update_entry(conn, user_id, eid, body)
+    conn.commit()
+    return result
+
+
+def _apply_delete_entry(conn, user_id: int, eid: int) -> None:
+    cur = conn.execute("DELETE FROM timetable_entries WHERE id = ? AND user_id = ?", (eid, user_id))
+    if cur.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Eintrag nicht gefunden.")
 
 
 @router.delete("/entries/{eid}", status_code=204)
 def delete_entry(eid: int, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
-    cur = conn.execute("DELETE FROM timetable_entries WHERE id = ? AND user_id = ?", (eid, user_id))
+    _apply_delete_entry(conn, user_id, eid)
     conn.commit()
-    if cur.rowcount == 0:
-        raise HTTPException(status_code=404, detail="Eintrag nicht gefunden.")
+
+
+# ---------- Sync-Handler-Registry: timetable_entries (src/routers/sync.py) ----------
+
+def _sync_fetch_entry(conn, user_id, entity_id):
+    return _get_entry(conn, user_id, entity_id)
+
+
+def _sync_create_entry(conn, user_id, payload: dict) -> TimetableEntryOut:
+    return _apply_create_entry(conn, user_id, TimetableEntryCreate(**payload))
+
+
+def _sync_update_entry(conn, user_id, entity_id, payload: dict) -> TimetableEntryOut:
+    return _apply_update_entry(conn, user_id, entity_id, TimetableEntryUpdate(**payload))
+
+
+def _sync_delete_entry(conn, user_id, entity_id) -> None:
+    _apply_delete_entry(conn, user_id, entity_id)
+
+
+SYNC_HANDLER_TIMETABLE_ENTRIES = {
+    "fetch": _sync_fetch_entry,
+    "create": _sync_create_entry,
+    "update": _sync_update_entry,
+    "delete": _sync_delete_entry,
+}
 
 
 # ---------------------------------------------------------------- Overrides (U30: Vertretung)

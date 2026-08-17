@@ -977,3 +977,69 @@ def test_stoff_plans_push_activate_deactivates_other_plans_of_same_class(client,
     assert r.json()["results"][0]["status"] == "applied"
 
     assert client.get(f"/api/stoff-plans/{first['id']}").json()["status"] == "entwurf"
+
+
+# ---------- Rollout Tranche 3: timetable_entries ----------
+
+def _seed_plan_slot_kind(client):
+    """Löst _seed_defaults serverseitig aus und liefert (planId, slotId, kindId) der Defaults."""
+    plan_id = client.get("/api/stundenplan/plans").json()[0]["id"]
+    slot_id = next(s["id"] for s in client.get("/api/stundenplan/slots").json() if s["slotType"] == "lesson")
+    kind_id = client.get("/api/stundenplan/kinds").json()[0]["id"]
+    return plan_id, slot_id, kind_id
+
+
+def test_sync_log_timetable_entries_triggers_exist(tmp_path):
+    conn = init_db(str(tmp_path / "schema.db"))
+    triggers = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
+    assert {
+        "trg_synclog_timetable_entries_ai", "trg_synclog_timetable_entries_au",
+        "trg_synclog_timetable_entries_ad",
+    } <= triggers
+    conn.close()
+
+
+def test_timetable_entries_push_create_update_delete_lifecycle(client, auth):
+    plan_id, slot_id, kind_id = _seed_plan_slot_kind(client)
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "timetable_entries", "op": "create",
+        "payload": {
+            "planId": plan_id, "slotId": slot_id, "kindId": kind_id,
+            "weekday": 0, "weekType": "both", "spanSlots": 1, "label": "Vertretung",
+        },
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "applied"
+    eid, base_updated = result["entityId"], result["entity"]["updatedAt"]
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_2", "entityType": "timetable_entries", "op": "update", "entityId": eid,
+        "baseUpdatedAt": base_updated, "payload": {"label": "Vertretung (geändert)"},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "applied"
+    assert result["entity"]["label"] == "Vertretung (geändert)"
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_3", "entityType": "timetable_entries", "op": "delete", "entityId": eid,
+        "baseUpdatedAt": result["entity"]["updatedAt"],
+    }]})
+    assert r.json()["results"][0]["status"] == "applied"
+    assert eid not in [e["id"] for e in client.get(f"/api/stundenplan/entries?planId={plan_id}").json()]
+
+
+def test_timetable_entries_push_detects_conflict(client, auth):
+    plan_id, slot_id, kind_id = _seed_plan_slot_kind(client)
+    created = client.post("/api/stundenplan/entries", json={
+        "planId": plan_id, "slotId": slot_id, "kindId": kind_id, "weekday": 1,
+    }).json()
+    eid, base_updated = created["id"], created["updatedAt"]
+    assert client.put(f"/api/stundenplan/entries/{eid}", json={"label": "geaendert"}).status_code == 200
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "timetable_entries", "op": "update", "entityId": eid,
+        "baseUpdatedAt": base_updated, "payload": {"label": "zu spaet"},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "conflict"
+    assert result["serverEntity"]["label"] == "geaendert"

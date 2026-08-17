@@ -58,6 +58,11 @@ SyncEngine.onChange(async (entityType) => {
   }
   ttRenderView();
 });
+SyncEngine.onChange(async (entityType) => {
+  if (entityType !== "timetable_entries" || !ttState.loaded) return;
+  await ttReloadEntries();
+  ttRenderView();
+});
 
 /* ---------- kleine Helfer ---------- */
 function ttTodayIso() {
@@ -134,13 +139,19 @@ async function ttLoad() {
   }
 }
 async function ttReloadEntries() {
-  // timetable_entries ist noch nicht rollout-fähig (Tranche 3) — läuft weiter über REST, das
-  // eine Zahl erwartet. Ein gerade erst offline/optimistisch angelegter Plan hat bis zum
-  // erfolgreichen Push nur eine lokale id ("loc_..."); bis dahin bleiben Einträge leer statt
-  // eines 422 (siehe timetable_plans-onChange oben, das nach dem Push hier neu lädt).
-  ttState.entries = (ttState.planId && !String(ttState.planId).startsWith("loc_"))
-    ? await API.get("/stundenplan/entries?planId=" + ttState.planId)
-    : [];
+  if (!ttState.planId) { ttState.entries = []; return; }
+  // Offline-Sync (Rollout): materialize() statt REST — ein gerade erst offline/optimistisch
+  // angelegter Plan hat bis zum erfolgreichen Push nur eine lokale id ("loc_..."), gegen die
+  // planId hier per String-Vergleich gefiltert wird (nicht Number(), siehe ttOnPlanChange).
+  const all = await SyncEngine.materialize("timetable_entries");
+  ttState.entries = all.filter((e) => String(e.planId) === String(ttState.planId));
+}
+// FK-Felder (planId/slotId/kindId/classId) können auf einen noch nicht synchronisierten
+// Datensatz derselben oder einer anderen Rollout-Entität zeigen (lokale "loc_..."-id) — dann
+// als $localId-Platzhalter senden (siehe resolvePlaceholders in sync-engine.js), sonst als Zahl.
+function ttFkValue(id) {
+  if (id == null || id === "") return null;
+  return String(id).startsWith("loc_") ? { $localId: id } : Number(id);
 }
 // Offline-Sync (Rollout): analog ttMaterializeKinds — Reihenfolge wie der bisherige
 // Backend-Endpunkt (ORDER BY position, id) client-seitig herstellen.
@@ -430,10 +441,10 @@ function ttOpenEntryModal(entry, prefill) {
 async function ttSaveEntry(id) {
   if (!ttState.planId) { toast("Kein Plan ausgewählt.", false); return; }
   const body = {
-    planId: ttState.planId,
-    slotId: Number($("ttfSlot").value),
-    kindId: Number($("ttfKind").value),
-    classId: $("ttfClass").value ? Number($("ttfClass").value) : null,
+    planId: ttFkValue(ttState.planId),
+    slotId: ttFkValue($("ttfSlot").value),
+    kindId: ttFkValue($("ttfKind").value),
+    classId: ttFkValue($("ttfClass").value),
     weekday: Number($("ttfWeekday").value),
     weekType: $("ttfWeek").value,
     spanSlots: Number($("ttfSpan").value),
@@ -442,8 +453,8 @@ async function ttSaveEntry(id) {
     color: $("ttfAutoColor").checked ? null : $("ttfColor").value,
   };
   try {
-    if (id) await API.put("/stundenplan/entries/" + id, body);
-    else await API.post("/stundenplan/entries", body);
+    if (id) await SyncEngine.update("timetable_entries", id, body);
+    else await SyncEngine.create("timetable_entries", body);
     ttCloseModal();
     await ttReloadEntries();
     ttRenderView();
@@ -454,7 +465,7 @@ async function ttSaveEntry(id) {
 async function ttDeleteEntry(id) {
   if (!confirm("Diesen Eintrag wirklich löschen?")) return;
   try {
-    await API.del("/stundenplan/entries/" + id);
+    await SyncEngine.remove("timetable_entries", id);
     ttCloseModal();
     await ttReloadEntries();
     ttRenderView();

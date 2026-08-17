@@ -5448,6 +5448,7 @@ const SYNC_ENTITY_RENDERERS = {
   timetable_plans: (p) => ({ title: p.name || "Plan", preview: `gültig ab ${p.validFrom}` }),
   lessons: (l) => ({ title: l.title, preview: `${l.subject}${l.date ? " · " + l.date : ""}` }),
   stoff_plans: (p) => ({ title: p.title, preview: `${(p.blocks || []).length} Blöcke · ${p.status}` }),
+  timetable_entries: (e) => ({ title: e.label || "Stundenplan-Eintrag", preview: `${e.weekday != null ? ttWEEKDAYS[e.weekday] : ""} · ${e.weekType}` }),
 };
 
 let _syncConflictsModulePromise = null;
