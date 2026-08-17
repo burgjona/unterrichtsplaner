@@ -827,3 +827,75 @@ def test_timetable_plans_last_plan_cannot_be_deleted_via_push(client, auth):
     result = r.json()["results"][0]
     assert result["status"] == "error"
     assert "letzte" in result["detail"].lower()
+
+
+# ---------- Rollout Tranche 3: lessons (inkl. eingebettete phases/lernziele) ----------
+
+def test_sync_log_lessons_triggers_exist(tmp_path):
+    conn = init_db(str(tmp_path / "schema.db"))
+    triggers = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
+    assert {
+        "trg_synclog_lessons_ai", "trg_synclog_lessons_au", "trg_synclog_lessons_ad",
+    } <= triggers
+    conn.close()
+
+
+def test_lessons_push_create_update_delete_lifecycle(client, auth):
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "lessons", "op": "create",
+        "payload": {
+            "title": "Kurzgeschichten analysieren", "subject": "Deutsch", "grade": 8,
+            "phases": [{"phase_name": "Einstieg", "minutes": 10}],
+            "lernziele": [{"kind": "grob", "text": "Die SuS analysieren eine Kurzgeschichte."}],
+        },
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "applied"
+    assert len(result["entity"]["phases"]) == 1
+    assert result["entity"]["phases"][0]["phaseName"] == "Einstieg"
+    lid, base_updated = result["entityId"], result["entity"]["updatedAt"]
+
+    # Nur Phasen ändern (keine Top-Level-Spalte) — updated_at muss trotzdem bumpen (sonst
+    # bliebe sync_log stumm, siehe Kommentar in _apply_update_lesson).
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_2", "entityType": "lessons", "op": "update", "entityId": lid,
+        "baseUpdatedAt": base_updated,
+        "payload": {"phases": [{"phase_name": "Erarbeitung", "minutes": 20}]},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "applied"
+    assert result["entity"]["updatedAt"] != base_updated
+    assert [p["phaseName"] for p in result["entity"]["phases"]] == ["Erarbeitung"]
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_3", "entityType": "lessons", "op": "delete", "entityId": lid,
+        "baseUpdatedAt": result["entity"]["updatedAt"],
+    }]})
+    assert r.json()["results"][0]["status"] == "applied"
+    assert client.get(f"/api/lessons/{lid}").status_code == 404
+
+
+def test_lessons_push_detects_conflict(client, auth):
+    created = client.post("/api/lessons", json={
+        "title": "x", "subject": "Deutsch",
+    }).json()
+    lid, base_updated = created["id"], created["updatedAt"]
+    assert client.put(f"/api/lessons/{lid}", json={"title": "geaendert"}).status_code == 200
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "lessons", "op": "update", "entityId": lid,
+        "baseUpdatedAt": base_updated, "payload": {"title": "zu spaet"},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "conflict"
+    assert result["serverEntity"]["title"] == "geaendert"
+
+
+def test_lessons_push_create_syncs_calendar_entry(client, auth):
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "lessons", "op": "create",
+        "payload": {"title": "Mit Termin", "subject": "Deutsch", "date": "2027-05-10"},
+    }]})
+    lid = r.json()["results"][0]["entityId"]
+    entries = client.get("/api/calendar").json()
+    assert any(e["lessonId"] == lid and e["entryDate"] == "2027-05-10" for e in entries)

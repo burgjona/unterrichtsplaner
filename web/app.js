@@ -748,12 +748,16 @@ async function loadAll() {
   // bleiben offline angelegte/geänderte Notizen sichtbar. pull() ist offline ein No-Op,
   // materialize() liefert dann den zuletzt bekannten Stand + Warteschlange.
   await SyncEngine.pull();
-  const [classesAll, lessons, reflections, open, materials, todosAll, notes, schoolYearsAll, calendar, calendarCategoriesAll, asuvDrafts] = await Promise.all([
-    SyncEngine.materialize("classes"), API.get("/lessons"), API.get("/reflections"),
+  const [classesAll, lessonsAll, reflections, open, materials, todosAll, notes, schoolYearsAll, calendar, calendarCategoriesAll, asuvDrafts] = await Promise.all([
+    SyncEngine.materialize("classes"), SyncEngine.materialize("lessons"), API.get("/reflections"),
     API.get("/reflections/open"), API.get("/materials"), SyncEngine.materialize("todos"),
     SyncEngine.materialize("notes"), SyncEngine.materialize("school_years"), API.get("/calendar"),
     SyncEngine.materialize("calendar_categories"), API.get("/asuv"),
   ]);
+  // materialize() sortiert nicht — Reihenfolge wie der bisherige Backend-Endpunkt
+  // (ORDER BY id, hier über createdAt als stabiles Anlage-Datum nachgebildet).
+  const lessons = lessonsAll.slice()
+    .sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")) || String(a.id).localeCompare(String(b.id)));
   // Archivierte To-dos bleiben wie bisher außerhalb von state.todos (eigene Abfrage in der
   // Archiv-Ansicht, renderArchivTodos) — materialize() liefert wie die DB-Tabelle alle Zeilen.
   const todos = todosAll.filter((t) => t.archivedAt == null);
@@ -3306,7 +3310,7 @@ function openLessonModal(l) {
   $("modalDeleteBtn").onclick = async () => {
     if (!window.confirm("Diese Stunde wirklich löschen?")) return;
     try {
-      await API.del(`/lessons/${l.id}`);
+      await SyncEngine.remove("lessons", l.id);
       if (editingLessonId === l.id) { resetLessonEditState(); clearLessonForm(); }
       closeModal();
       await refresh();
@@ -3385,9 +3389,13 @@ async function saveLesson() {
     let saved;
     const isNew = !editingLessonId;
     if (editingLessonId) {
-      saved = await API.put("/lessons/" + editingLessonId, body);
+      saved = await SyncEngine.update("lessons", editingLessonId, body);
     } else {
-      saved = await API.post("/lessons", body);
+      // Material-Upload/Kalender-Verknüpfung/Sequenz-Verknüpfung unten brauchen zwingend die
+      // echte Server-id (eigene REST-Calls, kein Sync-Payload) — createAndSync() wartet den
+      // Push einmalig ab statt nur optimistisch die lokale id zurückzugeben (siehe Kommentar
+      // dort). Offline schlägt das bewusst fehl, statt eine lokale id vorzutäuschen.
+      saved = await SyncEngine.createAndSync("lessons", body);
     }
     if (isNew && pendingLessonMaterialFile) {
       const fd = new FormData();
@@ -3433,7 +3441,7 @@ async function deleteLesson() {
   if (!editingLessonId) return;
   if (!window.confirm("Diese Stunde wirklich löschen?")) return;
   try {
-    await API.del("/lessons/" + editingLessonId);
+    await SyncEngine.remove("lessons", editingLessonId);
     resetLessonEditState();
     clearLessonForm();
     await refresh();
@@ -4242,7 +4250,7 @@ async function savePraesentZiel(l, zielId) {
     bloomStufe: z.bloomStufe || null, phaseSortOrder: z.phaseSortOrder, sortOrder: z.sortOrder,
   }));
   try {
-    const updated = await API.put("/lessons/" + l.id, {
+    const updated = await SyncEngine.update("lessons", l.id, {
       title: l.title, subject: l.subject, grade: l.grade, lessonType: l.lessonType,
       durationMinutes: l.durationMinutes, classId: l.classId, lernbereichId: l.lernbereichId,
       date: l.date, klafki: l.klafki, meyerPlan: l.meyerPlan, diff: l.diff, selbstLernen: l.selbstLernen,
@@ -4260,7 +4268,7 @@ async function savePraesentZiel(l, zielId) {
 async function savePraesentPhaseMinutes(l, phaseIdx, minutes) {
   const phases = (l.phases || []).map((p, i) => i === phaseIdx ? { ...p, minutes } : p);
   try {
-    const updated = await API.put("/lessons/" + l.id, {
+    const updated = await SyncEngine.update("lessons", l.id, {
       title: l.title, subject: l.subject, grade: l.grade, lessonType: l.lessonType,
       durationMinutes: l.durationMinutes, classId: l.classId, lernbereichId: l.lernbereichId,
       date: l.date, klafki: l.klafki, meyerPlan: l.meyerPlan, diff: l.diff, selbstLernen: l.selbstLernen,
@@ -5432,6 +5440,7 @@ const SYNC_ENTITY_RENDERERS = {
   classes: (c) => ({ title: c.name, preview: `${c.subject} · Klasse ${c.grade}` }),
   students: (s) => ({ title: s.name, preview: `Position ${s.sortOrder}` }),
   timetable_plans: (p) => ({ title: p.name || "Plan", preview: `gültig ab ${p.validFrom}` }),
+  lessons: (l) => ({ title: l.title, preview: `${l.subject}${l.date ? " · " + l.date : ""}` }),
 };
 
 let _syncConflictsModulePromise = null;
@@ -5607,4 +5616,17 @@ SyncEngine.onChange(async (entityType) => {
   if (entityType !== "students" || !detailClassId) return;
   if (!document.getElementById("cdStudentList")) return; // Detailseite gerade nicht sichtbar
   await renderClassStudents();
+});
+
+// Rollout (Tranche 3): lessons — Stundenliste, Filteroptionen und Home-„heute"-Liste hängen
+// an state.lessons; renderAll() ist günstig genug (rein synchrones DOM-Rendering aus state),
+// hier wie bei classes/todos direkt aufgerufen statt einzelner View-Funktionen.
+SyncEngine.onChange(async (entityType) => {
+  if (entityType !== "lessons") return;
+  const all = await SyncEngine.materialize("lessons");
+  state.lessons = all.slice()
+    .sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")) || String(a.id).localeCompare(String(b.id)));
+  renderLessonFilterOptions();
+  renderLessonTable();
+  await renderTodayList();
 });

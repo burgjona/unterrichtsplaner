@@ -26,6 +26,7 @@ const SyncEngine = (() => {
     classes: { apiPath: "/classes" },
     students: { apiPath: "/students" },
     timetable_plans: { apiPath: "/stundenplan/plans" },
+    lessons: { apiPath: "/lessons" },
   };
 
   const listeners = new Set();
@@ -145,6 +146,23 @@ const SyncEngine = (() => {
     await OfflineDB.delete(entityType, record.localId);
     notify(entityType, {});
     schedulePush();
+  }
+
+  // Für Aufrufer, die sofort im Anschluss eine echte Server-id brauchen (z. B. lessons:
+  // Material-Upload/Kalender-Verknüpfung/Sequenz-Verknüpfung laufen noch als eigene REST-
+  // Calls, die eine Zahl statt "loc_..." erwarten) — create() gefolgt vom expliziten Warten
+  // auf den nächsten Push-Durchlauf. Offline (oder falls der Push aus anderem Grund nicht
+  // durchläuft, z. B. Netzwerkfehler) bleibt der Datensatz optimistisch/lokal gespeichert
+  // (spätestens beim nächsten Online-Kontakt synchronisiert), die Funktion wirft dann aber
+  // einen Fehler, weil der Aufrufer ohne echte id nicht sinnvoll weitermachen kann.
+  async function createAndSync(entityType, payload) {
+    const optimistic = await create(entityType, payload);
+    await schedulePush();
+    const resolved = await findByAnyId(entityType, optimistic.localId);
+    if (!resolved || typeof resolved.serverId !== "number") {
+      throw new Error("Ohne Internetverbindung nicht möglich (wird beim nächsten Online-Kontakt synchronisiert).");
+    }
+    return { ...resolved, id: resolved.serverId };
   }
 
   async function findByAnyId(entityType, id) {
@@ -328,7 +346,7 @@ const SyncEngine = (() => {
   }
 
   return {
-    init, pull, push: schedulePush, materialize, create, update, remove, onChange,
+    init, pull, push: schedulePush, materialize, create, createAndSync, update, remove, onChange,
     getConflicts, resolveKeepLocal, resolveKeepServer,
   };
 })();
