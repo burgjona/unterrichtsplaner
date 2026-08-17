@@ -3808,6 +3808,7 @@ const ASUV_CHECKS = [
   ["Formalien", "Unterschriebene Selbständigkeitserklärung beigelegt?"],
 ];
 let asuvLessonId = null;
+let asuvSaved = false;   // vom zuletzt geladenen Entwurf — steuert create vs. update beim Speichern
 
 function renderAsuvLessonSelect() {
   const sel = $("asuvLesson");
@@ -3816,6 +3817,14 @@ function renderAsuvLessonSelect() {
 }
 
 async function loadAsuv(lessonId) {
+  // ASUV-Entwürfe hängen fest an einer bereits existierenden Stunde (asuv_drafts.lesson_id
+  // ist eine FK, kein eigenständig anlegbarer Datensatz) — eine noch nicht synchronisierte
+  // Stunde ("loc_..."-id) hat serverseitig noch keine Zeile, an die sich ein Entwurf hängen
+  // ließe. Number() auf einer solchen id wäre NaN statt eines klaren Hinweises.
+  if (String(lessonId).startsWith("loc_")) {
+    toast("Diese Stunde ist noch nicht synchronisiert – bitte online abwarten.", false);
+    return;
+  }
   asuvLessonId = Number(lessonId);
   if (!asuvLessonId) return;
   syncHash("asuv");
@@ -3823,7 +3832,15 @@ async function loadAsuv(lessonId) {
   const lesson = state.lessons.find((l) => l.id === asuvLessonId);
   $("asuvHeadline").textContent = "ASUV-Entwurf: " + (lesson ? lesson.title : "");
   try {
-    const a = await API.get(`/lessons/${asuvLessonId}/asuv`);
+    // Ob als create oder update gespeichert wird, hängt davon ab, ob überhaupt schon ein
+    // Datensatz existiert — nicht vom a.saved-Feld: eine gerade erst offline/optimistisch
+    // angelegte Zeile hat dieses Feld (noch) nicht (es ist Teil der Server-Antwort, nicht des
+    // gesendeten Payloads), wäre also fälschlich falsy.
+    const fromLocal = await SyncEngine.materialize("asuv_drafts").then(
+      (all) => all.find((x) => x.id === asuvLessonId)
+    );
+    const a = fromLocal || await API.get(`/lessons/${asuvLessonId}/asuv`);
+    asuvSaved = !!fromLocal || !!a.saved;
     ASUV_FIELDS.forEach(([id, key]) => { $(`asuv_${id}`).value = a[key] || ""; });
     $("asuvBiboxHint").style.display = a.biboxEmpty ? "block" : "none";
     const cl = $("asuvChecklist");
@@ -3866,8 +3883,15 @@ async function saveAsuv() {
   const checks = {};
   $("asuvChecklist").querySelectorAll("input[type=checkbox]").forEach((cb) => { checks[cb.dataset.check] = cb.checked; });
   body.checks = checks;
-  try { await API.put(`/lessons/${asuvLessonId}/asuv`, body); toast("ASUV gespeichert."); }
-  catch (e) { toast(e.message, false); }
+  try {
+    if (asuvSaved) {
+      await SyncEngine.update("asuv_drafts", asuvLessonId, body);
+    } else {
+      await SyncEngine.create("asuv_drafts", { ...body, lessonId: asuvLessonId });
+      asuvSaved = true;
+    }
+    toast("ASUV gespeichert.");
+  } catch (e) { toast(e.message, false); }
 }
 
 function exportAsuv(fmt) {
@@ -5485,6 +5509,7 @@ const SYNC_ENTITY_RENDERERS = {
   timetable_overrides: (o) => ({ title: o.label || "Vertretung", preview: o.date }),
   calendar_entries: (e) => ({ title: e.title, preview: e.entryDate }),
   reflections: (r) => ({ title: r.lessonTitle || "Reflexion", preview: r.ampelSummary || "" }),
+  asuv_drafts: (a) => ({ title: "ASUV-Entwurf", preview: a.ziele ? a.ziele.slice(0, 60) : "" }),
 };
 
 let _syncConflictsModulePromise = null;
@@ -5707,6 +5732,12 @@ SyncEngine.onChange(async (entityType) => {
     .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")) || String(b.id).localeCompare(String(a.id)));
   renderReflectTable();
 });
+
+// Rollout (Tranche 4): asuv_drafts — bewusst KEINE onChange-Subscription. Anders als
+// Listen-Ansichten ist der ASUV-Editor ein Formular für genau EINEN Entwurf, das der Nutzer
+// gerade aktiv bearbeitet; ein automatisches Re-Render bei jedem Hintergrund-Sync-Ereignis
+// würde ungespeicherte Eingaben überschreiben. loadAsuv() liest bereits bei jedem Öffnen den
+// aktuellen Stand (materialize() mit REST-Fallback), das genügt.
 
 // Rollout (Tranche 3 — letzte Einheit): calendar_entries. Archivierte Einträge bleiben wie
 // bisher außerhalb von state.calendar (eigene Abfrage in renderArchivKalender, analog

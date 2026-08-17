@@ -7,12 +7,12 @@ import json
 import sqlite3
 import urllib.parse
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 
 from ..deps import get_db, get_user_id, row_or_404
 from ..lib.asuv_export import build_docx, build_pdf
-from ..schemas import AsuvDraft, AsuvListItem, AsuvOut
+from ..schemas import AsuvDraft, AsuvListItem, AsuvOut, AsuvSyncCreate, AsuvSyncUpdate
 
 router = APIRouter(tags=["asuv"])
 
@@ -104,35 +104,108 @@ def list_asuv(conn: sqlite3.Connection = Depends(get_db), user_id: int = Depends
     return [AsuvListItem(**dict(r)) for r in rows]
 
 
-@router.get("/lessons/{lid}/asuv", response_model=AsuvOut)
-def get_asuv(lid: int, conn: sqlite3.Connection = Depends(get_db), user_id: int = Depends(get_user_id)):
+def _get_asuv(conn, user_id, lid) -> AsuvOut:
     lrow = row_or_404(_lesson(conn, user_id, lid), "Stunde")
     bibox_empty = not (lrow["bibox_werk"] or "").strip()
     row = conn.execute("SELECT * FROM asuv_drafts WHERE lesson_id = ? AND user_id = ?",
                        (lid, user_id)).fetchone()
     if row:
         d = dict(row)
-        return AsuvOut(lesson_id=lid, saved=True, bibox_empty=bibox_empty,
+        return AsuvOut(id=lid, lesson_id=lid, saved=True, bibox_empty=bibox_empty,
+                       updated_at=d["updated_at"],
                        checks=json.loads(d["checks_json"]) if d["checks_json"] else {},
                        **{f: d[f] or "" for f in _FIELDS})
-    return AsuvOut(lesson_id=lid, saved=False, bibox_empty=bibox_empty, checks={}, **_prefill(conn, lrow))
+    return AsuvOut(id=lid, lesson_id=lid, saved=False, bibox_empty=bibox_empty, checks={},
+                   **_prefill(conn, lrow))
+
+
+@router.get("/lessons/{lid}/asuv", response_model=AsuvOut)
+def get_asuv(lid: int, conn: sqlite3.Connection = Depends(get_db), user_id: int = Depends(get_user_id)):
+    return _get_asuv(conn, user_id, lid)
+
+
+def _apply_upsert_asuv(conn, user_id: int, lid: int, body: AsuvDraft) -> AsuvOut:
+    row_or_404(_lesson(conn, user_id, lid), "Stunde")
+    values = [getattr(body, f) for f in _FIELDS]
+    cols = ", ".join(["lesson_id", "user_id", *_FIELDS, "checks_json", "updated_at"])
+    placeholders = ", ".join(["?"] * (len(_FIELDS) + 3)) + ", strftime('%Y-%m-%d %H:%M:%f','now')"
+    updates = ", ".join(f"{f} = excluded.{f}" for f in (*_FIELDS, "checks_json"))
+    conn.execute(
+        f"""INSERT INTO asuv_drafts({cols}) VALUES ({placeholders})
+            ON CONFLICT(lesson_id) DO UPDATE SET {updates}, updated_at = strftime('%Y-%m-%d %H:%M:%f','now')""",
+        (lid, user_id, *values, json.dumps(body.checks or {})),
+    )
+    return _get_asuv(conn, user_id, lid)
 
 
 @router.put("/lessons/{lid}/asuv", response_model=AsuvOut)
 def put_asuv(lid: int, body: AsuvDraft, conn: sqlite3.Connection = Depends(get_db),
              user_id: int = Depends(get_user_id)):
+    result = _apply_upsert_asuv(conn, user_id, lid, body)
+    conn.commit()
+    return result
+
+
+# ---------- Sync-Handler-Registry: asuv_drafts (src/routers/sync.py) ----------
+# Natürlicher Schlüssel: lesson_id IST der Primärschlüssel von asuv_drafts (keine separate
+# autoincrement-id, anders als bei allen bisherigen Rollout-Einheiten) — der generische
+# entity_id-Parameter des Sync-Protokolls transportiert hier direkt die lesson_id, AsuvOut.id
+# ist bewusst ein Alias darauf (siehe Kommentar dort). create ist ein reines INSERT (kein
+# ON CONFLICT DO UPDATE wie der REST-PUT) — legen zwei Geräte offline beide erstmals einen
+# Entwurf für dieselbe Stunde an, soll das als Konflikt auffallen statt sich still zu
+# überschreiben (analog plan_notes). Frontend unterscheidet create/update anhand des zuvor
+# geladenen saved-Flags (wie bei lessons: isNew).
+
+def _sync_fetch_asuv(conn, user_id, entity_id):
+    lrow = _lesson(conn, user_id, entity_id)
+    if lrow is None:
+        return None
+    row = conn.execute("SELECT * FROM asuv_drafts WHERE lesson_id = ? AND user_id = ?",
+                       (entity_id, user_id)).fetchone()
+    if row is None:
+        return None  # noch nicht gespeichert — kein Sync-Datensatz, nur eine Vorbefüllung
+    return _get_asuv(conn, user_id, entity_id)
+
+
+def _apply_create_asuv(conn, user_id, payload: dict) -> AsuvOut:
+    body = AsuvSyncCreate(**payload)
+    lid = body.lesson_id
     row_or_404(_lesson(conn, user_id, lid), "Stunde")
     values = [getattr(body, f) for f in _FIELDS]
-    cols = ", ".join(["lesson_id", "user_id", *_FIELDS, "checks_json"])
-    placeholders = ", ".join(["?"] * (len(_FIELDS) + 3))
-    updates = ", ".join(f"{f} = excluded.{f}" for f in (*_FIELDS, "checks_json"))
-    conn.execute(
-        f"""INSERT INTO asuv_drafts({cols}) VALUES ({placeholders})
-            ON CONFLICT(lesson_id) DO UPDATE SET {updates}, updated_at = datetime('now')""",
-        (lid, user_id, *values, json.dumps(body.checks or {})),
+    cols = ", ".join(["lesson_id", "user_id", *_FIELDS, "checks_json", "updated_at"])
+    placeholders = ", ".join(["?"] * (len(_FIELDS) + 3)) + ", strftime('%Y-%m-%d %H:%M:%f','now')"
+    try:
+        conn.execute(
+            f"INSERT INTO asuv_drafts({cols}) VALUES ({placeholders})",
+            (lid, user_id, *values, json.dumps(body.checks or {})),
+        )
+    except sqlite3.IntegrityError:
+        raise HTTPException(
+            status_code=409,
+            detail="Für diese Stunde existiert bereits ein ASUV-Entwurf — bitte neu laden.",
+        )
+    return _get_asuv(conn, user_id, lid)
+
+
+def _apply_update_asuv(conn, user_id, entity_id, payload: dict) -> AsuvOut:
+    row_or_404(
+        conn.execute("SELECT 1 FROM asuv_drafts WHERE lesson_id = ? AND user_id = ?",
+                     (entity_id, user_id)).fetchone(),
+        "ASUV-Entwurf",
     )
-    conn.commit()
-    return get_asuv(lid, conn, user_id)
+    return _apply_upsert_asuv(conn, user_id, entity_id, AsuvSyncUpdate(**payload))
+
+
+def _sync_reject_delete_asuv(conn, user_id, entity_id):
+    raise HTTPException(status_code=400, detail="ASUV-Entwürfe können nicht gelöscht werden.")
+
+
+SYNC_HANDLER = {
+    "fetch": _sync_fetch_asuv,
+    "create": _apply_create_asuv,
+    "update": _apply_update_asuv,
+    "delete": _sync_reject_delete_asuv,
+}
 
 
 @router.get("/lessons/{lid}/asuv/export")

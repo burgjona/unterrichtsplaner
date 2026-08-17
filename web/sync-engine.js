@@ -32,6 +32,7 @@ const SyncEngine = (() => {
     timetable_overrides: { apiPath: "/stundenplan/overrides" },
     calendar_entries: { apiPath: "/calendar" },
     reflections: { apiPath: "/reflections" },
+    asuv_drafts: { apiPath: "/lessons" },
   };
 
   const listeners = new Set();

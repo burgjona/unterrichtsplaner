@@ -452,9 +452,19 @@ class AsuvDraft(Base):
 
 
 class AsuvOut(AsuvDraft):
+    id: int          # = lesson_id (lesson_id ist Primärschlüssel von asuv_drafts, kein eigenes id)
     lesson_id: int
     saved: bool
     bibox_empty: bool
+    updated_at: Optional[str] = None   # None solange saved=False (noch keine Zeile gespeichert)
+
+
+class AsuvSyncCreate(AsuvDraft):
+    lesson_id: int
+
+
+class AsuvSyncUpdate(AsuvDraft):
+    pass
 
 
 # U29: Übersicht aller gespeicherten ASUV-Entwürfe (für die Materialbibliothek).

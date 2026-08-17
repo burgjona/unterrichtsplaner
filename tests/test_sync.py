@@ -1212,3 +1212,57 @@ def test_lessons_push_update_reflection_skipped(client, auth):
     }]})
     assert r.json()["results"][0]["status"] == "applied"
     assert lesson["id"] not in [o["lessonId"] for o in client.get("/api/reflections/open").json()]
+
+
+# ---------- Rollout Tranche 4: asuv_drafts (natürlicher Schlüssel = lesson_id, kein Delete) ----------
+
+def test_sync_log_asuv_drafts_triggers_exist(tmp_path):
+    conn = init_db(str(tmp_path / "schema.db"))
+    triggers = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
+    assert {"trg_synclog_asuv_drafts_ai", "trg_synclog_asuv_drafts_au"} <= triggers
+    conn.close()
+
+
+def test_asuv_drafts_push_create_update_lifecycle(client, auth):
+    lesson = client.post("/api/lessons", json={"title": "x", "subject": "Deutsch"}).json()
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "asuv_drafts", "op": "create",
+        "payload": {"lessonId": lesson["id"], "ziele": "Erstfassung"},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "applied"
+    assert result["entityId"] == lesson["id"]
+    assert result["entity"]["ziele"] == "Erstfassung"
+    base_updated = result["entity"]["updatedAt"]
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_2", "entityType": "asuv_drafts", "op": "update", "entityId": lesson["id"],
+        "baseUpdatedAt": base_updated, "payload": {"ziele": "Überarbeitet"},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "applied"
+    assert result["entity"]["ziele"] == "Überarbeitet"
+
+
+def test_asuv_drafts_push_create_twice_conflicts(client, auth):
+    lesson = client.post("/api/lessons", json={"title": "y", "subject": "Deutsch"}).json()
+    client.put(f"/api/lessons/{lesson['id']}/asuv", json={"ziele": "vorhanden"})
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "asuv_drafts", "op": "create",
+        "payload": {"lessonId": lesson["id"], "ziele": "zweiter Versuch"},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "error"
+    assert "existiert bereits" in result["detail"]
+
+
+def test_asuv_drafts_push_delete_is_rejected(client, auth):
+    lesson = client.post("/api/lessons", json={"title": "z", "subject": "Deutsch"}).json()
+    created = client.put(f"/api/lessons/{lesson['id']}/asuv", json={"ziele": "x"}).json()
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "asuv_drafts", "op": "delete",
+        "entityId": lesson["id"], "baseUpdatedAt": created["updatedAt"],
+    }]})
+    assert r.json()["results"][0]["status"] == "error"
