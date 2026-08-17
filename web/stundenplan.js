@@ -42,6 +42,22 @@ SyncEngine.onChange(async (entityType) => {
   ttRenderView();
   if (ttState.editorsOpen) ttRenderEditors();
 });
+SyncEngine.onChange(async (entityType) => {
+  if (entityType !== "timetable_plans" || !ttState.loaded) return;
+  ttState.plans = await ttMaterializePlans();
+  // Offline-Sync (Rollout): war der aktive Plan gerade erst offline/optimistisch angelegt
+  // (planId = "loc_..."), bekommt er hier nach erfolgreichem Push seine echte Server-id —
+  // timetable_entries ist noch nicht rollout-fähig (Tranche 3) und erwartet als REST-Query-
+  // Parameter zwingend eine Zahl, daher planId nachziehen und Einträge neu laden.
+  if (String(ttState.planId).startsWith("loc_")) {
+    const synced = ttState.plans.find((p) => p.localId === ttState.planId);
+    if (synced && synced.id !== ttState.planId) {
+      ttState.planId = synced.id;
+      await ttReloadEntries();
+    }
+  }
+  ttRenderView();
+});
 
 /* ---------- kleine Helfer ---------- */
 function ttTodayIso() {
@@ -105,7 +121,7 @@ async function ttLoad() {
     const [kinds, slots, plans] = await Promise.all([
       ttMaterializeKinds(),
       ttMaterializeSlots(),
-      API.get("/stundenplan/plans"),
+      ttMaterializePlans(),
     ]);
     ttState.kinds = kinds;
     ttState.slots = slots;
@@ -118,7 +134,11 @@ async function ttLoad() {
   }
 }
 async function ttReloadEntries() {
-  ttState.entries = ttState.planId
+  // timetable_entries ist noch nicht rollout-fähig (Tranche 3) — läuft weiter über REST, das
+  // eine Zahl erwartet. Ein gerade erst offline/optimistisch angelegter Plan hat bis zum
+  // erfolgreichen Push nur eine lokale id ("loc_..."); bis dahin bleiben Einträge leer statt
+  // eines 422 (siehe timetable_plans-onChange oben, das nach dem Push hier neu lädt).
+  ttState.entries = (ttState.planId && !String(ttState.planId).startsWith("loc_"))
     ? await API.get("/stundenplan/entries?planId=" + ttState.planId)
     : [];
 }
@@ -137,6 +157,11 @@ async function ttMaterializeKinds() {
   return all.slice().sort((a, b) => (a.sortOrder - b.sortOrder) || String(a.id).localeCompare(String(b.id)));
 }
 async function ttReloadKinds() { ttState.kinds = await ttMaterializeKinds(); }
+// Offline-Sync (Rollout): Reihenfolge wie der bisherige Backend-Endpunkt (ORDER BY valid_from, id).
+async function ttMaterializePlans() {
+  const all = await SyncEngine.materialize("timetable_plans");
+  return all.slice().sort((a, b) => String(a.validFrom).localeCompare(String(b.validFrom)) || String(a.id).localeCompare(String(b.id)));
+}
 
 /* ---------- Ein-/Anzeigen ---------- */
 async function ttShow() {
@@ -178,7 +203,7 @@ function ttRenderView() {
 function ttRenderToolbar() {
   const s = ttState.settings;
   const planOpts = ttState.plans.map((p) =>
-    `<option value="${p.id}"${p.id === ttState.planId ? " selected" : ""}>` +
+    `<option value="${p.id}"${String(p.id) === String(ttState.planId) ? " selected" : ""}>` +
     `${esc(p.name || "Plan")} · ab ${esc(p.validFrom)}</option>`).join("");
   $("ttToolbar").innerHTML =
     `<div class="tt-toolbar-row">
@@ -312,7 +337,7 @@ function ttRenderLegend() {
 
 /* ---------- Plan-Wechsel ---------- */
 async function ttOnPlanChange() {
-  ttState.planId = Number($("ttPlanSelect").value);
+  ttState.planId = $("ttPlanSelect").value;   // opaque id — nicht per Number() erzwingen (siehe Kinds-/Slots-Editor)
   try { await ttReloadEntries(); }
   catch (e) { toast(e.message, false); ttState.entries = []; }
   ttRenderView();
@@ -466,15 +491,21 @@ function ttOpenPlanModal() {
 async function ttSavePlan() {
   const validFrom = $("ttpFrom").value;
   if (!validFrom) { toast("Bitte ein Datum angeben, ab dem der Plan gilt.", false); return; }
-  const body = {
-    name: $("ttpName").value.trim(),
-    validFrom,
-    copyFromPlanId: $("ttpCopy").checked ? ttState.planId : null,
-  };
+  // Offline-Sync (Rollout): copyFromPlanId ist eine Cross-Entity-Referenz auf denselben
+  // Entitätstyp (timetable_plans) — falls der Quellplan selbst noch nicht synchronisiert ist
+  // (localId statt Zahl), muss der generische $localId-Platzhalter genutzt werden (siehe
+  // resolvePlaceholders in sync-engine.js), sonst würde eine "loc_..."-Zeichenkette als
+  // copyFromPlanId gesendet, wo das Backend eine Zahl erwartet.
+  let copyFromPlanId = null;
+  if ($("ttpCopy").checked && ttState.planId != null) {
+    copyFromPlanId = String(ttState.planId).startsWith("loc_")
+      ? { $localId: ttState.planId } : ttState.planId;
+  }
+  const body = { name: $("ttpName").value.trim(), validFrom, copyFromPlanId };
   try {
-    const plan = await API.post("/stundenplan/plans", body);
+    const plan = await SyncEngine.create("timetable_plans", body);
     ttCloseModal();
-    ttState.plans = await API.get("/stundenplan/plans");
+    ttState.plans = await ttMaterializePlans();
     ttState.planId = plan.id;
     await ttReloadEntries();
     ttRenderView();

@@ -144,7 +144,8 @@ def _seed_defaults(conn, user_id: int) -> None:
              for pos, stype, label, start, end in DEFAULT_SLOTS],
         )
         conn.execute(
-            "INSERT INTO timetable_plans(user_id, name, valid_from) VALUES (?,?,?)",
+            "INSERT INTO timetable_plans(user_id, name, valid_from, updated_at) "
+            "VALUES (?,?,?, strftime('%Y-%m-%d %H:%M:%f','now'))",
             (user_id, "Stundenplan", _monday_of(date.today()).isoformat()),
         )
         conn.execute(
@@ -426,13 +427,13 @@ def list_plans(conn=Depends(get_db), user_id: int = Depends(get_user_id)):
     return [TimetablePlanOut(**dict(r)) for r in rows]
 
 
-@router.post("/plans", response_model=TimetablePlanOut, status_code=201)
-def create_plan(body: TimetablePlanCreate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+def _apply_create_plan(conn, user_id, body: TimetablePlanCreate) -> TimetablePlanOut:
     if body.copy_from_plan_id is not None:           # Quellplan muss dem Nutzer gehören
         _require_owned(conn, "timetable_plans", body.copy_from_plan_id, user_id, "Quellplan")
     try:
         cur = conn.execute(
-            "INSERT INTO timetable_plans(user_id, name, valid_from) VALUES (?,?,?)",
+            "INSERT INTO timetable_plans(user_id, name, valid_from, updated_at) "
+            "VALUES (?,?,?, strftime('%Y-%m-%d %H:%M:%f','now'))",
             (user_id, body.name, body.valid_from),
         )
     except sqlite3.IntegrityError:
@@ -446,27 +447,23 @@ def create_plan(body: TimetablePlanCreate, conn=Depends(get_db), user_id: int = 
             "FROM timetable_entries WHERE plan_id = ? AND user_id = ?",
             (new_id, body.copy_from_plan_id, user_id),
         )
-    conn.commit()
     return _get_plan(conn, user_id, new_id)
 
 
-@router.put("/plans/{pid}", response_model=TimetablePlanOut)
-def update_plan(pid: int, body: TimetablePlanUpdate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+def _apply_update_plan(conn, user_id, pid: int, body: TimetablePlanUpdate) -> TimetablePlanOut:
     row_or_404(_get_plan(conn, user_id, pid), "Plan")
     fields = body.model_dump(exclude_unset=True)
     if fields:
-        cols = ", ".join(f"{k} = :{k}" for k in fields)
+        cols = ", ".join(f"{k} = :{k}" for k in fields) + ", updated_at = strftime('%Y-%m-%d %H:%M:%f','now')"
         fields.update(id=pid, uid=user_id)
         try:
             conn.execute(f"UPDATE timetable_plans SET {cols} WHERE id = :id AND user_id = :uid", fields)
-            conn.commit()
         except sqlite3.IntegrityError:
             raise HTTPException(status_code=400, detail="Für dieses Datum existiert bereits ein Plan.")
     return _get_plan(conn, user_id, pid)
 
 
-@router.delete("/plans/{pid}", status_code=204)
-def delete_plan(pid: int, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+def _apply_delete_plan(conn, user_id, pid: int) -> None:
     row_or_404(_get_plan(conn, user_id, pid), "Plan")
     count = conn.execute(
         "SELECT COUNT(*) FROM timetable_plans WHERE user_id = ?", (user_id,)
@@ -474,7 +471,53 @@ def delete_plan(pid: int, conn=Depends(get_db), user_id: int = Depends(get_user_
     if count <= 1:
         raise HTTPException(status_code=400, detail="Der letzte Plan kann nicht gelöscht werden.")
     conn.execute("DELETE FROM timetable_plans WHERE id = ? AND user_id = ?", (pid, user_id))
-    conn.commit()                                    # Einträge des Plans per DB-CASCADE
+    # Einträge des Plans per DB-CASCADE
+
+
+@router.post("/plans", response_model=TimetablePlanOut, status_code=201)
+def create_plan(body: TimetablePlanCreate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+    result = _apply_create_plan(conn, user_id, body)
+    conn.commit()
+    return result
+
+
+@router.put("/plans/{pid}", response_model=TimetablePlanOut)
+def update_plan(pid: int, body: TimetablePlanUpdate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+    result = _apply_update_plan(conn, user_id, pid, body)
+    conn.commit()
+    return result
+
+
+@router.delete("/plans/{pid}", status_code=204)
+def delete_plan(pid: int, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+    _apply_delete_plan(conn, user_id, pid)
+    conn.commit()
+
+
+# ---------- Sync-Handler-Registry: timetable_plans (src/routers/sync.py) ----------
+
+def _sync_fetch_plan(conn, user_id, entity_id):
+    return _get_plan(conn, user_id, entity_id)
+
+
+def _sync_create_plan(conn, user_id, payload: dict) -> TimetablePlanOut:
+    return _apply_create_plan(conn, user_id, TimetablePlanCreate(**payload))
+
+
+def _sync_update_plan(conn, user_id, entity_id, payload: dict) -> TimetablePlanOut:
+    return _apply_update_plan(conn, user_id, entity_id, TimetablePlanUpdate(**payload))
+
+
+def _sync_delete_plan(conn, user_id, entity_id) -> None:
+    _apply_delete_plan(conn, user_id, entity_id)
+
+
+SYNC_HANDLER_TIMETABLE_PLANS = {
+    "fetch": _sync_fetch_plan,
+    "create": _sync_create_plan,
+    "update": _sync_update_plan,
+    "delete": _sync_delete_plan,
+}
 
 
 # ---------------------------------------------------------------- Einträge

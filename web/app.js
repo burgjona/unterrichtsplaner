@@ -5431,6 +5431,7 @@ const SYNC_ENTITY_RENDERERS = {
   tropenplan_slots: (s) => ({ title: s.label, preview: `${s.startTime}–${s.endTime}` }),
   classes: (c) => ({ title: c.name, preview: `${c.subject} · Klasse ${c.grade}` }),
   students: (s) => ({ title: s.name, preview: `Position ${s.sortOrder}` }),
+  timetable_plans: (p) => ({ title: p.name || "Plan", preview: `gültig ab ${p.validFrom}` }),
 };
 
 let _syncConflictsModulePromise = null;

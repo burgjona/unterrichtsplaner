@@ -756,3 +756,74 @@ def test_students_push_create_unknown_class_is_error(client, auth):
         "payload": {"classId": 999999, "name": "Phantom"},
     }]})
     assert r.json()["results"][0]["status"] == "error"
+
+
+# ---------- Rollout Tranche 2: timetable_plans ----------
+
+def test_sync_log_table_and_timetable_plans_triggers_exist(tmp_path):
+    conn = init_db(str(tmp_path / "schema.db"))
+    triggers = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
+    assert {
+        "trg_synclog_timetable_plans_ai",
+        "trg_synclog_timetable_plans_au",
+        "trg_synclog_timetable_plans_ad",
+    } <= triggers
+    conn.close()
+
+
+def test_timetable_plans_push_create_update_lifecycle(client, auth):
+    client.get("/api/stundenplan/plans")  # loest _seed_defaults aus (Default-Plan als 2. Plan)
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "timetable_plans", "op": "create",
+        "payload": {"name": "Halbjahr 2", "validFrom": "2027-02-01"},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "applied"
+    pid, base_updated = result["entityId"], result["entity"]["updatedAt"]
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_2", "entityType": "timetable_plans", "op": "update", "entityId": pid,
+        "baseUpdatedAt": base_updated, "payload": {"name": "Halbjahr 2 (neu)"},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "applied"
+    assert result["entity"]["name"] == "Halbjahr 2 (neu)"
+
+    # 'letzter Plan kann nicht geloescht werden' bleibt erhalten (Seed-Plan existiert noch).
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_3", "entityType": "timetable_plans", "op": "delete", "entityId": pid,
+        "baseUpdatedAt": result["entity"]["updatedAt"],
+    }]})
+    assert r.json()["results"][0]["status"] == "applied"
+    assert pid not in [p["id"] for p in client.get("/api/stundenplan/plans").json()]
+
+
+def test_timetable_plans_push_detects_conflict(client, auth):
+    created = client.post("/api/stundenplan/plans", json={
+        "name": "x", "validFrom": "2027-03-01",
+    }).json()
+    pid, base_updated = created["id"], created["updatedAt"]
+    assert client.put(f"/api/stundenplan/plans/{pid}", json={"name": "geaendert"}).status_code == 200
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "timetable_plans", "op": "update", "entityId": pid,
+        "baseUpdatedAt": base_updated, "payload": {"name": "zu spaet"},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "conflict"
+    assert result["serverEntity"]["name"] == "geaendert"
+
+
+def test_timetable_plans_last_plan_cannot_be_deleted_via_push(client, auth):
+    # Seeding ueber den bestehenden Endpunkt ausloesen, um den einzigen Plan zu bekommen.
+    plans = client.get("/api/stundenplan/plans").json()
+    assert len(plans) == 1
+    only = plans[0]
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "timetable_plans", "op": "delete",
+        "entityId": only["id"], "baseUpdatedAt": only["updatedAt"],
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "error"
+    assert "letzte" in result["detail"].lower()
