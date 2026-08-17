@@ -269,7 +269,7 @@ def sequenzplan(body: SequenzplanIn, conn: sqlite3.Connection = Depends(get_db),
         lines.append(f"Ideen/Hinweise der Lehrkraft:\n{body.ideas.strip()}")
     user_text = "\n\n".join(lines) + f"\n\n{_ctx_block(ctx)}"
 
-    data, cached = _run_json(conn, user_id, "sequenzplan", _SEQUENZ_SYSTEM, user_text, _SEQUENZ_SCHEMA, max_tokens=3000)
+    data, cached = _run_json(conn, user_id, "sequenzplan", _SEQUENZ_SYSTEM, user_text, _SEQUENZ_SCHEMA, max_tokens=30000)
     return {"suggestion": data, "cached": cached}
 
 
