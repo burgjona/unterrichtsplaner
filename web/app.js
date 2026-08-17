@@ -748,8 +748,8 @@ async function loadAll() {
   // bleiben offline angelegte/geänderte Notizen sichtbar. pull() ist offline ein No-Op,
   // materialize() liefert dann den zuletzt bekannten Stand + Warteschlange.
   await SyncEngine.pull();
-  const [classesAll, lessonsAll, reflections, open, materials, todosAll, notes, schoolYearsAll, calendarAll, calendarCategoriesAll, asuvDrafts] = await Promise.all([
-    SyncEngine.materialize("classes"), SyncEngine.materialize("lessons"), API.get("/reflections"),
+  const [classesAll, lessonsAll, reflectionsAll, open, materials, todosAll, notes, schoolYearsAll, calendarAll, calendarCategoriesAll, asuvDrafts] = await Promise.all([
+    SyncEngine.materialize("classes"), SyncEngine.materialize("lessons"), SyncEngine.materialize("reflections"),
     API.get("/reflections/open"), API.get("/materials"), SyncEngine.materialize("todos"),
     SyncEngine.materialize("notes"), SyncEngine.materialize("school_years"), SyncEngine.materialize("calendar_entries"),
     SyncEngine.materialize("calendar_categories"), API.get("/asuv"),
@@ -775,6 +775,9 @@ async function loadAll() {
   // der Archiv-Ansicht, renderArchivKlassen), Reihenfolge wie ORDER BY name.
   const classes = classesAll.filter((c) => c.archivedAt == null)
     .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  // materialize() sortiert nicht — Reihenfolge wie der bisherige Backend-Endpunkt (ORDER BY id DESC).
+  const reflections = reflectionsAll.slice()
+    .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")) || String(b.id).localeCompare(String(a.id)));
   let schoolDates = [];
   for (const sy of schoolYears) {
     try { schoolDates = schoolDates.concat(await API.get(`/school-years/${sy.id}/dates`)); }
@@ -1783,7 +1786,11 @@ function renderOpenReflections() {
   });
   wrap.querySelectorAll("[data-skip]").forEach((btn) => {
     btn.onclick = async () => {
-      try { await API.post("/reflections/skip", { lessonId: Number(btn.dataset.skip) }); await refresh(); toast("Übersprungen."); }
+      // reflection_skipped ist ein normales lessons-Feld (siehe Kommentar in
+      // _apply_update_lesson) — SyncEngine.update statt der dedizierten REST-Route, damit
+      // „Überspringen" grundsätzlich offline-fähig ist (o.lessonId stammt hier zwar aus dem
+      // weiterhin Online-REST-Endpunkt /reflections/open, ist also immer eine echte id).
+      try { await SyncEngine.update("lessons", btn.dataset.skip, { reflectionSkipped: true }); await refresh(); toast("Übersprungen."); }
       catch (e) { toast(e.message, false); }
     };
   });
@@ -3479,12 +3486,15 @@ async function deleteLesson() {
 }
 
 async function saveReflect() {
-  const lessonId = Number($("reflectLesson").value);
-  if (!lessonId) { toast("Bitte eine Stunde wählen.", false); return; }
+  const lessonIdRaw = $("reflectLesson").value;
+  if (!lessonIdRaw) { toast("Bitte eine Stunde wählen.", false); return; }
   const meyer = readMeyerGrid("meyerReflectGrid");
   try {
-    await API.post("/reflections", {
-      lessonId, meyerIst: meyer.some((v) => v) ? meyer : null, text: $("reflectText").value,
+    // ttFkValue (stundenplan.js, teilt sich den globalen Scope) wrappt eine noch nicht
+    // synchronisierte "loc_..."-Stunden-id als $localId-Platzhalter statt sie per Number()
+    // zu NaN zu machen — siehe dortiger Kommentar.
+    await SyncEngine.create("reflections", {
+      lessonId: ttFkValue(lessonIdRaw), meyerIst: meyer.some((v) => v) ? meyer : null, text: $("reflectText").value,
     });
     $("reflectText").value = ""; resetMeyerGrid("meyerReflectGrid");
     await refresh(); toast("Reflexion gespeichert.");
@@ -5474,6 +5484,7 @@ const SYNC_ENTITY_RENDERERS = {
   timetable_entries: (e) => ({ title: e.label || "Stundenplan-Eintrag", preview: `${e.weekday != null ? ttWEEKDAYS[e.weekday] : ""} · ${e.weekType}` }),
   timetable_overrides: (o) => ({ title: o.label || "Vertretung", preview: o.date }),
   calendar_entries: (e) => ({ title: e.title, preview: e.entryDate }),
+  reflections: (r) => ({ title: r.lessonTitle || "Reflexion", preview: r.ampelSummary || "" }),
 };
 
 let _syncConflictsModulePromise = null;
@@ -5684,6 +5695,17 @@ SyncEngine.onChange(async (entityType) => {
   await renderTodayList();
   await renderWeekOverview();
   renderCalendar();
+});
+
+// Rollout (Tranche 4): reflections — reines Journal (kein Update/Delete). /reflections/open
+// bleibt Online-REST (serverseitig berechnete Sicht), daher hier nur das Journal selbst
+// (state.reflections) nachziehen.
+SyncEngine.onChange(async (entityType) => {
+  if (entityType !== "reflections") return;
+  const all = await SyncEngine.materialize("reflections");
+  state.reflections = all.slice()
+    .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")) || String(b.id).localeCompare(String(a.id)));
+  renderReflectTable();
 });
 
 // Rollout (Tranche 3 — letzte Einheit): calendar_entries. Archivierte Einträge bleiben wie

@@ -1159,3 +1159,56 @@ def test_calendar_entries_auto_generated_from_lesson_bumps_updated_at(client, au
     client.put(f"/api/lessons/{lesson['id']}", json={"date": "2027-04-02"})
     auto2 = next(e for e in client.get("/api/calendar").json() if e["lessonId"] == lesson["id"])
     assert auto2["updatedAt"] != first_updated
+
+
+# ---------- Rollout Tranche 4: reflections (nur Create+Fetch, kein Update/Delete) ----------
+
+def test_sync_log_reflections_trigger_exists(tmp_path):
+    conn = init_db(str(tmp_path / "schema.db"))
+    triggers = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
+    assert "trg_synclog_reflections_ai" in triggers
+    conn.close()
+
+
+def test_reflections_push_create(client, auth):
+    lesson = client.post("/api/lessons", json={"title": "x", "subject": "Deutsch"}).json()
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "reflections", "op": "create",
+        "payload": {"lessonId": lesson["id"], "text": "Lief gut."},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "applied"
+    assert result["entity"]["text"] == "Lief gut."
+    assert result["entity"]["lessonTitle"] == "x"
+    assert result["entity"]["updatedAt"] is not None
+
+
+def test_reflections_push_update_and_delete_are_rejected(client, auth):
+    lesson = client.post("/api/lessons", json={"title": "y", "subject": "Deutsch"}).json()
+    created = client.post("/api/reflections", json={"lessonId": lesson["id"], "text": "x"}).json()
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "reflections", "op": "update",
+        "entityId": created["id"], "baseUpdatedAt": created["updatedAt"], "payload": {"text": "y"},
+    }]})
+    assert r.json()["results"][0]["status"] == "error"
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_2", "entityType": "reflections", "op": "delete",
+        "entityId": created["id"], "baseUpdatedAt": created["updatedAt"],
+    }]})
+    assert r.json()["results"][0]["status"] == "error"
+
+
+def test_lessons_push_update_reflection_skipped(client, auth):
+    # reflection_skipped ist jetzt ein normales lessons-Sync-Feld (siehe lessons.py-Kommentar) —
+    # "Reflexion überspringen" läuft dadurch über denselben Weg wie jede andere Stunden-Änderung.
+    lesson = client.post("/api/lessons", json={"title": "z", "subject": "Deutsch"}).json()
+    assert lesson["id"] in [o["lessonId"] for o in client.get("/api/reflections/open").json()]
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "lessons", "op": "update", "entityId": lesson["id"],
+        "baseUpdatedAt": lesson["updatedAt"], "payload": {"reflectionSkipped": True},
+    }]})
+    assert r.json()["results"][0]["status"] == "applied"
+    assert lesson["id"] not in [o["lessonId"] for o in client.get("/api/reflections/open").json()]

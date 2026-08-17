@@ -233,6 +233,8 @@ def _apply_update_lesson(conn, user_id: int, lid: int, body: LessonUpdate) -> Le
         sets.update(bibox_werk=b.werk, bibox_seite=b.seite, bibox_notiz=b.notiz)
     if "meyer_plan" in data:
         sets["meyer_plan_json"] = json.dumps(body.meyer_plan) if body.meyer_plan is not None else None
+    if "reflection_skipped" in data and body.reflection_skipped is not None:
+        sets["reflection_skipped"] = int(body.reflection_skipped)
     # phases/lernziele werden eingebettet im lessons-Sync-Payload transportiert (kein eigener
     # entity_type) — ändern sie sich ohne sonstige Spaltenänderung, muss updated_at trotzdem
     # bumpen, sonst bleibt sync_log stumm und andere Geräte sehen die neuen Phasen nie.

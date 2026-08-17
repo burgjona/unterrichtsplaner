@@ -237,6 +237,7 @@ class LessonUpdate(Base):
     bibox: Optional[Bibox] = None
     phases: Optional[List[PhaseIn]] = None
     lernziele: Optional[List["LernzielIn"]] = None
+    reflection_skipped: Optional[bool] = None
 
     @field_validator("duration_minutes")
     @classmethod
@@ -502,6 +503,7 @@ class ReflectionOut(Base):
     ampel_summary: Optional[str] = None
     text: Optional[str] = None
     created_at: str
+    updated_at: str
 
 
 class OpenReflectionOut(Base):
