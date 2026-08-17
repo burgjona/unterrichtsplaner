@@ -562,3 +562,63 @@ def test_timetable_slots_push_detects_conflict(client, auth):
     result = r.json()["results"][0]
     assert result["status"] == "conflict"
     assert result["serverEntity"]["label"] == "geaendert"
+
+
+# ---------- Rollout Tranche 1: tropenplan_slots (letzte Einheit) ----------
+# tropentage (Kompensationstage-Toggle) bleibt bewusst online-only (reiner Existenz-Toggle
+# ohne Inhalt, siehe Rückfrage an den Nutzer) — kein Test dafür hier nötig.
+
+def test_sync_log_table_and_tropenplan_slots_triggers_exist(tmp_path):
+    conn = init_db(str(tmp_path / "schema.db"))
+    triggers = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
+    assert {
+        "trg_synclog_tropenplan_slots_ai",
+        "trg_synclog_tropenplan_slots_au",
+        "trg_synclog_tropenplan_slots_ad",
+    } <= triggers
+    conn.close()
+
+
+def test_tropenplan_slots_push_create_update_delete_lifecycle(client, auth):
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "tropenplan_slots", "op": "create",
+        "payload": {
+            "position": 20, "slotType": "lesson", "label": "T9",
+            "startTime": "13:00", "endTime": "13:35", "covers": 1,
+        },
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "applied"
+    sid, base_updated = result["entityId"], result["entity"]["updatedAt"]
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_2", "entityType": "tropenplan_slots", "op": "update", "entityId": sid,
+        "baseUpdatedAt": base_updated, "payload": {"covers": 2},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "applied"
+    assert result["entity"]["covers"] == 2
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_3", "entityType": "tropenplan_slots", "op": "delete", "entityId": sid,
+        "baseUpdatedAt": result["entity"]["updatedAt"],
+    }]})
+    assert r.json()["results"][0]["status"] == "applied"
+    assert sid not in [s["id"] for s in client.get("/api/stundenplan/tropenslots").json()]
+
+
+def test_tropenplan_slots_push_detects_conflict(client, auth):
+    created = client.post("/api/stundenplan/tropenslots", json={
+        "position": 21, "slotType": "lesson", "label": "x",
+        "startTime": "14:00", "endTime": "14:35", "covers": 1,
+    }).json()
+    sid, base_updated = created["id"], created["updatedAt"]
+    assert client.put(f"/api/stundenplan/tropenslots/{sid}", json={"label": "geaendert"}).status_code == 200
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "tropenplan_slots", "op": "update", "entityId": sid,
+        "baseUpdatedAt": base_updated, "payload": {"label": "zu spaet"},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "conflict"
+    assert result["serverEntity"]["label"] == "geaendert"

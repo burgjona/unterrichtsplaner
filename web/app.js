@@ -5412,6 +5412,7 @@ const SYNC_ENTITY_RENDERERS = {
   plan_notes: (n) => ({ title: "Jahresplan-Ideen", preview: n.text }),
   timetable_kinds: (k) => ({ title: k.name, preview: k.color }),
   timetable_slots: (s) => ({ title: s.label, preview: `${s.startTime}–${s.endTime}` }),
+  tropenplan_slots: (s) => ({ title: s.label, preview: `${s.startTime}–${s.endTime}` }),
 };
 
 let _syncConflictsModulePromise = null;

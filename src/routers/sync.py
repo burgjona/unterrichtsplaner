@@ -35,6 +35,7 @@ ENTITY_REGISTRY = {
     "plan_notes": planning_router.SYNC_HANDLER,
     "timetable_kinds": stundenplan_router.SYNC_HANDLER_TIMETABLE_KINDS,
     "timetable_slots": stundenplan_router.SYNC_HANDLER_TIMETABLE_SLOTS,
+    "tropenplan_slots": stundenplan_router.SYNC_HANDLER_TROPENPLAN_SLOTS,
 }
 
 PAGE_SIZE = 500

@@ -22,6 +22,7 @@ const SyncEngine = (() => {
     plan_notes: { apiPath: "/planning/notes" },
     timetable_kinds: { apiPath: "/stundenplan/kinds" },
     timetable_slots: { apiPath: "/stundenplan/slots" },
+    tropenplan_slots: { apiPath: "/stundenplan/tropenslots" },
   };
 
   const listeners = new Set();

@@ -1153,6 +1153,7 @@ class TropenSlotOut(Base):
     end_time: str
     covers: int
     created_at: str
+    updated_at: str
 
 
 class TropentagUpdate(Base):

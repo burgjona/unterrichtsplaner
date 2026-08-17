@@ -172,8 +172,8 @@ def _seed_tropen_defaults(conn, user_id: int) -> None:
             return
         conn.executemany(
             "INSERT INTO tropenplan_slots"
-            "(user_id, position, slot_type, label, start_time, end_time, covers) "
-            "VALUES (?,?,?,?,?,?,?)",
+            "(user_id, position, slot_type, label, start_time, end_time, covers, updated_at) "
+            "VALUES (?,?,?,?,?,?,?, strftime('%Y-%m-%d %H:%M:%f','now'))",
             [(user_id, pos, stype, label, start, end, covers)
              for pos, stype, label, start, end, covers in DEFAULT_TROPEN_SLOTS],
         )
@@ -638,35 +638,77 @@ def list_tropen_slots(conn=Depends(get_db), user_id: int = Depends(get_user_id))
     return [TropenSlotOut(**dict(r)) for r in rows]
 
 
-@router.post("/tropenslots", response_model=TropenSlotOut, status_code=201)
-def create_tropen_slot(body: TropenSlotCreate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+def _apply_create_tropen_slot(conn, user_id, body: TropenSlotCreate) -> TropenSlotOut:
     cur = conn.execute(
-        "INSERT INTO tropenplan_slots(user_id, position, slot_type, label, start_time, end_time, covers) "
-        "VALUES (?,?,?,?,?,?,?)",
+        "INSERT INTO tropenplan_slots(user_id, position, slot_type, label, start_time, end_time, covers, updated_at) "
+        "VALUES (?,?,?,?,?,?,?, strftime('%Y-%m-%d %H:%M:%f','now'))",
         (user_id, body.position, body.slot_type, body.label, body.start_time, body.end_time, body.covers),
     )
-    conn.commit()
     return _get_tropen_slot(conn, user_id, cur.lastrowid)
+
+
+def _apply_update_tropen_slot(conn, user_id, sid: int, body: TropenSlotUpdate) -> TropenSlotOut:
+    row_or_404(_get_tropen_slot(conn, user_id, sid), "Tropenplan-Slot")
+    fields = body.model_dump(exclude_unset=True)
+    if fields:
+        cols = ", ".join(f"{k} = :{k}" for k in fields) + ", updated_at = strftime('%Y-%m-%d %H:%M:%f','now')"
+        fields.update(id=sid, uid=user_id)
+        conn.execute(f"UPDATE tropenplan_slots SET {cols} WHERE id = :id AND user_id = :uid", fields)
+    return _get_tropen_slot(conn, user_id, sid)
+
+
+def _apply_delete_tropen_slot(conn, user_id, sid: int) -> None:
+    cur = conn.execute("DELETE FROM tropenplan_slots WHERE id = ? AND user_id = ?", (sid, user_id))
+    if cur.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Tropenplan-Slot nicht gefunden.")
+
+
+@router.post("/tropenslots", response_model=TropenSlotOut, status_code=201)
+def create_tropen_slot(body: TropenSlotCreate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+    result = _apply_create_tropen_slot(conn, user_id, body)
+    conn.commit()
+    return result
 
 
 @router.put("/tropenslots/{sid}", response_model=TropenSlotOut)
 def update_tropen_slot(sid: int, body: TropenSlotUpdate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
-    row_or_404(_get_tropen_slot(conn, user_id, sid), "Tropenplan-Slot")
-    fields = body.model_dump(exclude_unset=True)
-    if fields:
-        cols = ", ".join(f"{k} = :{k}" for k in fields)
-        fields.update(id=sid, uid=user_id)
-        conn.execute(f"UPDATE tropenplan_slots SET {cols} WHERE id = :id AND user_id = :uid", fields)
-        conn.commit()
-    return _get_tropen_slot(conn, user_id, sid)
+    result = _apply_update_tropen_slot(conn, user_id, sid, body)
+    conn.commit()
+    return result
 
 
 @router.delete("/tropenslots/{sid}", status_code=204)
 def delete_tropen_slot(sid: int, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
-    cur = conn.execute("DELETE FROM tropenplan_slots WHERE id = ? AND user_id = ?", (sid, user_id))
+    _apply_delete_tropen_slot(conn, user_id, sid)
     conn.commit()
-    if cur.rowcount == 0:
-        raise HTTPException(status_code=404, detail="Tropenplan-Slot nicht gefunden.")
+
+
+# ---------- Sync-Handler-Registry: tropenplan_slots (src/routers/sync.py) ----------
+# tropentage (Kompensationstage-Toggle) bleibt bewusst online-only — reiner Existenz-Toggle
+# ohne Inhalt, keine Konflikt-Gefahr, aber auch kein sinnvolles id-basiertes CRUD-Modell.
+
+def _sync_fetch_tropen_slot(conn, user_id, entity_id):
+    return _get_tropen_slot(conn, user_id, entity_id)
+
+
+def _sync_create_tropen_slot(conn, user_id, payload: dict) -> TropenSlotOut:
+    return _apply_create_tropen_slot(conn, user_id, TropenSlotCreate(**payload))
+
+
+def _sync_update_tropen_slot(conn, user_id, entity_id, payload: dict) -> TropenSlotOut:
+    return _apply_update_tropen_slot(conn, user_id, entity_id, TropenSlotUpdate(**payload))
+
+
+def _sync_delete_tropen_slot(conn, user_id, entity_id) -> None:
+    _apply_delete_tropen_slot(conn, user_id, entity_id)
+
+
+SYNC_HANDLER_TROPENPLAN_SLOTS = {
+    "fetch": _sync_fetch_tropen_slot,
+    "create": _sync_create_tropen_slot,
+    "update": _sync_update_tropen_slot,
+    "delete": _sync_delete_tropen_slot,
+}
 
 
 # ---------------------------------------------------------------- Tropentage
