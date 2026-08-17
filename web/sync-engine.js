@@ -34,6 +34,7 @@ const SyncEngine = (() => {
     reflections: { apiPath: "/reflections" },
     asuv_drafts: { apiPath: "/lessons" },
     sequenz_stunden: { apiPath: "/sequenz-stunden" },
+    seat_plans: { apiPath: "/seat-plans" },
   };
 
   const listeners = new Set();

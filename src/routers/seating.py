@@ -17,7 +17,8 @@ from ..deps import get_db, get_user_id, row_or_404
 from ..lib import ai
 from ..lib.seating_pdf import build_pdf
 from ..schemas import (
-    SeatPlanAiArrange, SeatPlanCreate, SeatPlanLayout, SeatPlanOut, SeatPlanUpdate)
+    SeatPlanAiArrange, SeatPlanCreate, SeatPlanLayout, SeatPlanOut, SeatPlanSyncCreate,
+    SeatPlanUpdate)
 
 router = APIRouter(tags=["seating"])
 
@@ -61,15 +62,21 @@ def list_(cid: int, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
     return [_to_out(r) for r in rows]
 
 
-@router.post("/classes/{cid}/seat-plans", response_model=SeatPlanOut, status_code=201)
-def create(cid: int, body: SeatPlanCreate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+def _apply_create_seatplan(conn, user_id: int, cid: int, body: SeatPlanCreate) -> SeatPlanOut:
     _class_or_404(conn, user_id, cid)
     cur = conn.execute(
-        "INSERT INTO seat_plans(user_id, class_id, name, rows, cols, layout_json) VALUES (?,?,?,?,?,?)",
+        "INSERT INTO seat_plans(user_id, class_id, name, rows, cols, layout_json, updated_at) "
+        "VALUES (?,?,?,?,?,?, strftime('%Y-%m-%d %H:%M:%f','now'))",
         (user_id, cid, body.name, body.rows, body.cols, _layout_str(body.layout_json)),
     )
-    conn.commit()
     return _get(conn, user_id, cur.lastrowid)
+
+
+@router.post("/classes/{cid}/seat-plans", response_model=SeatPlanOut, status_code=201)
+def create(cid: int, body: SeatPlanCreate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+    result = _apply_create_seatplan(conn, user_id, cid, body)
+    conn.commit()
+    return result
 
 
 @router.get("/seat-plans/{pid}", response_model=SeatPlanOut)
@@ -77,8 +84,7 @@ def get_(pid: int, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
     return row_or_404(_get(conn, user_id, pid), "Sitzplan")
 
 
-@router.put("/seat-plans/{pid}", response_model=SeatPlanOut)
-def update(pid: int, body: SeatPlanUpdate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+def _apply_update_seatplan(conn, user_id: int, pid: int, body: SeatPlanUpdate) -> SeatPlanOut:
     row_or_404(_get(conn, user_id, pid), "Sitzplan")
     fields = body.model_dump(exclude_unset=True)
     if "layout_json" in fields and body.layout_json is not None:
@@ -87,18 +93,56 @@ def update(pid: int, body: SeatPlanUpdate, conn=Depends(get_db), user_id: int = 
         cols = ", ".join(f"{k} = :{k}" for k in fields)
         params = dict(fields, id=pid, uid=user_id)
         conn.execute(
-            f"UPDATE seat_plans SET {cols}, updated_at = datetime('now') WHERE id = :id AND user_id = :uid",
+            f"UPDATE seat_plans SET {cols}, updated_at = strftime('%Y-%m-%d %H:%M:%f','now') "
+            "WHERE id = :id AND user_id = :uid",
             params,
         )
-        conn.commit()
     return _get(conn, user_id, pid)
+
+
+@router.put("/seat-plans/{pid}", response_model=SeatPlanOut)
+def update(pid: int, body: SeatPlanUpdate, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+    result = _apply_update_seatplan(conn, user_id, pid, body)
+    conn.commit()
+    return result
+
+
+def _apply_delete_seatplan(conn, user_id: int, pid: int) -> None:
+    row_or_404(_get(conn, user_id, pid), "Sitzplan")
+    conn.execute("DELETE FROM seat_plans WHERE id = ? AND user_id = ?", (pid, user_id))
 
 
 @router.delete("/seat-plans/{pid}", status_code=204)
 def delete(pid: int, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
-    row_or_404(_get(conn, user_id, pid), "Sitzplan")
-    conn.execute("DELETE FROM seat_plans WHERE id = ? AND user_id = ?", (pid, user_id))
+    _apply_delete_seatplan(conn, user_id, pid)
     conn.commit()
+
+
+# ---------- Sync-Handler-Registry: seat_plans (src/routers/sync.py) ----------
+
+def _sync_fetch_seatplan(conn, user_id, entity_id):
+    return _get(conn, user_id, entity_id)
+
+
+def _sync_create_seatplan(conn, user_id, payload: dict) -> SeatPlanOut:
+    body = SeatPlanSyncCreate(**payload)
+    return _apply_create_seatplan(conn, user_id, body.class_id, body)
+
+
+def _sync_update_seatplan(conn, user_id, entity_id, payload: dict) -> SeatPlanOut:
+    return _apply_update_seatplan(conn, user_id, entity_id, SeatPlanUpdate(**payload))
+
+
+def _sync_delete_seatplan(conn, user_id, entity_id) -> None:
+    _apply_delete_seatplan(conn, user_id, entity_id)
+
+
+SYNC_HANDLER = {
+    "fetch": _sync_fetch_seatplan,
+    "create": _sync_create_seatplan,
+    "update": _sync_update_seatplan,
+    "delete": _sync_delete_seatplan,
+}
 
 
 @router.get("/seat-plans/{pid}/export")

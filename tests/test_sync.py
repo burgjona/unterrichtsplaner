@@ -1328,3 +1328,61 @@ def test_sequenz_stunden_push_detects_conflict(client, auth):
     result = r.json()["results"][0]
     assert result["status"] == "conflict"
     assert result["serverEntity"]["title"] == "geaendert"
+
+
+# ---------- Rollout Tranche 4 (letzte Einheit): seat_plans ----------
+
+def test_sync_log_seat_plans_triggers_exist(tmp_path):
+    conn = init_db(str(tmp_path / "schema.db"))
+    triggers = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
+    assert {
+        "trg_synclog_seat_plans_ai", "trg_synclog_seat_plans_au", "trg_synclog_seat_plans_ad",
+    } <= triggers
+    conn.close()
+
+
+def test_seat_plans_push_create_update_delete_lifecycle(client, auth):
+    cls_id, _ = _make_class_and_year(client)
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "seat_plans", "op": "create",
+        "payload": {
+            "classId": cls_id, "name": "Standard", "rows": 4, "cols": 5,
+            "layoutJson": {"seats": [{"row": 0, "col": 0, "studentId": None, "name": "Max"}]},
+        },
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "applied"
+    assert len(result["entity"]["layoutJson"]["seats"]) == 1
+    pid, base_updated = result["entityId"], result["entity"]["updatedAt"]
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_2", "entityType": "seat_plans", "op": "update", "entityId": pid,
+        "baseUpdatedAt": base_updated, "payload": {"name": "Standard (geändert)"},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "applied"
+    assert result["entity"]["name"] == "Standard (geändert)"
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_3", "entityType": "seat_plans", "op": "delete", "entityId": pid,
+        "baseUpdatedAt": result["entity"]["updatedAt"],
+    }]})
+    assert r.json()["results"][0]["status"] == "applied"
+    assert pid not in [p["id"] for p in client.get(f"/api/classes/{cls_id}/seat-plans").json()]
+
+
+def test_seat_plans_push_detects_conflict(client, auth):
+    cls_id, _ = _make_class_and_year(client)
+    created = client.post(f"/api/classes/{cls_id}/seat-plans", json={
+        "name": "x", "layoutJson": {"seats": []},
+    }).json()
+    pid, base_updated = created["id"], created["updatedAt"]
+    assert client.put(f"/api/seat-plans/{pid}", json={"name": "geaendert"}).status_code == 200
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "seat_plans", "op": "update", "entityId": pid,
+        "baseUpdatedAt": base_updated, "payload": {"name": "zu spaet"},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "conflict"
+    assert result["serverEntity"]["name"] == "geaendert"

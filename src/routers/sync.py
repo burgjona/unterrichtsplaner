@@ -27,6 +27,7 @@ from . import notes as notes_router
 from . import planning as planning_router
 from . import reflections as reflections_router
 from . import school_years as school_years_router
+from . import seating as seating_router
 from . import sequenzplan as sequenzplan_router
 from . import stoffplan as stoffplan_router
 from . import students as students_router
@@ -54,6 +55,7 @@ ENTITY_REGISTRY = {
     "reflections": reflections_router.SYNC_HANDLER,
     "asuv_drafts": asuv_router.SYNC_HANDLER,
     "sequenz_stunden": sequenzplan_router.SYNC_HANDLER,
+    "seat_plans": seating_router.SYNC_HANDLER,
     "tropenplan_slots": stundenplan_router.SYNC_HANDLER_TROPENPLAN_SLOTS,
 }
 

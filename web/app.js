@@ -1438,7 +1438,7 @@ function getSeatPlanModule() {
   if (!_seatPlanModulePromise) {
     _seatPlanModulePromise = import("./sitzplan.js").then((mod) => {
       _seatPlanModuleInstance = mod.createSeatPlanModule({
-        $, esc, API, toast,
+        $, esc, API, toast, SyncEngine,
         getDetailClassId: () => detailClassId,
         getDetailStudents: () => detailStudents,
       });
@@ -5513,6 +5513,7 @@ const SYNC_ENTITY_RENDERERS = {
   reflections: (r) => ({ title: r.lessonTitle || "Reflexion", preview: r.ampelSummary || "" }),
   asuv_drafts: (a) => ({ title: "ASUV-Entwurf", preview: a.ziele ? a.ziele.slice(0, 60) : "" }),
   sequenz_stunden: (s) => ({ title: s.title, preview: s.date || "kein Datum" }),
+  seat_plans: (p) => ({ title: p.name, preview: `${p.rows || "?"}×${p.cols || "?"}` }),
 };
 
 let _syncConflictsModulePromise = null;
@@ -5734,6 +5735,13 @@ SyncEngine.onChange(async (entityType) => {
   state.reflections = all.slice()
     .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")) || String(b.id).localeCompare(String(a.id)));
   renderReflectTable();
+});
+
+// Rollout (Tranche 4 — letzte Einheit): seat_plans — Liste in der Klassen-Detailseite nur
+// nachziehen, falls das Sitzplan-Modul schon geladen wurde (lazy import, siehe sitzplan.js).
+SyncEngine.onChange(async (entityType) => {
+  if (entityType !== "seat_plans" || !_seatPlanModuleInstance) return;
+  await _seatPlanModuleInstance.renderSeatPlanList();
 });
 
 // Rollout (Tranche 4): asuv_drafts — bewusst KEINE onChange-Subscription. Anders als

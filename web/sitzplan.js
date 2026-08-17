@@ -8,10 +8,11 @@
    Stattdessen bekommt createSeatPlanModule() alles explizit übergeben (ctx). */
 
 export function createSeatPlanModule(ctx) {
-  const { $, esc, API, toast, getDetailClassId, getDetailStudents } = ctx;
+  const { $, esc, API, toast, SyncEngine, getDetailClassId, getDetailStudents } = ctx;
 
   // state: aktuell im Editor bearbeiteter Sitzplan (grid = Matrix[row][col] -> {studentId,name}|null)
   const seatPlan = { editId: null, rows: 4, cols: 5, grid: [] };
+  let seatPlansCache = [];   // zuletzt materialisierte Liste der aktuellen Klasse (für Laden/Löschen ohne erneuten Fetch)
 
   function spEmptyGrid(rows, cols) {
     return Array.from({ length: rows }, () => Array.from({ length: cols }, () => null));
@@ -116,9 +117,14 @@ export function createSeatPlanModule(ctx) {
   async function renderSeatPlanList() {
     const wrap = $("spList");
     if (!wrap) return;
+    const cid = getDetailClassId();
     let plans = [];
-    try { plans = await API.get(`/classes/${getDetailClassId()}/seat-plans`); }
-    catch (e) { toast(e.message, false); return; }
+    try {
+      const all = await SyncEngine.materialize("seat_plans");
+      plans = all.filter((p) => String(p.classId) === String(cid))
+        .sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")) || String(b.id).localeCompare(String(a.id)));
+    } catch (e) { toast(e.message, false); return; }
+    seatPlansCache = plans;
     if (!plans.length) { wrap.innerHTML = '<p class="muted small">Noch keine Sitzpläne gespeichert.</p>'; return; }
     wrap.innerHTML = "";
     plans.forEach((p) => {
@@ -133,14 +139,16 @@ export function createSeatPlanModule(ctx) {
         `<button class="btn small danger" data-sp-del="${p.id}">✕</button></span>`;
       wrap.appendChild(row);
     });
-    wrap.querySelectorAll("[data-sp-load]").forEach((b) => (b.onclick = () => loadSeatPlan(Number(b.dataset.spLoad))));
-    wrap.querySelectorAll("[data-sp-pdf]").forEach((b) => (b.onclick = () => exportSeatPlan(Number(b.dataset.spPdf))));
-    wrap.querySelectorAll("[data-sp-del]").forEach((b) => (b.onclick = () => deleteSeatPlan(Number(b.dataset.spDel))));
+    // Nicht Number()-erzwingen: eine noch nicht synchronisierte "loc_..."-id würde zu NaN.
+    wrap.querySelectorAll("[data-sp-load]").forEach((b) => (b.onclick = () => loadSeatPlan(b.dataset.spLoad)));
+    wrap.querySelectorAll("[data-sp-pdf]").forEach((b) => (b.onclick = () => exportSeatPlan(b.dataset.spPdf)));
+    wrap.querySelectorAll("[data-sp-del]").forEach((b) => (b.onclick = () => deleteSeatPlan(b.dataset.spDel)));
   }
 
   async function loadSeatPlan(pid) {
     try {
-      const p = await API.get(`/seat-plans/${pid}`);
+      const p = seatPlansCache.find((x) => String(x.id) === String(pid));
+      if (!p) { toast("Sitzplan nicht gefunden.", false); return; }
       seatPlan.editId = p.id;
       seatPlan.rows = p.rows || 1;
       seatPlan.cols = p.cols || 1;
@@ -161,8 +169,11 @@ export function createSeatPlanModule(ctx) {
     const body = { name, rows: seatPlan.rows, cols: seatPlan.cols, layoutJson: spLayoutFromGrid() };
     try {
       let saved;
-      if (seatPlan.editId) saved = await API.put(`/seat-plans/${seatPlan.editId}`, body);
-      else saved = await API.post(`/classes/${getDetailClassId()}/seat-plans`, body);
+      if (seatPlan.editId) {
+        saved = await SyncEngine.update("seat_plans", seatPlan.editId, body);
+      } else {
+        saved = await SyncEngine.create("seat_plans", { ...body, classId: getDetailClassId() });
+      }
       seatPlan.editId = saved.id;
       $("spExportBtn").disabled = false;
       $("spExportBtn").onclick = () => exportSeatPlan(saved.id);
@@ -173,14 +184,20 @@ export function createSeatPlanModule(ctx) {
 
   async function deleteSeatPlan(pid) {
     try {
-      await API.del(`/seat-plans/${pid}`);
-      if (seatPlan.editId === pid) { seatPlan.editId = null; $("spExportBtn").disabled = true; }
+      await SyncEngine.remove("seat_plans", pid);
+      if (String(seatPlan.editId) === String(pid)) { seatPlan.editId = null; $("spExportBtn").disabled = true; }
       await renderSeatPlanList();
       toast("Sitzplan gelöscht.");
     } catch (e) { toast(e.message, false); }
   }
 
   function exportSeatPlan(pid) {
+    // Export ist ein reiner Online-REST-Download (PDF-Rendering) — ein noch nicht
+    // synchronisierter Sitzplan ("loc_..."-id) existiert serverseitig noch nicht.
+    if (String(pid).startsWith("loc_")) {
+      toast("Dieser Sitzplan ist noch nicht synchronisiert – bitte online abwarten.", false);
+      return;
+    }
     const a = document.createElement("a");
     a.href = `/api/seat-plans/${pid}/export?format=pdf`;
     document.body.appendChild(a);

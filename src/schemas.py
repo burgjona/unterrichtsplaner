@@ -899,6 +899,10 @@ class SeatPlanCreate(Base):
     layout_json: SeatPlanLayout
 
 
+class SeatPlanSyncCreate(SeatPlanCreate):
+    class_id: int
+
+
 class SeatPlanUpdate(Base):
     name: Optional[str] = None
     rows: Optional[int] = None
