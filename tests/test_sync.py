@@ -899,3 +899,81 @@ def test_lessons_push_create_syncs_calendar_entry(client, auth):
     lid = r.json()["results"][0]["entityId"]
     entries = client.get("/api/calendar").json()
     assert any(e["lessonId"] == lid and e["entryDate"] == "2027-05-10" for e in entries)
+
+
+# ---------- Rollout Tranche 3: stoff_plans (inkl. eingebettete stoff_plan_blocks) ----------
+
+def test_sync_log_stoff_plans_triggers_exist(tmp_path):
+    conn = init_db(str(tmp_path / "schema.db"))
+    triggers = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
+    assert {
+        "trg_synclog_stoff_plans_ai", "trg_synclog_stoff_plans_au", "trg_synclog_stoff_plans_ad",
+    } <= triggers
+    conn.close()
+
+
+def test_stoff_plans_push_create_update_delete_lifecycle(client, auth):
+    cls_id, sy_id = _make_class_and_year(client)
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "stoff_plans", "op": "create",
+        "payload": {
+            "classId": cls_id, "schoolYearId": sy_id, "title": "Jahresplan",
+            "blocks": [{"lbCode": "D8.1", "title": "Kurzgeschichten", "ustd": 10}],
+        },
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "applied"
+    assert len(result["entity"]["blocks"]) == 1
+    plan_id, base_updated = result["entityId"], result["entity"]["updatedAt"]
+
+    # Nur Blöcke ändern (keine Top-Level-Spalte) — updated_at muss trotzdem bumpen, sonst
+    # bliebe sync_log stumm (vgl. lessons/_apply_update_lesson-Kommentar; hier ist status/title
+    # ohnehin immer Teil des UPDATE-Statements, daher unkritischer, aber Verhalten geprüft).
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_2", "entityType": "stoff_plans", "op": "update", "entityId": plan_id,
+        "baseUpdatedAt": base_updated,
+        "payload": {"blocks": [{"lbCode": "D8.2", "title": "Balladen", "ustd": 8}]},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "applied"
+    assert result["entity"]["updatedAt"] != base_updated
+    assert [b["lbCode"] for b in result["entity"]["blocks"]] == ["D8.2"]
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_3", "entityType": "stoff_plans", "op": "delete", "entityId": plan_id,
+        "baseUpdatedAt": result["entity"]["updatedAt"],
+    }]})
+    assert r.json()["results"][0]["status"] == "applied"
+    assert client.get(f"/api/stoff-plans/{plan_id}").status_code == 404
+
+
+def test_stoff_plans_push_detects_conflict(client, auth):
+    cls_id, sy_id = _make_class_and_year(client)
+    created = client.post("/api/stoff-plans", json={
+        "classId": cls_id, "schoolYearId": sy_id, "title": "x",
+    }).json()
+    plan_id, base_updated = created["id"], created["updatedAt"]
+    assert client.put(f"/api/stoff-plans/{plan_id}", json={"title": "geaendert"}).status_code == 200
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "stoff_plans", "op": "update", "entityId": plan_id,
+        "baseUpdatedAt": base_updated, "payload": {"title": "zu spaet"},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "conflict"
+    assert result["serverEntity"]["title"] == "geaendert"
+
+
+def test_stoff_plans_push_activate_deactivates_other_plans_of_same_class(client, auth):
+    cls_id, sy_id = _make_class_and_year(client)
+    first = client.post("/api/stoff-plans", json={
+        "classId": cls_id, "schoolYearId": sy_id, "title": "Plan A", "status": "aktiv",
+    }).json()
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "stoff_plans", "op": "create",
+        "payload": {"classId": cls_id, "schoolYearId": sy_id, "title": "Plan B", "status": "aktiv"},
+    }]})
+    assert r.json()["results"][0]["status"] == "applied"
+
+    assert client.get(f"/api/stoff-plans/{first['id']}").json()["status"] == "entwurf"

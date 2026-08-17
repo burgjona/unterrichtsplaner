@@ -784,15 +784,13 @@ async function loadAll() {
 // Ergebnis: state.activePlans[classId] = { planId, title, blocks:[{lbCode,title,ustd,startDate,endDate}] }
 async function loadActivePlans() {
   const activePlans = {};
-  await Promise.all(state.classes.map(async (c) => {
-    try {
-      const plans = await API.get(`/stoff-plans?classId=${c.id}`);
-      const active = plans.find((p) => p.status === "aktiv");
-      if (!active) return;
-      const detail = await API.get(`/stoff-plans/${active.id}`);
-      activePlans[c.id] = { planId: active.id, title: detail.title, blocks: detail.blocks || [] };
-    } catch (e) { /* best effort – ohne aktiven Plan bleibt das bisherige Verhalten */ }
-  }));
+  let allStoffPlans = [];
+  try { allStoffPlans = await SyncEngine.materialize("stoff_plans"); } catch (e) { /* offline: activePlans bleibt leer */ }
+  for (const c of state.classes) {
+    const active = allStoffPlans.find((p) => String(p.classId) === String(c.id) && p.status === "aktiv");
+    if (!active) continue;
+    activePlans[c.id] = { planId: active.id, title: active.title, blocks: active.blocks || [] };
+  }
   state.activePlans = activePlans;
 }
 
@@ -1084,8 +1082,10 @@ async function renderClassDupControl() {
   if (!wrap) return;
   wrap.innerHTML = '<p class="muted small">Wird geladen …</p>';
   let plans = [];
-  try { plans = await API.get(`/stoff-plans?classId=${detailClassId}`); }
-  catch (e) { wrap.innerHTML = `<p class="muted small">${esc(e.message)}</p>`; return; }
+  try {
+    const all = await SyncEngine.materialize("stoff_plans");
+    plans = all.filter((p) => String(p.classId) === String(detailClassId));
+  } catch (e) { wrap.innerHTML = `<p class="muted small">${esc(e.message)}</p>`; return; }
   if (!plans.length) {
     wrap.innerHTML = '<p class="muted small">Noch keine gespeicherten Pläne für diese Klasse.</p>';
     return;
@@ -1123,7 +1123,12 @@ async function renderClassDupControl() {
     };
     const y = $("cdDupYear").value;
     if (y) body.targetSchoolYearId = Number(y);
+    // Duplizieren (KI/Zeitraum-Neuberechnung) bleibt eine reine Online-REST-Aktion (analog
+    // der KI-Gating-Vorentscheidung aus F5) — ein noch nicht synchronisierter Quellplan hat
+    // nur eine lokale "loc_..."-id, Number() davon wäre NaN, daher hier eine klare Meldung
+    // statt eines stillen Fehlschlags.
     const planId = Number($("cdDupPlan").value);
+    if (!planId) { toast("Dieser Plan ist noch nicht synchronisiert – bitte online abwarten.", false); return; }
     $("cdDupBtn").disabled = true;
     try {
       await API.post(`/stoff-plans/${planId}/duplicate`, body);
@@ -1143,7 +1148,8 @@ async function renderClassDetailStoffPlans() {
   const wrap = $("cdStoffPlans");
   if (!wrap) return;
   try {
-    detailStoffPlans = await API.get(`/stoff-plans?classId=${detailClassId}`);
+    const all = await SyncEngine.materialize("stoff_plans");
+    detailStoffPlans = all.filter((p) => String(p.classId) === String(detailClassId));
   } catch (e) { detailStoffPlans = []; }
   if (!detailStoffPlans.length) {
     wrap.innerHTML = '<p class="muted small">Noch keine gespeicherten Stoffverteilungspläne für diese Klasse.</p>';
@@ -1152,7 +1158,7 @@ async function renderClassDetailStoffPlans() {
   wrap.innerHTML = detailStoffPlans.map((p) => {
     const badge = p.status === "aktiv"
       ? '<span class="badge ok">aktiv</span>' : '<span class="badge warn">Entwurf</span>';
-    const meta = `${esc(p.blockCount ?? 0)} Blöcke · zuletzt geändert ${esc((p.updatedAt || "").slice(0, 10))}`;
+    const meta = `${esc((p.blocks || []).length)} Blöcke · zuletzt geändert ${esc((p.updatedAt || "").slice(0, 10))}`;
     return `<div class="cd-stoff-row" data-cd-plan="${p.id}">
       <div class="cd-stoff-head">
         <div><strong>${esc(p.title)}</strong> ${badge}<br><span class="small muted">${meta}</span></div>
@@ -1166,24 +1172,24 @@ async function renderClassDetailStoffPlans() {
       <div class="stoff-plan-editor" data-cd-editor="${p.id}"></div>
     </div>`;
   }).join("");
-  wrap.querySelectorAll("[data-cd-open]").forEach((b) => b.onclick = () => toggleClassDetailStoffPlan(Number(b.dataset.cdOpen)));
-  wrap.querySelectorAll("[data-cd-edit]").forEach((b) => b.onclick = () => toggleClassDetailStoffPlanEditor(Number(b.dataset.cdEdit)));
-  wrap.querySelectorAll("[data-cd-pdf]").forEach((b) => b.onclick = () => downloadStoffPlanPdf(Number(b.dataset.cdPdf)));
+  // Nicht Number()-erzwingen: eine noch nicht synchronisierte "loc_..."-id würde zu NaN.
+  wrap.querySelectorAll("[data-cd-open]").forEach((b) => b.onclick = () => toggleClassDetailStoffPlan(b.dataset.cdOpen));
+  wrap.querySelectorAll("[data-cd-edit]").forEach((b) => b.onclick = () => toggleClassDetailStoffPlanEditor(b.dataset.cdEdit));
+  wrap.querySelectorAll("[data-cd-pdf]").forEach((b) => b.onclick = () => downloadStoffPlanPdf(b.dataset.cdPdf));
   if (openStoffPlanId != null) showClassDetailStoffBlocks(openStoffPlanId);
   if (editingCdStoffPlanId != null) renderClassDetailStoffPlanEditor(editingCdStoffPlanId);
 }
 
 function toggleClassDetailStoffPlanEditor(id) {
-  editingCdStoffPlanId = (editingCdStoffPlanId === id) ? null : id;
+  editingCdStoffPlanId = (String(editingCdStoffPlanId) === String(id)) ? null : id;
   renderClassDetailStoffPlans();
 }
 
 async function renderClassDetailStoffPlanEditor(id) {
   const box = document.querySelector(`[data-cd-editor="${id}"]`);
   if (!box) return;
-  let p;
-  try { p = await API.get(`/stoff-plans/${id}`); }
-  catch (e) { toast(e.message, false); return; }
+  const p = detailStoffPlans.find((x) => String(x.id) === String(id));
+  if (!p) { toast("Plan nicht gefunden.", false); return; }
   const rows = (p.blocks || []).map((b, i) =>
     `<tr data-i="${i}">
       <td>${esc(b.lbCode || "")}</td>
@@ -1237,16 +1243,16 @@ async function saveClassDetailStoffPlanEdits(id) {
     };
   });
   try {
-    await API.put(`/stoff-plans/${id}`, { title, blocks });
+    await SyncEngine.update("stoff_plans", id, { title, blocks });
     toast("Plan aktualisiert.");
     editingCdStoffPlanId = null;
-    if (openStoffPlanId === id) await showClassDetailStoffBlocks(id);
+    if (String(openStoffPlanId) === String(id)) await showClassDetailStoffBlocks(id);
     await renderClassDetailStoffPlans();
   } catch (e) { toast(e.message, false); }
 }
 
 async function toggleClassDetailStoffPlan(id) {
-  openStoffPlanId = (openStoffPlanId === id) ? null : id;
+  openStoffPlanId = (String(openStoffPlanId) === String(id)) ? null : id;
   // andere geöffnete Blöcke einklappen
   document.querySelectorAll("#cdStoffPlans [data-cd-blocks]").forEach((el) => { el.innerHTML = ""; });
   if (openStoffPlanId != null) await showClassDetailStoffBlocks(openStoffPlanId);
@@ -1255,9 +1261,8 @@ async function toggleClassDetailStoffPlan(id) {
 async function showClassDetailStoffBlocks(id) {
   const box = document.querySelector(`#cdStoffPlans [data-cd-blocks="${id}"]`);
   if (!box) return;
-  let p;
-  try { p = await API.get(`/stoff-plans/${id}`); }
-  catch (e) { toast(e.message, false); return; }
+  const p = detailStoffPlans.find((x) => String(x.id) === String(id));
+  if (!p) { toast("Plan nicht gefunden.", false); return; }
   const blocks = p.blocks || [];
   if (!blocks.length) {
     box.innerHTML = '<p class="muted small">Keine Blöcke in diesem Plan.</p>';
@@ -2014,7 +2019,7 @@ async function renderArchivPlanungen() {
   if (!wrap) return;
   wrap.innerHTML = '<p class="muted small">Wird geladen …</p>';
   let plans = [];
-  try { plans = await API.get("/stoff-plans"); }
+  try { plans = await SyncEngine.materialize("stoff_plans"); }
   catch (e) { wrap.innerHTML = `<p class="muted small">${esc(e.message)}</p>`; return; }
   if (!plans.length) { wrap.innerHTML = '<p class="muted small">Noch keine gespeicherten Pläne.</p>'; return; }
   const clsName = (id) => {
@@ -2029,7 +2034,7 @@ async function renderArchivPlanungen() {
   wrap.innerHTML = plans.map((p) => `
     <div class="archiv-row dup-plan-row" data-dup-plan="${p.id}">
       <span class="archiv-main">${esc(p.title)}</span>
-      <span class="muted small">${esc(clsName(p.classId))} · ${esc(yearLbl(p.schoolYearId))} · ${esc(p.blockCount ?? 0)} Blöcke</span>
+      <span class="muted small">${esc(clsName(p.classId))} · ${esc(yearLbl(p.schoolYearId))} · ${esc((p.blocks || []).length)} Blöcke</span>
       <span class="archiv-actions dup-take">
         <select data-dup-year="${p.id}">${yearOpts || '<option value="">(kein Schuljahr)</option>'}</select>
         <select data-dup-mode="${p.id}">
@@ -2042,6 +2047,7 @@ async function renderArchivPlanungen() {
   wrap.querySelectorAll("[data-dup-take]").forEach((b) => {
     b.onclick = async () => {
       const id = b.dataset.dupTake;
+      if (String(id).startsWith("loc_")) { toast("Dieser Plan ist noch nicht synchronisiert – bitte online abwarten.", false); return; }
       const p = plans.find((x) => String(x.id) === String(id));
       const yearSel = wrap.querySelector(`[data-dup-year="${id}"]`);
       const modeSel = wrap.querySelector(`[data-dup-mode="${id}"]`);
@@ -5441,6 +5447,7 @@ const SYNC_ENTITY_RENDERERS = {
   students: (s) => ({ title: s.name, preview: `Position ${s.sortOrder}` }),
   timetable_plans: (p) => ({ title: p.name || "Plan", preview: `gültig ab ${p.validFrom}` }),
   lessons: (l) => ({ title: l.title, preview: `${l.subject}${l.date ? " · " + l.date : ""}` }),
+  stoff_plans: (p) => ({ title: p.title, preview: `${(p.blocks || []).length} Blöcke · ${p.status}` }),
 };
 
 let _syncConflictsModulePromise = null;
@@ -5629,4 +5636,14 @@ SyncEngine.onChange(async (entityType) => {
   renderLessonFilterOptions();
   renderLessonTable();
   await renderTodayList();
+});
+
+// Rollout (Tranche 3): stoff_plans — drei Anzeigeorte teilen sich die Entität: die
+// dedizierte Stoffplan-Ansicht (lazy-Modul, nur nachziehen falls schon geöffnet), die
+// Klassen-Detailseite und die Home-„aktive Pläne"-Vorschau (state.activePlans).
+SyncEngine.onChange(async (entityType) => {
+  if (entityType !== "stoff_plans") return;
+  if (_stoffplanModuleInstance) await _stoffplanModuleInstance.loadStoffPlans();
+  if (document.getElementById("cdStoffPlans")) await renderClassDetailStoffPlans();
+  await loadActivePlans();   // state.activePlans wird von Kalender/Präsentation erst beim nächsten eigenen Render gelesen
 });

@@ -28,7 +28,8 @@ def _load_plan(conn, user_id, plan_id):
 
 def _deactivate_others(conn, user_id, class_id, school_year_id, keep_id):
     """Setzt alle anderen aktiven Pläne derselben Klasse+Schuljahr auf 'entwurf'."""
-    sql = ("UPDATE stoff_plans SET status = 'entwurf', updated_at = datetime('now') "
+    sql = ("UPDATE stoff_plans SET status = 'entwurf', "
+           "updated_at = strftime('%Y-%m-%d %H:%M:%f','now') "
            "WHERE user_id = ? AND class_id = ? AND status = 'aktiv' AND id != ? AND ")
     params = [user_id, class_id, keep_id]
     if school_year_id is None:
@@ -79,9 +80,7 @@ def _detail(conn, user_id, plan_id) -> StoffPlanDetail:
     return StoffPlanDetail(**dict(row), blocks=blocks)
 
 
-@router.post("", response_model=StoffPlanDetail, status_code=201)
-def create(body: StoffPlanCreate, conn: sqlite3.Connection = Depends(get_db),
-           user_id: int = Depends(get_user_id)):
+def _apply_create_stoffplan(conn, user_id: int, body: StoffPlanCreate) -> StoffPlanDetail:
     if not body.title or not body.title.strip():
         raise HTTPException(status_code=400, detail="Titel darf nicht leer sein.")
     row_or_404(conn.execute("SELECT id FROM classes WHERE id = ? AND user_id = ?",
@@ -90,8 +89,8 @@ def create(body: StoffPlanCreate, conn: sqlite3.Connection = Depends(get_db),
         row_or_404(conn.execute("SELECT id FROM school_years WHERE id = ? AND user_id = ?",
                                 (body.school_year_id, user_id)).fetchone(), "Schuljahr")
     cur = conn.execute(
-        "INSERT INTO stoff_plans (user_id, class_id, school_year_id, title, status) "
-        "VALUES (?,?,?,?,?)",
+        "INSERT INTO stoff_plans (user_id, class_id, school_year_id, title, status, updated_at) "
+        "VALUES (?,?,?,?,?, strftime('%Y-%m-%d %H:%M:%f','now'))",
         (user_id, body.class_id, body.school_year_id, body.title.strip(), body.status))
     plan_id = cur.lastrowid
     _insert_blocks(conn, plan_id, body.blocks)
@@ -99,6 +98,12 @@ def create(body: StoffPlanCreate, conn: sqlite3.Connection = Depends(get_db),
         _deactivate_others(conn, user_id, body.class_id, body.school_year_id, plan_id)
     conn.commit()
     return _detail(conn, user_id, plan_id)
+
+
+@router.post("", response_model=StoffPlanDetail, status_code=201)
+def create(body: StoffPlanCreate, conn: sqlite3.Connection = Depends(get_db),
+           user_id: int = Depends(get_user_id)):
+    return _apply_create_stoffplan(conn, user_id, body)
 
 
 @router.get("", response_model=List[StoffPlanOut])
@@ -161,9 +166,7 @@ def combined(plan_id: int, conn: sqlite3.Connection = Depends(get_db),
     return StoffPlanCombinedOut(**dict(row), blocks=blocks)
 
 
-@router.put("/{plan_id}", response_model=StoffPlanDetail)
-def update(plan_id: int, body: StoffPlanUpdate, conn: sqlite3.Connection = Depends(get_db),
-           user_id: int = Depends(get_user_id)):
+def _apply_update_stoffplan(conn, user_id: int, plan_id: int, body: StoffPlanUpdate) -> StoffPlanDetail:
     row = row_or_404(_load_plan(conn, user_id, plan_id), "Stoffplan")
     new_title = row["title"]
     if body.title is not None:
@@ -172,8 +175,9 @@ def update(plan_id: int, body: StoffPlanUpdate, conn: sqlite3.Connection = Depen
         new_title = body.title.strip()
     new_status = body.status if body.status is not None else row["status"]
     conn.execute(
-        "UPDATE stoff_plans SET title = ?, status = ?, updated_at = datetime('now') "
-        "WHERE id = ? AND user_id = ?", (new_title, new_status, plan_id, user_id))
+        "UPDATE stoff_plans SET title = ?, status = ?, "
+        "updated_at = strftime('%Y-%m-%d %H:%M:%f','now') WHERE id = ? AND user_id = ?",
+        (new_title, new_status, plan_id, user_id))
     if body.blocks is not None:
         conn.execute("DELETE FROM stoff_plan_blocks WHERE plan_id = ?", (plan_id,))
         _insert_blocks(conn, plan_id, body.blocks)
@@ -183,13 +187,54 @@ def update(plan_id: int, body: StoffPlanUpdate, conn: sqlite3.Connection = Depen
     return _detail(conn, user_id, plan_id)
 
 
-@router.delete("/{plan_id}", status_code=204)
-def delete(plan_id: int, conn: sqlite3.Connection = Depends(get_db),
+@router.put("/{plan_id}", response_model=StoffPlanDetail)
+def update(plan_id: int, body: StoffPlanUpdate, conn: sqlite3.Connection = Depends(get_db),
            user_id: int = Depends(get_user_id)):
+    return _apply_update_stoffplan(conn, user_id, plan_id, body)
+
+
+def _apply_delete_stoffplan(conn, user_id: int, plan_id: int) -> None:
     cur = conn.execute("DELETE FROM stoff_plans WHERE id = ? AND user_id = ?", (plan_id, user_id))
     conn.commit()
     if cur.rowcount == 0:
         raise HTTPException(status_code=404, detail="Stoffplan nicht gefunden.")
+
+
+@router.delete("/{plan_id}", status_code=204)
+def delete(plan_id: int, conn: sqlite3.Connection = Depends(get_db),
+           user_id: int = Depends(get_user_id)):
+    _apply_delete_stoffplan(conn, user_id, plan_id)
+
+
+# ---------- Sync-Handler-Registry: stoff_plans (src/routers/sync.py) ----------
+# stoff_plan_blocks sind eingebettet im Payload (analog lessons/phases, siehe dortiger
+# Kommentar) — kein eigener entity_type, kein eigenes sync_log. _deactivate_others ändert
+# ggf. weitere stoff_plans-Zeilen derselben Klasse+Schuljahr; deren eigene AU-Trigger feuern
+# unabhängig vom Aufrufer (Sync-Push oder REST), sync_log bleibt also vollständig.
+
+def _sync_fetch_stoffplan(conn, user_id, entity_id):
+    row = _load_plan(conn, user_id, entity_id)
+    return _detail(conn, user_id, entity_id) if row is not None else None
+
+
+def _sync_create_stoffplan(conn, user_id, payload: dict) -> StoffPlanDetail:
+    return _apply_create_stoffplan(conn, user_id, StoffPlanCreate(**payload))
+
+
+def _sync_update_stoffplan(conn, user_id, entity_id, payload: dict) -> StoffPlanDetail:
+    return _apply_update_stoffplan(conn, user_id, entity_id, StoffPlanUpdate(**payload))
+
+
+def _sync_delete_stoffplan(conn, user_id, entity_id) -> None:
+    _apply_delete_stoffplan(conn, user_id, entity_id)
+
+
+SYNC_HANDLER = {
+    "fetch": _sync_fetch_stoffplan,
+    "create": _sync_create_stoffplan,
+    "update": _sync_update_stoffplan,
+    "delete": _sync_delete_stoffplan,
+}
 
 
 # ======================================================================================

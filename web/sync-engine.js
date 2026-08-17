@@ -27,6 +27,7 @@ const SyncEngine = (() => {
     students: { apiPath: "/students" },
     timetable_plans: { apiPath: "/stundenplan/plans" },
     lessons: { apiPath: "/lessons" },
+    stoff_plans: { apiPath: "/stoff-plans" },
   };
 
   const listeners = new Set();

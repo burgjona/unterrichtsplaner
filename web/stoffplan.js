@@ -129,7 +129,7 @@ export function createStoffplanModule(ctx) {
     const title = window.prompt("Titel des Plans:", def);
     if (title === null) return;                       // Abbruch
     try {
-      await API.post("/stoff-plans", {
+      await SyncEngine.create("stoff_plans", {
         classId: clsId, schoolYearId: syId || null,
         title: title.trim() || def, status: "entwurf",
         blocks: previewToBlocks(state.stoffPreview),
@@ -139,13 +139,19 @@ export function createStoffplanModule(ctx) {
     } catch (e) { toast(e.message, false); }
   }
 
+  // Offline-Sync (Rollout): materialize() liefert bereits das volle StoffPlanDetail (inkl.
+  // blocks — der Fetch-Handler in sync.py liefert _detail(), nicht nur die Listen-Zeile),
+  // daher genügt ein einziger Pull/Materialize-Zyklus statt separater Detail-REST-Calls
+  // in loadStoffPlanIntoTable/renderStoffPlanEditor/saveStoffPlanEdits unten.
   async function loadStoffPlans() {
     const wrap = $("stoffPlansList");
     if (!wrap) return;
     const clsId = Number($("planClass").value);
     if (!clsId) { state.stoffPlans = []; renderStoffPlans(); return; }
     try {
-      state.stoffPlans = await API.get(`/stoff-plans?classId=${clsId}`);
+      const all = await SyncEngine.materialize("stoff_plans");
+      state.stoffPlans = all.filter((p) => p.classId === clsId)
+        .sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")) || String(b.id).localeCompare(String(a.id)));
     } catch (e) { state.stoffPlans = []; }
     renderStoffPlans();
   }
@@ -164,7 +170,7 @@ export function createStoffplanModule(ctx) {
     wrap.innerHTML = state.stoffPlans.map((p) => {
       const badge = p.status === "aktiv"
         ? '<span class="badge ok">aktiv</span>' : '<span class="badge warn">Entwurf</span>';
-      const meta = `${esc(p.blockCount ?? 0)} Blöcke · zuletzt geändert ${esc((p.updatedAt || "").slice(0, 10))}`;
+      const meta = `${esc((p.blocks || []).length)} Blöcke · zuletzt geändert ${esc((p.updatedAt || "").slice(0, 10))}`;
       const toggleLbl = p.status === "aktiv" ? "Auf Entwurf" : "Aktiv setzen";
       return `<div class="stoff-plan-row" data-plan="${p.id}">
         <div class="stoff-plan-head">
@@ -182,19 +188,22 @@ export function createStoffplanModule(ctx) {
         <div class="stoff-plan-kumuliert" data-kumuliert="${p.id}"></div>
       </div>`;
     }).join("");
-    wrap.querySelectorAll("[data-sp-load]").forEach((b) => b.onclick = () => loadStoffPlanIntoTable(Number(b.dataset.spLoad)));
-    wrap.querySelectorAll("[data-sp-edit]").forEach((b) => b.onclick = () => toggleStoffPlanEditor(Number(b.dataset.spEdit)));
-    wrap.querySelectorAll("[data-sp-toggle]").forEach((b) => b.onclick = () => toggleStoffPlanStatus(Number(b.dataset.spToggle)));
-    wrap.querySelectorAll("[data-sp-pdf]").forEach((b) => b.onclick = () => downloadStoffPlanPdf(Number(b.dataset.spPdf)));
-    wrap.querySelectorAll("[data-sp-kumuliert]").forEach((b) => b.onclick = () => toggleKumulierteAnsicht(Number(b.dataset.spKumuliert)));
-    wrap.querySelectorAll("[data-sp-del]").forEach((b) => b.onclick = () => deleteStoffPlan(Number(b.dataset.spDel)));
+    // Nicht Number()-erzwingen: ein noch nicht synchronisierter Plan hat eine lokale
+    // "loc_..."-id, die dabei zu NaN würde (siehe Kommentar in sync-engine.js:findByAnyId).
+    wrap.querySelectorAll("[data-sp-load]").forEach((b) => b.onclick = () => loadStoffPlanIntoTable(b.dataset.spLoad));
+    wrap.querySelectorAll("[data-sp-edit]").forEach((b) => b.onclick = () => toggleStoffPlanEditor(b.dataset.spEdit));
+    wrap.querySelectorAll("[data-sp-toggle]").forEach((b) => b.onclick = () => toggleStoffPlanStatus(b.dataset.spToggle));
+    wrap.querySelectorAll("[data-sp-pdf]").forEach((b) => b.onclick = () => downloadStoffPlanPdf(b.dataset.spPdf));
+    wrap.querySelectorAll("[data-sp-kumuliert]").forEach((b) => b.onclick = () => toggleKumulierteAnsicht(b.dataset.spKumuliert));
+    wrap.querySelectorAll("[data-sp-del]").forEach((b) => b.onclick = () => deleteStoffPlan(b.dataset.spDel));
     if (editingStoffPlanId != null) renderStoffPlanEditor(editingStoffPlanId);
     if (kumuliertPlanId != null) renderKumulierteAnsicht(kumuliertPlanId);
   }
 
   async function loadStoffPlanIntoTable(id) {
     try {
-      const p = await API.get(`/stoff-plans/${id}`);
+      const p = state.stoffPlans.find((x) => String(x.id) === String(id));
+      if (!p) { toast("Plan nicht gefunden.", false); return; }
       state.stoffPreview = (p.blocks || []).map((b) => ({
         code: b.lbCode, title: b.title, ustd: b.ustd,
         startDate: b.startDate, endDate: b.endDate, conflictNote: b.conflictNote,
@@ -227,9 +236,8 @@ export function createStoffplanModule(ctx) {
   async function renderStoffPlanEditor(id) {
     const box = document.querySelector(`[data-editor="${id}"]`);
     if (!box) return;
-    let p;
-    try { p = await API.get(`/stoff-plans/${id}`); }
-    catch (e) { toast(e.message, false); return; }
+    const p = state.stoffPlans.find((x) => String(x.id) === String(id));
+    if (!p) { toast("Plan nicht gefunden.", false); return; }
     const rows = (p.blocks || []).map((b, i) =>
       `<tbody data-local-undo-block="stoffblock-${i}">
       <tr data-i="${i}">
@@ -288,16 +296,15 @@ export function createStoffplanModule(ctx) {
         conflictNote: (noteEl ? noteEl.value : "") || null,
       };
     });
-    let before = null;
-    try { before = await API.get(`/stoff-plans/${id}`); } catch (e) { /* best effort, Undo entfällt dann */ }
+    const before = state.stoffPlans.find((x) => String(x.id) === String(id)) || null;
     try {
-      await API.put(`/stoff-plans/${id}`, { title, blocks });
+      await SyncEngine.update("stoff_plans", id, { title, blocks });
       toast("Plan aktualisiert.");
       editingStoffPlanId = null;
       await loadStoffPlans();
       if (before) {
         setUndo(`Stoffplan „${before.title}“ bearbeitet.`, async () => {
-          await API.put(`/stoff-plans/${id}`, {
+          await SyncEngine.update("stoff_plans", id, {
             title: before.title,
             blocks: (before.blocks || []).map((b) => ({
               lbCode: b.lbCode, title: b.title, ustd: b.ustd,
@@ -311,10 +318,10 @@ export function createStoffplanModule(ctx) {
   }
 
   async function toggleStoffPlanStatus(id) {
-    const p = state.stoffPlans.find((x) => x.id === id);
+    const p = state.stoffPlans.find((x) => String(x.id) === String(id));
     const next = (p && p.status === "aktiv") ? "entwurf" : "aktiv";
     try {
-      await API.put(`/stoff-plans/${id}`, { status: next });
+      await SyncEngine.update("stoff_plans", id, { status: next });
       toast(next === "aktiv" ? "Plan aktiv gesetzt." : "Plan auf Entwurf gesetzt.");
       await loadStoffPlans();
     } catch (e) { toast(e.message, false); }
@@ -322,16 +329,22 @@ export function createStoffplanModule(ctx) {
 
   async function deleteStoffPlan(id) {
     if (!window.confirm("Diesen Stoffplan wirklich löschen?")) return;
+    // /combined ist ein reiner REST-Lesezugriff (joint mit sequenz_stunden, Tranche 4, noch
+    // nicht sync-fähig) — Undo für den Löschvorgang bleibt deshalb best-effort online-only,
+    // wie schon vor dem Rollout (guard "if (snapshot)" unten).
     let snapshot = null;
     try { snapshot = await API.get(`/stoff-plans/${id}/combined`); } catch (e) { /* best effort, Undo entfällt dann */ }
     try {
-      await API.del(`/stoff-plans/${id}`);
-      if (editingStoffPlanId === id) editingStoffPlanId = null;
+      await SyncEngine.remove("stoff_plans", id);
+      if (String(editingStoffPlanId) === String(id)) editingStoffPlanId = null;
       toast("Plan gelöscht.");
       await loadStoffPlans();
       if (snapshot) {
         setUndo(`Stoffplan „${snapshot.title}“ gelöscht.`, async () => {
-          const created = await API.post("/stoff-plans", {
+          // createAndSync statt create: die Sequenzstunden-Wiederherstellung unten braucht
+          // sofort die echte Server-id jedes neuen Blocks (eigene REST-Calls, kein Sync-
+          // Payload) — analog saveLesson() in app.js (siehe dortiger Kommentar).
+          const created = await SyncEngine.createAndSync("stoff_plans", {
             classId: snapshot.classId, schoolYearId: snapshot.schoolYearId,
             title: snapshot.title, status: snapshot.status,
             blocks: (snapshot.blocks || []).map((b) => ({
