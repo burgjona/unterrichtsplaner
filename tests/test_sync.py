@@ -622,3 +622,73 @@ def test_tropenplan_slots_push_detects_conflict(client, auth):
     result = r.json()["results"][0]
     assert result["status"] == "conflict"
     assert result["serverEntity"]["label"] == "geaendert"
+
+
+# ---------- Rollout Tranche 2: classes ----------
+
+def test_sync_log_table_and_classes_triggers_exist(tmp_path):
+    conn = init_db(str(tmp_path / "schema.db"))
+    triggers = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
+    assert {
+        "trg_synclog_classes_ai",
+        "trg_synclog_classes_au",
+        "trg_synclog_classes_ad",
+    } <= triggers
+    conn.close()
+
+
+def test_classes_push_create_update_archive_lifecycle(client, auth):
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "classes", "op": "create",
+        "payload": {"name": "8a", "subject": "Deutsch", "grade": 8},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "applied"
+    assert result["entity"]["archivedAt"] is None
+    cid, base_updated = result["entityId"], result["entity"]["updatedAt"]
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_2", "entityType": "classes", "op": "update", "entityId": cid,
+        "baseUpdatedAt": base_updated, "payload": {"weeklyHours": 5},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "applied"
+    assert result["entity"]["weeklyHours"] == 5
+
+    # 'delete' bildet auf Soft-Archiv ab, nicht auf Hard-Delete.
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_3", "entityType": "classes", "op": "delete", "entityId": cid,
+        "baseUpdatedAt": result["entity"]["updatedAt"],
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "applied"
+    assert cid not in [c["id"] for c in client.get("/api/classes").json()]
+    archived = [c for c in client.get("/api/classes?includeArchived=true").json() if c["id"] == cid]
+    assert len(archived) == 1
+    assert archived[0]["archivedAt"] is not None
+
+
+def test_classes_push_detects_conflict(client, auth):
+    created = client.post("/api/classes", json={"name": "x", "subject": "WTH", "grade": 9}).json()
+    cid, base_updated = created["id"], created["updatedAt"]
+    assert client.put(f"/api/classes/{cid}", json={"name": "geaendert"}).status_code == 200
+
+    r = client.post("/api/sync/push", json={"mutations": [{
+        "clientId": "loc_1", "entityType": "classes", "op": "update", "entityId": cid,
+        "baseUpdatedAt": base_updated, "payload": {"name": "zu spaet"},
+    }]})
+    result = r.json()["results"][0]
+    assert result["status"] == "conflict"
+    assert result["serverEntity"]["name"] == "geaendert"
+
+
+def test_classes_hard_delete_and_restore_stay_rest_only(client, auth):
+    # Nicht Teil des generischen Sync-Modells (siehe Kommentar in classes.py) — hier nur
+    # verifizieren, dass die bestehenden REST-Endpunkte durch den Refactor unverändert
+    # funktionieren.
+    created = client.post("/api/classes", json={"name": "x", "subject": "Deutsch", "grade": 7}).json()
+    cid = created["id"]
+    assert client.delete(f"/api/classes/{cid}").status_code == 204  # soft
+    assert client.post(f"/api/classes/{cid}/restore").status_code == 200
+    assert client.delete(f"/api/classes/{cid}?hard=true").status_code == 204
+    assert client.get("/api/classes?includeArchived=true").json() == []

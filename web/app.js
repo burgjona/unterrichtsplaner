@@ -748,8 +748,8 @@ async function loadAll() {
   // bleiben offline angelegte/geänderte Notizen sichtbar. pull() ist offline ein No-Op,
   // materialize() liefert dann den zuletzt bekannten Stand + Warteschlange.
   await SyncEngine.pull();
-  const [classes, lessons, reflections, open, materials, todosAll, notes, schoolYearsAll, calendar, calendarCategoriesAll, asuvDrafts] = await Promise.all([
-    API.get("/classes"), API.get("/lessons"), API.get("/reflections"),
+  const [classesAll, lessons, reflections, open, materials, todosAll, notes, schoolYearsAll, calendar, calendarCategoriesAll, asuvDrafts] = await Promise.all([
+    SyncEngine.materialize("classes"), API.get("/lessons"), API.get("/reflections"),
     API.get("/reflections/open"), API.get("/materials"), SyncEngine.materialize("todos"),
     SyncEngine.materialize("notes"), SyncEngine.materialize("school_years"), API.get("/calendar"),
     SyncEngine.materialize("calendar_categories"), API.get("/asuv"),
@@ -763,6 +763,10 @@ async function loadAll() {
     .sort((a, b) => (a.sortOrder - b.sortOrder) || (String(a.id).localeCompare(String(b.id))));
   const schoolYears = schoolYearsAll.slice()
     .sort((a, b) => String(a.startDate).localeCompare(String(b.startDate)));
+  // Archivierte Klassen bleiben wie bisher außerhalb von state.classes (eigene Abfrage in
+  // der Archiv-Ansicht, renderArchivKlassen), Reihenfolge wie ORDER BY name.
+  const classes = classesAll.filter((c) => c.archivedAt == null)
+    .sort((a, b) => String(a.name).localeCompare(String(b.name)));
   let schoolDates = [];
   for (const sy of schoolYears) {
     try { schoolDates = schoolDates.concat(await API.get(`/school-years/${sy.id}/dates`)); }
@@ -849,7 +853,7 @@ function renderClassTable() {
   b.querySelectorAll("[data-del-class]").forEach((btn) => {
     btn.onclick = async () => {
       if (!confirm("Klasse archivieren? Bereits geplante Stunden bleiben erhalten.")) return;
-      try { await API.del("/classes/" + btn.dataset.delClass); await refresh(); toast("Klasse archiviert."); }
+      try { await SyncEngine.remove("classes", btn.dataset.delClass); await refresh(); toast("Klasse archiviert."); }
       catch (e) { toast(e.message, false); }
     };
   });
@@ -2178,7 +2182,7 @@ function renderClassToggles() {
   });
   row.querySelectorAll("input").forEach((inp) => {
     inp.onchange = async () => {
-      try { await API.put("/classes/" + inp.dataset.id, { visibleInCalendar: inp.checked }); await refresh(); }
+      try { await SyncEngine.update("classes", inp.dataset.id, { visibleInCalendar: inp.checked }); await refresh(); }
       catch (e) { toast(e.message, false); }
     };
   });
@@ -3334,9 +3338,9 @@ async function saveClass() {
   };
   try {
     if (editingClassId) {
-      await API.put("/classes/" + editingClassId, body);
+      await SyncEngine.update("classes", editingClassId, body);
     } else {
-      await API.post("/classes", body);
+      await SyncEngine.create("classes", body);
     }
     resetClassForm();
     await refresh(); toast("Klasse gespeichert.");
@@ -5413,6 +5417,7 @@ const SYNC_ENTITY_RENDERERS = {
   timetable_kinds: (k) => ({ title: k.name, preview: k.color }),
   timetable_slots: (s) => ({ title: s.label, preview: `${s.startTime}–${s.endTime}` }),
   tropenplan_slots: (s) => ({ title: s.label, preview: `${s.startTime}–${s.endTime}` }),
+  classes: (c) => ({ title: c.name, preview: `${c.subject} · Klasse ${c.grade}` }),
 };
 
 let _syncConflictsModulePromise = null;
@@ -5569,4 +5574,16 @@ SyncEngine.onChange(async (entityType) => {
   const all = await SyncEngine.materialize("school_years");
   state.schoolYears = all.slice().sort((a, b) => String(a.startDate).localeCompare(String(b.startDate)));
   renderSchoolYears();
+});
+
+// Rollout (Tranche 2): classes — praktisch überall referenziert (Klassenliste, Auswahllisten,
+// Kalender-Legende, Detailseite). Archivierte Klassen bleiben außerhalb von state.classes
+// (eigene Abfrage in der Archiv-Ansicht, renderArchivKlassen), wie bisher.
+SyncEngine.onChange(async (entityType) => {
+  if (entityType !== "classes") return;
+  const all = await SyncEngine.materialize("classes");
+  state.classes = all.filter((c) => c.archivedAt == null)
+    .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  renderClassTable();
+  renderClassSelects();
 });
