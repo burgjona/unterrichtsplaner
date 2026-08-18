@@ -168,15 +168,27 @@ export function createSequenzplanModule(ctx) {
     // Karten sind noch ungespeichert (id=null) und tauchen daher server-seitig nicht als
     // "letzte terminierte Stunde" auf – deshalb hier je Karte einzeln nachfragen und den
     // zuletzt vorgeschlagenen Termin als Ausgangspunkt für die nächste Karte weiterreichen.
+    // Ist der vorgeschlagene Tag laut Stundenplan eine echte Doppelstunde (spanSlots > 1),
+    // bekommt die direkt folgende Karte dasselbe Datum statt eines eigenen Vorschlags –
+    // so folgt die Terminierung dem tatsächlichen Einzel-/Doppelstunden-Rhythmus der Klasse.
     let after = null;
-    for (const c of cards) {
+    let i = 0;
+    while (i < cards.length) {
+      let res;
       try {
         const url = after
           ? `/sequenz-stunden/suggest-date?blockId=${blockId}&after=${after}`
           : `/sequenz-stunden/suggest-date?blockId=${blockId}`;
-        const res = await API.get(url);
-        if (res.date) { c.date = res.date; after = res.date; }
-      } catch (e) { /* best effort – ohne Stundenplan/Blockstart bleibt das Datum leer */ }
+        res = await API.get(url);
+      } catch (e) { i++; continue; /* best effort – ohne Stundenplan/Blockstart bleibt das Datum leer */ }
+      if (!res.date) { i++; continue; }
+      cards[i].date = res.date;
+      after = res.date;
+      i++;
+      if (res.spanSlots > 1 && i < cards.length) {
+        cards[i].date = res.date;
+        i++;
+      }
     }
   }
 

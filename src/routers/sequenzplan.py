@@ -81,7 +81,7 @@ def suggest_date(block_id: int = Query(alias="blockId"), after: Optional[str] = 
         else:
             return {"date": None}
     slot = _next_class_slot(conn, user_id, block["plan_class_id"], after_date)
-    return {"date": slot["date"] if slot else None}
+    return {"date": slot["date"] if slot else None, "spanSlots": slot["span_slots"] if slot else None}
 
 
 def _apply_create_sequenz(conn, user_id, body: SequenzStundeCreate) -> SequenzStundeOut:
@@ -300,7 +300,10 @@ def _next_class_slot(conn, user_id: int, class_id: int, after_date_iso: str, max
     """Nächster laut Stundenplan realer Unterrichtstermin dieser Klasse nach after_date_iso
     (Ferien übersprungen, A/B-Wochen berücksichtigt). Ignoriert Tropentage/Vertretungen
     (Einzeltermin-Sonderfälle) – best effort für die optionale Kalenderverschiebung.
-    Liefert {"date": iso, "time": "HH:MM"} oder None, falls nichts gefunden wurde."""
+    Liefert {"date": iso, "time": "HH:MM", "span_slots": int} oder None, falls nichts gefunden
+    wurde. span_slots > 1 markiert eine laut Stundenplan echte Doppelstunde an diesem Tag –
+    Aufrufer, die Sequenzstunden-Karten terminieren, sollen dafür zwei Karten auf dasselbe
+    Datum legen statt nur eine einzelne."""
     try:
         start = date.fromisoformat(after_date_iso[:10])
     except (ValueError, TypeError):
@@ -328,14 +331,15 @@ def _next_class_slot(conn, user_id: int, class_id: int, after_date_iso: str, max
                 ).fetchone()
                 if plan:
                     entry = conn.execute(
-                        "SELECT s.start_time FROM timetable_entries e "
+                        "SELECT s.start_time, e.span_slots FROM timetable_entries e "
                         "JOIN timetable_slots s ON s.id = e.slot_id "
                         "WHERE e.plan_id = ? AND e.user_id = ? AND e.class_id = ? AND e.weekday = ? "
                         "AND e.week_type IN ('both', ?) ORDER BY s.position, e.id LIMIT 1",
                         (plan["id"], user_id, class_id, day.weekday(), week_type),
                     ).fetchone()
                     if entry:
-                        return {"date": day.isoformat(), "time": entry["start_time"]}
+                        return {"date": day.isoformat(), "time": entry["start_time"],
+                                "span_slots": entry["span_slots"]}
         day += timedelta(days=1)
     return None
 

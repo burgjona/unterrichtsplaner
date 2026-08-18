@@ -350,6 +350,39 @@ def test_suggest_date_after_param_chains_without_persisted_stunde(client, auth):
     assert r.json()["date"] == "2030-01-14"
 
 
+def test_suggest_date_reports_span_slots_for_real_doppelstunde(client, auth):
+    """Steht laut Stundenplan an dem Tag eine echte Doppelstunde (span_slots=2), muss
+    suggest-date das über spanSlots melden – sonst terminiert der Client zwei
+    Sequenzstunden-Karten fälschlich auf zwei verschiedene Tage statt auf denselben."""
+    cid = _class(client)
+    kinds = client.get("/api/stundenplan/kinds").json()
+    slots = client.get("/api/stundenplan/slots").json()
+    plans = client.get("/api/stundenplan/plans").json()
+    lesson_slot = next(s for s in slots if s["slotType"] == "lesson" and s["label"] == "1.")
+    r = client.post("/api/stundenplan/entries", json={
+        "planId": plans[0]["id"], "slotId": lesson_slot["id"], "kindId": kinds[0]["id"],
+        "classId": cid, "weekday": 0, "spanSlots": 2,  # Montag, 1./2. Stunde als Doppelstunde
+    })
+    assert r.status_code == 201, r.text
+
+    r = client.post("/api/stoff-plans", json={
+        "classId": cid, "title": "Zukunftsplan",
+        "blocks": [{"lbCode": "LB3", "title": "Lesen", "ustd": 20,
+                    "startDate": "2030-01-07", "endDate": "2030-02-10"}],   # Montag
+    })
+    assert r.status_code == 201, r.text
+    bid = _block_id(r.json())
+
+    r = client.get(f"/api/sequenz-stunden/suggest-date?blockId={bid}")
+    assert r.status_code == 200
+    assert r.json()["date"] == "2030-01-07"
+    assert r.json()["spanSlots"] == 2
+
+    r = client.get(f"/api/sequenz-stunden/suggest-date?blockId={bid}&after=2030-01-07")
+    assert r.json()["date"] == "2030-01-14"
+    assert r.json()["spanSlots"] == 2
+
+
 def test_suggest_date_unknown_block_rejected(client, auth):
     r = client.get("/api/sequenz-stunden/suggest-date?blockId=9999")
     assert r.status_code == 404
