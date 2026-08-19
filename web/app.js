@@ -1603,7 +1603,8 @@ async function renderWeekOverview() {
   const weekEndStr = isoDate(weekEnd);
 
   const vis = visibleClassIds();
-  const appts = state.calendar
+  const todayStr = isoDate(new Date());
+  const allAppts = state.calendar
     .filter((e) => {
       const end = e.endDate || e.entryDate;
       const cids = entryClassIds(e);
@@ -1611,20 +1612,44 @@ async function renderWeekOverview() {
     })
     .sort((a, b) => (a.entryDate + (a.startTime || "")).localeCompare(b.entryDate + (b.startTime || "")));
 
+  // Termine des heutigen Tages erscheinen nur im "Guten Tag!"-Panel (todayAppointmentsList),
+  // nicht zusätzlich in der Wochenübersicht.
+  const appts = allAppts.filter((e) => !(e.entryDate <= todayStr && (e.endDate || e.entryDate) >= todayStr));
+
+  const apptRow = (e) => {
+    const badgeClass = e.entryType === "lu" ? "bad" : e.entryType === "exam" ? "warn" : "ok";
+    const badgeLabel = e.entryType === "lu" ? "LEK" : e.entryType === "exam" ? "Prüfung" : "Termin";
+    return {
+      time: e.startTime || "",
+      title: e.title,
+      badgeClass, badgeLabel,
+      onClick: () => openCalendarEventModal(e.id),
+    };
+  };
+
   apptEl.innerHTML = "";
   if (!appts.length) {
     apptEl.innerHTML = '<p class="mini-empty">Keine Termine diese Woche.</p>';
   } else {
-    renderDayGroups(apptEl, appts, (e) => weekdayOf(e.entryDate), (e) => {
-      const badgeClass = e.entryType === "lu" ? "bad" : e.entryType === "exam" ? "warn" : "ok";
-      const badgeLabel = e.entryType === "lu" ? "LEK" : e.entryType === "exam" ? "Prüfung" : "Termin";
-      return {
-        time: e.startTime || "",
-        title: e.title,
-        badgeClass, badgeLabel,
-        onClick: () => openCalendarEventModal(e.id),
-      };
-    });
+    renderDayGroups(apptEl, appts, (e) => weekdayOf(e.entryDate), apptRow);
+  }
+
+  const todayApptEl = $("todayAppointmentsList");
+  if (todayApptEl) {
+    const todayAppts = allAppts.filter((e) => e.entryDate <= todayStr && (e.endDate || e.entryDate) >= todayStr);
+    todayApptEl.innerHTML = "";
+    if (!todayAppts.length) {
+      todayApptEl.innerHTML = '<p class="mini-empty" style="color:#dcfce7;">Keine Termine heute.</p>';
+    } else {
+      todayAppts.forEach((e) => {
+        const { time, title, badgeClass, badgeLabel, onClick } = apptRow(e);
+        const div = document.createElement("div");
+        div.className = "mini-item";
+        div.innerHTML = `<span class="time">${esc(time)}</span><span>${esc(title)}</span><span class="badge ${badgeClass}">${esc(badgeLabel)}</span>`;
+        div.onclick = onClick;
+        todayApptEl.appendChild(div);
+      });
+    }
   }
 
   unplannedEl.innerHTML = '<p class="mini-empty">Lade …</p>';
