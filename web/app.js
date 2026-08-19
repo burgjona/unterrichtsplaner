@@ -1657,6 +1657,7 @@ async function renderWeekOverview() {
     const data = await calTtFetch(mondayStr);
     const unplanned = [];
     (data.days || []).forEach((day) => {
+      if (day.date === todayStr) return;     // Heute steht bereits im "Guten Tag!"-Panel
       if (schoolDateFor(day.date)) return;   // Ferien/Feiertag → an dem Tag ohnehin keine Stunde
       (day.items || []).forEach((it) => {
         if (it.classId == null) return;      // kein Klassen-Slot (z. B. Aufsicht) → nicht relevant
