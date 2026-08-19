@@ -2712,8 +2712,12 @@ function jumpCalendarToDate(dStr) {
 function visibleClassIds() { return state.classes.filter((c) => c.visibleInCalendar !== false).map((c) => c.id); }
 function catById(id) { return id == null ? null : state.calendarCategories.find((c) => c.id === id); }
 // U31: Termine können mehreren Klassen zugeordnet sein (classIds); auto-generierte
-// Stundentermine tragen weiterhin nur classId — als Fallback berücksichtigen.
+// Stundentermine tragen weiterhin nur classId. Bei lessonId-Verknüpfung ist die Lesson die
+// Single Source of Truth für die Klasse — classId zuerst, sonst könnte ein veralteter
+// calendar_entry_classes-Eintrag (z. B. nach Klassenwechsel der Stunde) die falsche Klasse
+// anzeigen, obwohl class_id längst aktuell ist.
 function entryClassIds(e) {
+  if (e.lessonId != null) return e.classId != null ? [e.classId] : [];
   return (e.classIds && e.classIds.length) ? e.classIds : (e.classId != null ? [e.classId] : []);
 }
 // Klassen-Kennzeichnung für Kalendertermine in Tages-/Wochenansicht: "(Name, Fach)",
@@ -5552,15 +5556,17 @@ function getSyncConflictsModule() {
   return _syncConflictsModulePromise;
 }
 
-// Sidebar-Badge: zeigt/versteckt sich je nachdem, ob ungelöste Sync-Konflikte vorliegen
-// (jede Entität, nicht nur notes) — aktualisiert bei jeder SyncEngine-Änderung.
+// Sidebar-Badge: zeigt/versteckt sich je nachdem, ob ungelöste Sync-Konflikte oder
+// fehlgeschlagene Mutationen vorliegen (jede Entität, nicht nur notes) — aktualisiert bei
+// jeder SyncEngine-Änderung. "failed" sonst unsichtbar in der Queue stecken (siehe push()).
 async function updateSyncConflictBadge() {
   const btn = $("syncConflictBtn");
   if (!btn) return;
-  const conflicts = await SyncEngine.getConflicts();
-  btn.classList.toggle("hidden", conflicts.length === 0);
+  const [conflicts, failed] = await Promise.all([SyncEngine.getConflicts(), SyncEngine.getFailed()]);
+  const total = conflicts.length + failed.length;
+  btn.classList.toggle("hidden", total === 0);
   const label = $("syncConflictBtnLabel");
-  if (label) label.textContent = `Sync-Konflikte (${conflicts.length})`;
+  if (label) label.textContent = `Sync-Probleme (${total})`;
 }
 
 let _notizenModulePromise = null;

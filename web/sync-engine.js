@@ -319,6 +319,35 @@ const SyncEngine = (() => {
     return OfflineDB.getMutationsByStatus("conflict");
   }
 
+  // Fehlgeschlagene Mutationen (Server hat mit 4xx/5xx abgelehnt, kein Netzwerkfehler —
+  // die bleiben "pending" und werden beim nächsten Online-Kontakt automatisch erneut
+  // versucht). "failed" bleibt sonst für immer unsichtbar in der Queue stecken, siehe push().
+  function getFailed() {
+    return OfflineDB.getMutationsByStatus("failed");
+  }
+
+  // "Erneut versuchen": zurück auf "pending", nächster Push-Durchlauf greift sie wieder auf.
+  async function retryFailed(queueId) {
+    const mutation = await OfflineDB.get("_mutationQueue", queueId);
+    if (!mutation || mutation.status !== "failed") return;
+    await OfflineDB.updateMutation(queueId, { status: "pending", lastError: null });
+    notify(mutation.entityType, {});
+    await push();
+  }
+
+  // "Verwerfen": Mutation aus der Queue entfernen. Bei "create" zusätzlich die nie
+  // synchronisierte optimistische Lokalzeile löschen (sonst hängt sie ohne Möglichkeit,
+  // je serverseitig zu entstehen, dauerhaft materialisiert in der UI).
+  async function discardFailed(queueId) {
+    const mutation = await OfflineDB.get("_mutationQueue", queueId);
+    if (!mutation || mutation.status !== "failed") return;
+    if (mutation.op === "create") {
+      await OfflineDB.delete(mutation.entityType, mutation.localId);
+    }
+    await OfflineDB.deleteMutation(queueId);
+    notify(mutation.entityType, {});
+  }
+
   // "Meine Version behalten": Mutation erneut auf "pending" setzen, aber mit dem inzwischen
   // aktuellen Server-Stand als neue Basis — der nächste Push überschreibt den Server damit
   // bewusst (erzwungenes Update), statt erneut in denselben Konflikt zu laufen.
@@ -355,6 +384,6 @@ const SyncEngine = (() => {
 
   return {
     init, pull, push: schedulePush, materialize, create, createAndSync, update, remove, onChange,
-    getConflicts, resolveKeepLocal, resolveKeepServer,
+    getConflicts, resolveKeepLocal, resolveKeepServer, getFailed, retryFailed, discardFailed,
   };
 })();

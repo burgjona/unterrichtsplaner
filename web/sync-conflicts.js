@@ -29,11 +29,32 @@ export function createSyncConflictsModule(ctx) {
     return `<div class="conflict-entity-fallback">${rows}</div>`;
   }
 
+  function renderFailedItem(f) {
+    return `<div class="conflict-item" data-queue-id="${f.queueId}">
+      <div class="conflict-item-head">
+        <span class="badge bad">${esc(f.entityType)}</span>
+        <span class="muted small">konnte nicht gespeichert werden</span>
+      </div>
+      <div class="conflict-versions">
+        <div class="conflict-version">
+          <div class="conflict-version-label">Deine Version (nur lokal)</div>
+          ${renderEntitySummary(f.entityType, f.payload)}
+        </div>
+      </div>
+      <p class="muted small">${esc(f.lastError || "Unbekannter Fehler.")}</p>
+      <div class="conflict-actions">
+        <button class="btn small" data-retry-failed="1" data-queue-id="${f.queueId}">Erneut versuchen</button>
+        <button class="btn small secondary" data-discard-failed="1" data-queue-id="${f.queueId}">Verwerfen</button>
+      </div>
+    </div>`;
+  }
+
   async function renderConflictList() {
-    const conflicts = await SyncEngine.getConflicts();
-    if (!conflicts.length) {
-      return { html: '<p class="muted small">Keine offenen Sync-Konflikte mehr.</p>', conflicts };
+    const [conflicts, failed] = await Promise.all([SyncEngine.getConflicts(), SyncEngine.getFailed()]);
+    if (!conflicts.length && !failed.length) {
+      return { html: '<p class="muted small">Keine offenen Sync-Probleme mehr.</p>', conflicts, failed };
     }
+    const failedItems = failed.map(renderFailedItem).join("");
     const items = conflicts.map((c) => {
       const gone = !c.serverEntity;
       return `<div class="conflict-item" data-queue-id="${c.queueId}">
@@ -61,7 +82,7 @@ export function createSyncConflictsModule(ctx) {
         </div>
       </div>`;
     }).join("");
-    return { html: items, conflicts };
+    return { html: failedItems + items, conflicts, failed };
   }
 
   async function openOverlay() {
@@ -69,7 +90,7 @@ export function createSyncConflictsModule(ctx) {
     $("modalRoot").innerHTML =
       `<div class="modal-overlay" id="modalOverlay"><div class="modal-box" style="max-width:640px;">
         <button class="modal-close" id="modalCloseBtn">Schließen</button>
-        <h2>Sync-Konflikte</h2>
+        <h2>Sync-Probleme</h2>
         <p class="muted small">Diese Datensätze wurden offline geändert, während sie auf einem
           anderen Gerät bereits eine neuere Version bekommen haben. Wähle je Eintrag, welche
           Version gelten soll.</p>
@@ -97,15 +118,43 @@ export function createSyncConflictsModule(ctx) {
         }
       };
     });
+    list.querySelectorAll("[data-retry-failed]").forEach((btn) => {
+      btn.onclick = async () => {
+        const queueId = Number(btn.dataset.queueId);
+        btn.disabled = true;
+        try {
+          await SyncEngine.retryFailed(queueId);
+          toast("Erneut gesendet.");
+          await refreshList();
+        } catch (e) {
+          toast(e.message, false);
+          btn.disabled = false;
+        }
+      };
+    });
+    list.querySelectorAll("[data-discard-failed]").forEach((btn) => {
+      btn.onclick = async () => {
+        const queueId = Number(btn.dataset.queueId);
+        btn.disabled = true;
+        try {
+          await SyncEngine.discardFailed(queueId);
+          toast("Verworfen.");
+          await refreshList();
+        } catch (e) {
+          toast(e.message, false);
+          btn.disabled = false;
+        }
+      };
+    });
   }
 
   async function refreshList() {
     const list = $("syncConflictList");
     if (!list) return; // Overlay wurde inzwischen geschlossen
-    const { html, conflicts } = await renderConflictList();
+    const { html, conflicts, failed } = await renderConflictList();
     list.innerHTML = html;
     wireResolveButtons();
-    if (!conflicts.length) {
+    if (!conflicts.length && !failed.length) {
       // Letzter Konflikt aufgelöst — Overlay nach kurzer Pause automatisch schließen.
       setTimeout(() => { const m = $("modalRoot"); if (m && $("syncConflictList")) m.innerHTML = ""; }, 900);
     }

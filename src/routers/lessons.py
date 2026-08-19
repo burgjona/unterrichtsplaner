@@ -15,6 +15,7 @@ from ..schemas import (
     Bibox, Klafki, LernzielIn, LernzielOut, LessonCreate, LessonOut, LessonUpdate,
     MaterialOut, PhaseIn, PhaseOut,
 )
+from .calendar import _set_entry_classes
 
 router = APIRouter(prefix="/lessons", tags=["lessons"])
 
@@ -48,19 +49,26 @@ def _sync_calendar_entry(conn, user_id: int, lesson_id: int) -> None:
         (lesson_id,),
     ).fetchone()
     if l["date"]:
+        # calendar_entry_classes (Mehrfach-Klassen-Auswahl, sonst nur für manuelle Termine
+        # gepflegt) muss hier mitgezogen werden — sonst zeigt die Kalender-Anzeige (die
+        # class_ids gegenüber der Einzel-class_id-Spalte bevorzugt) nach einem Klassenwechsel
+        # der Stunde weiterhin die alte Klasse an, obwohl class_id längst aktuell ist.
+        class_ids = [l["class_id"]] if l["class_id"] is not None else []
         if existing:
             conn.execute(
                 "UPDATE calendar_entries SET title = ?, entry_date = ?, class_id = ?, "
                 "updated_at = strftime('%Y-%m-%d %H:%M:%f','now') WHERE id = ?",
                 (l["title"], l["date"], l["class_id"], existing["id"]),
             )
+            _set_entry_classes(conn, user_id, existing["id"], class_ids)
         else:
-            conn.execute(
+            cur = conn.execute(
                 "INSERT INTO calendar_entries"
                 "(user_id, class_id, lesson_id, title, entry_date, entry_type, auto_generated, updated_at) "
                 "VALUES (?,?,?,?,?, 'normal', 1, strftime('%Y-%m-%d %H:%M:%f','now'))",
                 (user_id, l["class_id"], lesson_id, l["title"], l["date"]),
             )
+            _set_entry_classes(conn, user_id, cur.lastrowid, class_ids)
     elif existing:
         if existing["auto_generated"]:
             conn.execute("DELETE FROM calendar_entries WHERE id = ?", (existing["id"],))

@@ -37,11 +37,11 @@
       <span class="nav-search-kbd" id="cmdOpenBtnKbd">⌘K</span>
     </button>
 
-    <!-- Offline-Sync (F5): erscheint nur, solange ungelöste Sync-Konflikte in der lokalen
-         Mutation-Queue liegen (siehe sync-conflicts.js). -->
+    <!-- Offline-Sync (F5): erscheint nur, solange ungelöste Sync-Konflikte oder fehlgeschlagene
+         Mutationen in der lokalen Mutation-Queue liegen (siehe sync-conflicts.js). -->
     <button class="nav-search-btn nav-sync-conflict-btn hidden" id="syncConflictBtn" type="button">
       <span class="nav-search-ic" aria-hidden="true">⚠</span>
-      <span id="syncConflictBtnLabel">Sync-Konflikte</span>
+      <span id="syncConflictBtnLabel">Sync-Probleme</span>
     </button>
 
     <button type="button" class="section-label" data-section-toggle="uebersicht" aria-expanded="true">
