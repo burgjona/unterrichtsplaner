@@ -404,6 +404,8 @@ input.input-error { border-color: var(--bad); background: color-mix(in srgb, var
 .stoff-plan-edit-inner { margin-top:12px; padding-top:12px; border-top:1px dashed var(--line); }
 .kumuliert-block { border:1px solid var(--line); border-radius:12px; padding:10px 12px; margin-bottom:12px; }
 .kumuliert-block-head { display:flex; justify-content:space-between; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:8px; }
+.kumuliert-block-title { display:flex; align-items:baseline; gap:8px; }
+.kumuliert-block-collapsed { margin-bottom:6px; }
 .stoff-edit-table input { width:100%; padding:4px 6px; box-sizing:border-box; }
 .stoff-edit-table th, .stoff-edit-table td { padding:4px 6px; }
 /* Hinweis/Bemerkung als volle Breite unter dem jeweiligen Lernbereich statt gequetscht in einer Spalte. */

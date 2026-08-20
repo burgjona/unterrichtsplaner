@@ -417,16 +417,19 @@ export function createStoffplanModule(ctx) {
 
   function kumuliertBlockHtml(b, bi) {
     const zeit = (b.startDate || b.endDate) ? `${esc(deDate(b.startDate) || "?")} – ${esc(deDate(b.endDate) || "?")}` : "—";
-    return `<div class="kumuliert-block">
+    const collapsed = !!b.collapsed;
+    const toggleBtn = `<button class="btn tiny secondary" data-ka-block-toggle="${bi}" title="${collapsed ? "Ausklappen" : "Einklappen"}">${collapsed ? "▸" : "▾"}</button>`;
+    return `<div class="kumuliert-block${collapsed ? " kumuliert-block-collapsed" : ""}">
       <div class="kumuliert-block-head">
-        <strong>${esc(b.lbCode || "")} ${esc(b.title || "")}</strong>
-        <span class="small muted">${esc(b.ustd ?? "—")} Ustd. · ${zeit}${b.weeks != null ? ` · ${esc(b.weeks)} Wochen` : ""}</span>
+        <span class="kumuliert-block-title">${toggleBtn}<strong>${esc(b.lbCode || "")} ${esc(b.title || "")}</strong></span>
+        <span class="small muted">${esc(b.ustd ?? "—")} Ustd. · ${zeit}${b.weeks != null ? ` · ${esc(b.weeks)} Wochen` : ""}${collapsed ? ` · ${b.cards.length} Stunde(n)` : ""}</span>
       </div>
+      ${collapsed ? "" : `
       <div class="seq-cards" data-ka-cards="${bi}">
         ${b.cards.map((c, ci) => kumuliertCardHtml(c, bi, ci)).join("")
           || '<p class="muted small">Noch keine Stunden.</p>'}
       </div>
-      <button class="btn tiny secondary" data-ka-add="${bi}">+ Stunde hinzufügen</button>
+      <button class="btn tiny secondary" data-ka-add="${bi}">+ Stunde hinzufügen</button>`}
     </div>`;
   }
 
@@ -479,6 +482,11 @@ export function createStoffplanModule(ctx) {
     box.querySelectorAll("[data-ka-toggle]").forEach((b) => b.onclick = () => {
       const [bi, ci] = b.dataset.kaToggle.split("-").map(Number);
       kumuliertBlocks[bi].cards[ci].collapsed = !kumuliertBlocks[bi].cards[ci].collapsed;
+      renderKumulierteAnsichtFromState(box);
+    });
+    box.querySelectorAll("[data-ka-block-toggle]").forEach((b) => b.onclick = () => {
+      const bi = Number(b.dataset.kaBlockToggle);
+      kumuliertBlocks[bi].collapsed = !kumuliertBlocks[bi].collapsed;
       renderKumulierteAnsichtFromState(box);
     });
     box.querySelectorAll("[data-ka-clear-date]").forEach((b) => b.onclick = () => {
