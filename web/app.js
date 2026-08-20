@@ -2885,15 +2885,23 @@ function renderCalendar() {
 }
 // U28: Tages-Agenda unter dem Monatsgitter — zeigt die Termine eines Tages als Liste
 // (Klick öffnet Bearbeiten/Detail); ersetzt das direkte Öffnen aus der Mini-Kachel heraus.
-function renderDayAgenda(dStr) {
+// U34: Bei aktivem Filter „Nur Stundenplan“ zeigt die Tages-Agenda stattdessen die
+// Stundenplan-Stunden des Tages (wie Termine) statt der ausgeblendeten Meldung.
+async function renderDayAgenda(dStr) {
   calSelectedDate = dStr;
   const panel = $("calDayAgenda");
   if (!panel) return;
   document.querySelectorAll("#calGrid .cal-cell").forEach((c) => c.classList.toggle("selected", c.dataset.date === dStr));
   const d = parseIso(dStr);
   $("calDayAgendaDate").textContent = d ? d.toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long" }) : dStr;
-  // U33: Filter „Nur Stundenplan“ blendet auch die Termine der Tages-Agenda aus.
-  const items = calOnlyTt ? [] : entriesForDate(dStr).slice().sort((a, b) => {
+  const addBtn = $("calDayAgendaAddBtn");
+  if (addBtn) addBtn.onclick = () => openCalEntryPanel(dStr);
+  if (calOnlyTt) {
+    await renderDayAgendaTt(dStr);
+    panel.classList.remove("hidden");
+    return;
+  }
+  const items = entriesForDate(dStr).slice().sort((a, b) => {
     if (a.allDay !== b.allDay) return a.allDay ? -1 : 1;
     return (a.startTime || "").localeCompare(b.startTime || "");
   });
@@ -2905,15 +2913,39 @@ function renderDayAgenda(dStr) {
     const time = e.allDay ? "Ganztägig" : ([e.startTime, e.endTime].filter(Boolean).join(" – ") || "—");
     return `<div class="cal-day-agenda-item ${esc(e.entryType)}" data-lesson="${e.lessonId == null ? "" : e.lessonId}" data-entry-id="${e.id}"${style}>` +
       `<span class="cal-day-agenda-time">${esc(time)}</span><span class="cal-day-agenda-title">${esc(e.title)}${esc(entryClassSuffix(e))}${e.room ? ` <span class="muted small">· Zimmer ${esc(e.room)}</span>` : ""}</span></div>`;
-  }).join("") : `<p class="muted small cal-day-agenda-empty">${calOnlyTt ? "Termine ausgeblendet (Filter „Nur Stundenplan“)." : "Keine Termine an diesem Tag."}</p>`;
+  }).join("") : `<p class="muted small cal-day-agenda-empty">Keine Termine an diesem Tag.</p>`;
   list.querySelectorAll(".cal-day-agenda-item").forEach((el) => {
     const lid = el.dataset.lesson;
     if (lid) el.onclick = () => { const l = state.lessons.find((x) => String(x.id) === lid); if (l) openLessonModal(l); };
     else if (el.dataset.entryId) el.onclick = () => openCalendarEventModal(el.dataset.entryId);
   });
-  const addBtn = $("calDayAgendaAddBtn");
-  if (addBtn) addBtn.onclick = () => openCalEntryPanel(dStr);
   panel.classList.remove("hidden");
+}
+// U34: Stundenplan-Stunden eines Tages in der Tages-Agenda anzeigen (Filter „Nur Stundenplan“).
+async function renderDayAgendaTt(dStr) {
+  const list = $("calDayAgendaList");
+  const dd = parseIso(dStr);
+  if (!dd) { list.innerHTML = `<p class="muted small cal-day-agenda-empty">Keine Stunden an diesem Tag.</p>`; return; }
+  const monday = new Date(dd); monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+  const mondayStr = isoDate(monday);
+  let data;
+  try { data = await calTtFetch(mondayStr); } catch (e) { data = null; }
+  if (calSelectedDate !== dStr) return;                 // U34: Auswahl inzwischen weitergesprungen → Ergebnis verwerfen
+  const day = data && Array.isArray(data.days) ? data.days.find((x) => x.date === dStr) : null;
+  const items = day && Array.isArray(day.items) ? day.items : [];
+  list.innerHTML = items.length ? items.map((it) => {
+    const color = calTtSafeColor(it.color);
+    const style = ` style="background:${color};color:${readableTextColor(color)}"`;
+    const delBtn = it.source === "override"
+      ? `<button type="button" class="cal-tt-chip-del" data-tt-override-del="${it.entryId}" title="Vertretung entfernen" aria-label="Vertretung entfernen">×</button>`
+      : "";
+    return `<div class="cal-day-agenda-item"${style}>` +
+      `<span class="cal-day-agenda-time">${esc(it.timeRange || "")}</span>` +
+      `<span class="cal-day-agenda-title">${esc(it.title)}${it.subtitle ? ` <span class="muted small">· ${esc(it.subtitle)}</span>` : ""}</span>${delBtn}</div>`;
+  }).join("") : `<p class="muted small cal-day-agenda-empty">Keine Stunden an diesem Tag.</p>`;
+  list.querySelectorAll("[data-tt-override-del]").forEach((btn) => {
+    btn.onclick = (ev) => { ev.stopPropagation(); calTtDeleteOverride(Number(btn.dataset.ttOverrideDel)); };
+  });
 }
 
 async function saveCalendarEntry() {
