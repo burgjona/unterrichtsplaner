@@ -133,19 +133,24 @@ def run(conn, user_id, function, system, user_text, schema=None, max_tokens=2000
     resp = client.messages.create(**kwargs)
 
     text = next((b.text for b in resp.content if getattr(b, "type", None) == "text"), "")
-    if getattr(resp, "stop_reason", None) == "max_tokens":
-        raise ResponseTruncated(function)
     usage = resp.usage
     inp = getattr(usage, "input_tokens", 0) or 0
     out = getattr(usage, "output_tokens", 0) or 0
     cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
     p_in, p_out = PRICING.get(model, (0.0, 0.0))
     cost = (inp * p_in + out * p_out + cache_read * p_in * 0.1) / 1_000_000
+    # Bei erzwungenem JSON-Schema-Output (constrained decoding) schließt das Modell die
+    # Struktur beim Erreichen des Token-Limits mitunter selbst syntaktisch gültig ab, ohne
+    # dass stop_reason zuverlässig "max_tokens" meldet – deshalb zusätzlich am Output-Token-
+    # Verbrauch erkennen, dass praktisch das gesamte Budget verbraucht wurde.
+    truncated = getattr(resp, "stop_reason", None) == "max_tokens" or out >= max_tokens - 1
     conn.execute(
         """INSERT INTO ai_usage(user_id, function, model, input_tokens, output_tokens,
            cache_read_tokens, cost_usd) VALUES (?,?,?,?,?,?,?)""",
         (user_id, function, model, inp, out, cache_read, cost),
     )
     conn.commit()
+    if truncated:
+        raise ResponseTruncated(function)
     _prompt_cache[cache_key] = text
     return {"text": text, "cached": False}

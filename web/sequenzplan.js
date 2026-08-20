@@ -180,8 +180,8 @@ export function createSequenzplanModule(ctx) {
           ? `/sequenz-stunden/suggest-date?blockId=${blockId}&after=${after}`
           : `/sequenz-stunden/suggest-date?blockId=${blockId}`;
         res = await API.get(url);
-      } catch (e) { i++; continue; /* best effort – ohne Stundenplan/Blockstart bleibt das Datum leer */ }
-      if (!res.date) { i++; continue; }
+      } catch (e) { break; /* best effort – ohne Stundenplan/Blockstart bleiben restliche Daten leer */ }
+      if (!res.date) break; /* gleiche Anfrage würde bei unverändertem "after" wieder leer bleiben */
       cards[i].date = res.date;
       after = res.date;
       i++;
