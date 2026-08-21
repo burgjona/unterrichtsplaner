@@ -8,7 +8,6 @@ const meyerMerkmale = [
   "Individuelles Fördern", "Intelligentes Üben", "Transparente Leistungserwartungen",
   "Vorbereitete Umgebung",
 ];
-const phaseNames = ["Einstieg", "Erarbeitung", "Sicherung", "Abschluss"];
 const BLOOM_STUFEN = ["Erinnern", "Verstehen", "Anwenden", "Analysieren", "Bewerten", "Erschaffen"];
 const TRANSPARENT_PX = "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==";
 const ZIEL_BADGE = "display:inline-block;padding:1px 7px;border-radius:8px;background:#e0e7ff;color:#3730a3;font-size:11px;font-weight:700;";
@@ -121,8 +120,10 @@ async function restoreSequenzStunden(blockId, targetRows) {
    eingefügte Blöcke ohne erneutes Verdrahten funktioniert. */
 const localUndoSnapshots = new Map();   // blockKey -> Array der Feldwerte vor der ersten Änderung
 
+// Die Phasen-Bezeichnung (data-phase-kind) bleibt außen vor: sie ändert die Struktur der
+// Tabelle (Nummerierung, Reihenfolge) und wird beim Wechsel ohnehin neu gerendert.
 function localUndoFields(block) {
-  return [...block.querySelectorAll("input, textarea, select")];
+  return [...block.querySelectorAll("input, textarea, select:not([data-phase-kind])")];
 }
 
 document.addEventListener("focusin", (e) => {
@@ -226,84 +227,189 @@ function setMeyerGrid(containerId, values) {
   });
 }
 
-/* ---------- Phasentabelle ---------- */
-function buildPhases() {
-  const wrap = $("phases");
-  wrap.innerHTML = "";
-  phaseNames.forEach((p, i) => {
-    const div = document.createElement("div");
-    div.className = "phase";
-    div.dataset.localUndoBlock = `phase-${i}`;
-    div.innerHTML =
-      `<div class="phase-head">
-         <strong>${p}</strong>
-         <button class="btn tiny secondary" data-local-undo-btn disabled title="Letzte Änderung in dieser Phase rückgängig machen">Rückgängig</button>
-       </div>
-       <div class="row-4" style="margin-top:10px;">
-         <input placeholder="Zeit (Min.)" id="time${i}" />
-         <select id="social${i}"><option>EA</option><option>PA</option><option>GA</option><option>Plenum</option></select>
-         <input placeholder="Methode" id="method${i}" />
-         <input placeholder="Material/Raum" id="material${i}" />
-       </div>
-       <label>Lehrertätigkeit</label><textarea id="teacher${i}"></textarea>
-       <label>Schülertätigkeit</label><textarea id="student${i}"></textarea>
-       <label>Differenzierung (G/M/E)</label><textarea id="gme${i}"></textarea>`;
-    wrap.appendChild(div);
+/* ---------- Phasentabelle ----------
+   Die Phasen einer Stunde sind frei zusammenstellbar: Grundgerüst Einstieg/Erarbeitung/
+   Sicherung/Ausstieg, nach einer Sicherung darf eine weitere Erarbeitung folgen. Die
+   römische Nummerierung (Erarbeitung I, II …) entsteht automatisch und nur dann, wenn eine
+   Bezeichnung mehrfach vorkommt – bei einer einzelnen Erarbeitung bleibt es „Erarbeitung“. */
+const PHASE_KINDS = ["Einstieg", "Erarbeitung", "Sicherung", "Ausstieg", "Puffer"];
+const SOCIAL_FORMS = ["EA", "PA", "GA", "Plenum"];
+const ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"];
+// [{kind, minutes, socialForm, method, material, teacher, student, gme}] – Quelle der Wahrheit
+// für Anzahl/Reihenfolge der Phasen; die Feldwerte werden vor jedem Neuaufbau aus dem DOM
+// zurückgelesen (syncPhasesFromDom), damit Tippen kein Re-Render auslöst.
+let lessonPhases = [];
+
+function emptyPhase(kind, minutes) {
+  return { kind, minutes: minutes == null ? "" : String(minutes), socialForm: "EA",
+           method: "", material: "", teacher: "", student: "", gme: "" };
+}
+function defaultPhases() {
+  return ["Einstieg", "Erarbeitung", "Sicherung", "Ausstieg"].map((k) => emptyPhase(k));
+}
+function phaseDisplayNames(phases) {
+  const total = {};
+  phases.forEach((p) => (total[p.kind] = (total[p.kind] || 0) + 1));
+  const seen = {};
+  return phases.map((p) => {
+    seen[p.kind] = (seen[p.kind] || 0) + 1;
+    return total[p.kind] > 1 ? `${p.kind} ${ROMAN[seen[p.kind] - 1] || seen[p.kind]}` : p.kind;
   });
 }
-function readPhases() {
-  const phases = [];
-  phaseNames.forEach((name, i) => {
-    const minutes = $("time" + i).value.trim();
-    const method = $("method" + i).value.trim();
-    const material = $("material" + i).value.trim();
-    const teacher = $("teacher" + i).value.trim();
-    const student = $("student" + i).value.trim();
-    const gme = $("gme" + i).value.trim();
-    if (minutes || method || material || teacher || student || gme) {
-      phases.push({
-        phaseName: name,
-        minutes: minutes ? Number(minutes) : null,
-        socialForm: $("social" + i).value,
-        method, material, teacherActivity: teacher, studentActivity: student, gme,
-      });
-    }
-  });
-  // Puffer nach dem Abschluss: reines Minuten-Feld, darf leer bleiben, zählt nicht zur
-  // Pflichtsumme der vier Kernphasen (siehe validatePhaseTimes).
-  const bufferEl = $("phaseBuffer");
-  const bufferMinutes = bufferEl ? bufferEl.value.trim() : "";
-  const bufferTeacher = $("bufferTeacher") ? $("bufferTeacher").value.trim() : "";
-  const bufferStudent = $("bufferStudent") ? $("bufferStudent").value.trim() : "";
-  if (bufferMinutes || bufferTeacher || bufferStudent) {
-    phases.push({
-      phaseName: "Puffer", minutes: bufferMinutes ? Number(bufferMinutes) : null, socialForm: null,
-      teacherActivity: bufferTeacher, studentActivity: bufferStudent,
-    });
-  }
-  return phases;
+// Umkehrung für gespeicherte Stunden: „Erarbeitung II“ → „Erarbeitung“. Unbekannte
+// Bezeichnungen (z. B. „Abschluss“ aus älteren Stunden) bleiben unverändert erhalten.
+function phaseKindFromName(name) {
+  const m = String(name || "").match(/^(.+?)\s+(?:I|II|III|IV|V|VI|VII|VIII|IX|X)$/);
+  return (m ? m[1] : String(name || "")).trim();
+}
+function setPhasesFromLesson(phases) {
+  const list = (phases || []).map((p) => ({
+    kind: phaseKindFromName(p.phaseName) || "Erarbeitung",
+    minutes: p.minutes == null ? "" : String(p.minutes),
+    socialForm: SOCIAL_FORMS.includes(p.socialForm) ? p.socialForm : "EA",
+    method: p.method || "", material: p.material || "",
+    teacher: p.teacherActivity || "", student: p.studentActivity || "", gme: p.gme || "",
+  }));
+  lessonPhases = list.length ? list : defaultPhases();
+  renderPhases();
 }
 
-// Live-Validierung: Einstieg+Erarbeitung+Sicherung+Abschluss müssen exakt der Stundendauer
-// (45/90 Min.) entsprechen. Puffer zählt bewusst nicht mit. Reine Anzeige (rot), blockiert
-// das Speichern nicht.
+function renderPhases() {
+  const wrap = $("phases");
+  if (!wrap) return;
+  resetLocalUndo("phase-");
+  const names = phaseDisplayNames(lessonPhases);
+  wrap.innerHTML = lessonPhases.map((p, i) => {
+    const kinds = PHASE_KINDS.includes(p.kind) ? PHASE_KINDS : PHASE_KINDS.concat([p.kind]);
+    const kindOpts = kinds.map((k) =>
+      `<option value="${esc(k)}" ${k === p.kind ? "selected" : ""}>${esc(k)}</option>`).join("");
+    const socialOpts = SOCIAL_FORMS.map((s) =>
+      `<option ${s === p.socialForm ? "selected" : ""}>${s}</option>`).join("");
+    return `<div class="phase" data-local-undo-block="phase-${i}">
+      <div class="phase-head">
+        <span class="phase-title">
+          <strong>${esc(names[i])}</strong>
+          <select data-phase-kind="${i}" class="phase-kind-select" title="Bezeichnung dieser Phase">${kindOpts}</select>
+        </span>
+        <span class="phase-head-actions">
+          <button class="btn tiny secondary" data-phase-move="${i}" data-dir="-1" ${i === 0 ? "disabled" : ""} title="Phase nach oben">↑</button>
+          <button class="btn tiny secondary" data-phase-move="${i}" data-dir="1" ${i === lessonPhases.length - 1 ? "disabled" : ""} title="Phase nach unten">↓</button>
+          <button class="btn tiny secondary" data-local-undo-btn disabled title="Letzte Änderung in dieser Phase rückgängig machen">Rückgängig</button>
+          <button class="btn tiny danger" data-phase-del="${i}" title="Diese Phase entfernen">Entfernen</button>
+        </span>
+      </div>
+      <div class="row-4" style="margin-top:10px;">
+        <input placeholder="Zeit (Min.)" id="time${i}" value="${esc(p.minutes)}" />
+        <select id="social${i}">${socialOpts}</select>
+        <input placeholder="Methode" id="method${i}" value="${esc(p.method)}" />
+        <input placeholder="Material/Raum" id="material${i}" value="${esc(p.material)}" />
+      </div>
+      <label>Lehrertätigkeit</label><textarea id="teacher${i}">${esc(p.teacher)}</textarea>
+      <label>Schülertätigkeit</label><textarea id="student${i}">${esc(p.student)}</textarea>
+      <label>Differenzierung (G/M/E)</label><textarea id="gme${i}">${esc(p.gme)}</textarea>
+    </div>`;
+  }).join("");
+  wrap.querySelectorAll("[data-phase-kind]").forEach((sel) => (sel.onchange = () => {
+    syncPhasesFromDom();
+    lessonPhases[Number(sel.dataset.phaseKind)].kind = sel.value;
+    renderPhases();
+  }));
+  wrap.querySelectorAll("[data-phase-del]").forEach((btn) => (btn.onclick = () => {
+    syncPhasesFromDom();
+    lessonPhases.splice(Number(btn.dataset.phaseDel), 1);
+    renderPhases();
+  }));
+  wrap.querySelectorAll("[data-phase-move]").forEach((btn) => (btn.onclick = () => {
+    syncPhasesFromDom();
+    const from = Number(btn.dataset.phaseMove), to = from + Number(btn.dataset.dir);
+    if (to < 0 || to >= lessonPhases.length) return;
+    lessonPhases.splice(to, 0, lessonPhases.splice(from, 1)[0]);
+    renderPhases();
+  }));
+  validatePhaseTimes();
+  renderLernziele();   // Phasen-Auswahl der Lernziele hängt an Namen/Anzahl der Phasen
+}
+
+// Neue Phase vorbelegt mit der noch nicht verplanten Restzeit (damit die Stundendauer weiter
+// exakt aufgeht) und eingefügt vor den abschließenden Phasen (Ausstieg/Puffer) – eine weitere
+// Erarbeitung gehört vor den Ausstieg, nicht dahinter. Reihenfolge bleibt per ↑/↓ änderbar.
+function addPhase() {
+  syncPhasesFromDom();
+  const duration = Number($("lessonDuration").value) || 45;
+  const sum = lessonPhases.reduce((acc, p) => acc + (Number(p.minutes) || 0), 0);
+  const rest = duration - sum;
+  let at = lessonPhases.length;
+  while (at > 0 && ["Ausstieg", "Puffer"].includes(lessonPhases[at - 1].kind)) at--;
+  lessonPhases.splice(at, 0, emptyPhase("Erarbeitung", rest > 0 ? rest : ""));
+  renderPhases();
+}
+
+function syncPhasesFromDom() {
+  lessonPhases.forEach((p, i) => {
+    if (!$("time" + i)) return;
+    p.minutes = $("time" + i).value.trim();
+    p.socialForm = $("social" + i).value;
+    p.method = $("method" + i).value;
+    p.material = $("material" + i).value;
+    p.teacher = $("teacher" + i).value;
+    p.student = $("student" + i).value;
+    p.gme = $("gme" + i).value;
+  });
+}
+
+// Zuordnung Phasen-Index im Formular → sort_order der gespeicherten Phase. Leere Phasen
+// werden nicht gespeichert, dadurch verschieben sich die Indizes; readLernziele() rechnet
+// phaseSortOrder darüber um (sonst zeigte ein Feinziel auf die falsche Phase).
+let phaseIndexMap = {};
+
+function readPhases() {
+  syncPhasesFromDom();
+  const names = phaseDisplayNames(lessonPhases);
+  const out = [];
+  phaseIndexMap = {};
+  lessonPhases.forEach((p, i) => {
+    const minutes = String(p.minutes).trim();
+    if (!minutes && !p.method && !p.material && !p.teacher && !p.student && !p.gme) return;
+    phaseIndexMap[i] = out.length;
+    out.push({
+      phaseName: names[i],
+      minutes: minutes ? Number(minutes) : null,
+      socialForm: p.socialForm,
+      method: p.method.trim(), material: p.material.trim(),
+      teacherActivity: p.teacher.trim(), studentActivity: p.student.trim(), gme: p.gme.trim(),
+    });
+  });
+  return out;
+}
+
+// Live-Validierung: Die Summe aller Phasenzeiten (inkl. Puffer) muss die Stundendauer
+// (45/90 Min.) exakt ausfüllen. Anzeige unter der Tabelle; beim Speichern wird zusätzlich
+// nachgefragt (siehe saveLesson).
 function validatePhaseTimes() {
   const duration = Number($("lessonDuration").value) || 45;
-  const sum = [0, 1, 2, 3].reduce((acc, i) => acc + (Number($("time" + i).value) || 0), 0);
-  const mismatch = sum !== duration;
-  [0, 1, 2, 3].forEach((i) => { const el = $("time" + i); if (el) el.classList.toggle("input-error", mismatch); });
+  syncPhasesFromDom();
+  const sum = lessonPhases.reduce((acc, p) => acc + (Number(p.minutes) || 0), 0);
+  const rest = duration - sum;
+  lessonPhases.forEach((_, i) => {
+    const el = $("time" + i);
+    if (el) el.classList.toggle("input-error", rest !== 0);
+  });
   const msg = $("phaseTimeError");
   if (msg) {
-    msg.textContent = mismatch
-      ? `Summe der Phasenzeiten (Einstieg–Abschluss): ${sum} von ${duration} Min.`
-      : "";
-    msg.classList.toggle("hidden", !mismatch);
+    msg.textContent = rest === 0
+      ? `Zeit exakt verplant: ${sum} von ${duration} Min.`
+      : rest > 0
+        ? `Noch ${rest} Min. zu verplanen (${sum} von ${duration} Min.).`
+        : `${-rest} Min. zu viel verplant (${sum} von ${duration} Min.).`;
+    msg.classList.toggle("ok", rest === 0);
+    msg.classList.remove("hidden");
   }
+  return rest;
 }
 function clearPhaseTimeError() {
-  [0, 1, 2, 3].forEach((i) => { const el = $("time" + i); if (el) el.classList.remove("input-error"); });
+  lessonPhases.forEach((_, i) => { const el = $("time" + i); if (el) el.classList.remove("input-error"); });
   const msg = $("phaseTimeError");
-  if (msg) { msg.textContent = ""; msg.classList.add("hidden"); }
+  if (msg) { msg.textContent = ""; msg.classList.add("hidden"); msg.classList.remove("ok"); }
 }
 
 /* ---------- Sozialform-Monotonie-Warnung (regelbasiert, kein KI-Call) ----------
@@ -368,7 +474,7 @@ function renderLernziele() {
     const bloomOpts = ['<option value="">– Bloom-Stufe –</option>']
       .concat(BLOOM_STUFEN.map((b) => `<option value="${b}" ${z.bloomStufe === b ? "selected" : ""}>${b}</option>`)).join("");
     const phaseOpts = ['<option value="">– keine Phase –</option>']
-      .concat(phaseNames.map((p, pi) => `<option value="${pi}" ${String(z.phaseSortOrder) === String(pi) ? "selected" : ""}>${esc(p)}</option>`)).join("");
+      .concat(phaseDisplayNames(lessonPhases).map((p, pi) => `<option value="${pi}" ${String(z.phaseSortOrder) === String(pi) ? "selected" : ""}>${esc(p)}</option>`)).join("");
     return `<div class="phase" style="margin-top:8px;" data-local-undo-block="lernziel-${i}">
       <div class="phase-head">
         <strong>Lernziel ${i + 1}</strong>
@@ -398,11 +504,18 @@ function addLernziel() {
   lessonZiele.push({ kind: lessonZiele.some((z) => z.kind === "grob") ? "fein" : "grob", text: "", bloomStufe: null, phaseSortOrder: null });
   renderLernziele();
 }
-function readLernziele() {
+// indexMap: Formular-Phasenindex → sort_order der gespeicherten Phase (siehe readPhases).
+// Ohne Map (Aufrufe außerhalb des Speicherns) bleibt phaseSortOrder unverändert.
+function readLernziele(indexMap) {
+  const mapped = (v) => {
+    if (v == null) return null;
+    if (!indexMap) return Number(v);
+    return indexMap[v] == null ? null : indexMap[v];
+  };
   return lessonZiele
     .filter((z) => (z.text || "").trim())
     .map((z, i) => ({ kind: z.kind, text: z.text.trim(), bloomStufe: z.bloomStufe || null,
-                      phaseSortOrder: z.phaseSortOrder == null ? null : Number(z.phaseSortOrder), sortOrder: i }));
+                      phaseSortOrder: mapped(z.phaseSortOrder), sortOrder: i }));
 }
 
 // Datei, die im Erstellungsformular gewählt aber erst nach saveLesson() (sobald die lessonId
@@ -421,17 +534,13 @@ function clearLessonForm() {
   $("lessonDuration").value = "45";
   if ($("lessonTime")) $("lessonTime").value = "";
   if ($("lessonSlot")) $("lessonSlot").value = "";
-  phaseNames.forEach((_, i) =>
-    ["time", "method", "material", "teacher", "student", "gme"].forEach((k) => ($(k + i).value = "")));
-  if ($("phaseBuffer")) $("phaseBuffer").value = "";
-  if ($("bufferTeacher")) $("bufferTeacher").value = "";
-  if ($("bufferStudent")) $("bufferStudent").value = "";
+  lessonZiele = [];
+  lessonPhases = defaultPhases();
+  renderPhases();          // rendert die Lernziele gleich mit
   clearPhaseTimeError();
   resetMeyerGrid("meyerPlanGrid");
   $("diff").value = "ja";
   $("lernen").value = "ja";
-  lessonZiele = [];
-  renderLernziele();
   $("lueHint").classList.toggle("hidden", $("lessonType").value !== "Übungsstunde vor LUE");
   updateLessonLbOptions(null);
   pendingSeqLinkIds = [];
@@ -513,20 +622,7 @@ function loadLessonIntoForm(l) {
   if (l.selbstLernen) $("lernen").value = l.selbstLernen;
   const b = l.bibox || {};
   $("biboxWerk").value = b.werk || ""; $("biboxSeite").value = b.seite || ""; $("biboxNotiz").value = b.notiz || "";
-  (l.phases || []).forEach((p) => {
-    const i = phaseNames.indexOf(p.phaseName);
-    if (i < 0) return;
-    $("time" + i).value = p.minutes == null ? "" : p.minutes;
-    $("social" + i).value = p.socialForm || "EA";
-    $("method" + i).value = p.method || ""; $("material" + i).value = p.material || "";
-    $("teacher" + i).value = p.teacherActivity || ""; $("student" + i).value = p.studentActivity || "";
-    $("gme" + i).value = p.gme || "";
-  });
-  const bufferPhase = (l.phases || []).find((p) => p.phaseName === "Puffer");
-  if ($("phaseBuffer")) $("phaseBuffer").value = bufferPhase && bufferPhase.minutes != null ? bufferPhase.minutes : "";
-  if ($("bufferTeacher")) $("bufferTeacher").value = (bufferPhase && bufferPhase.teacherActivity) || "";
-  if ($("bufferStudent")) $("bufferStudent").value = (bufferPhase && bufferPhase.studentActivity) || "";
-  validatePhaseTimes();
+  setPhasesFromLesson(l.phases);
   $("editHintTitle").textContent = l.title || "";
   $("editHint").classList.remove("hidden");
   // Freie Stunde ohne Lernbereich: KI-Einordnungshinweis anbieten.
@@ -648,6 +744,7 @@ async function updateLessonSeqOptions() {
   const ap = clsId ? state.activePlans[clsId] : null;
   seqOptionsCache = [];
   pendingSeqLinkIds = [];
+  collapsedSeqBlocks.clear();
   lastAutoSeqTitle = "";
   if (!clsId || !ap || !ap.blocks.length) {
     row.classList.add("hidden");
@@ -674,19 +771,49 @@ async function updateLessonSeqOptions() {
   row.classList.toggle("hidden", seqOptionsCache.length === 0);
 }
 
+// Eingeklappte Lernbereich-Blöcke der Sequenzstunden-Auswahl (blockId). Bleibt über
+// Re-Renders hinweg erhalten, wird beim Klassenwechsel in updateLessonSeqOptions geleert.
+const collapsedSeqBlocks = new Set();
+
 function renderLessonSeqList() {
   const list = $("lessonSeqList");
   if (!list) return;
   if (!seqOptionsCache.length) { list.innerHTML = '<p class="muted small">Keine offenen Sequenzstunden.</p>'; return; }
   const capped = pendingSeqLinkIds.length >= 2;
-  list.innerHTML = seqOptionsCache.map((s) => {
-    const checked = pendingSeqLinkIds.includes(s.id);
-    const disabled = capped && !checked;
-    return `<label class="small" style="display:block; margin-bottom:4px;">
-      <input type="checkbox" data-lesson-seq="${s.id}" ${checked ? "checked" : ""} ${disabled ? "disabled" : ""} style="width:auto;" />
-      ${esc(s.blockLabel)} – ${esc(s.title)}
-    </label>`;
+  // Nach Lernbereich-Block gruppieren (Reihenfolge wie im Stoffverteilungsplan).
+  const blocks = [];
+  seqOptionsCache.forEach((s) => {
+    let b = blocks.find((x) => x.blockId === s.blockId);
+    if (!b) { b = { blockId: s.blockId, label: s.blockLabel, items: [] }; blocks.push(b); }
+    b.items.push(s);
+  });
+  list.innerHTML = blocks.map((b) => {
+    const collapsed = collapsedSeqBlocks.has(b.blockId);
+    const chosen = b.items.filter((s) => pendingSeqLinkIds.includes(s.id)).length;
+    const rows = collapsed ? "" : b.items.map((s) => {
+      const checked = pendingSeqLinkIds.includes(s.id);
+      const disabled = capped && !checked;
+      return `<label class="small" style="display:block; margin:4px 0 4px 18px;">
+        <input type="checkbox" data-lesson-seq="${s.id}" ${checked ? "checked" : ""} ${disabled ? "disabled" : ""} style="width:auto;" />
+        ${esc(s.title)}
+      </label>`;
+    }).join("");
+    return `<div class="lesson-seq-block">
+      <button type="button" class="lesson-seq-block-head" data-seq-block="${b.blockId}"
+              aria-expanded="${collapsed ? "false" : "true"}" title="${collapsed ? "Ausklappen" : "Einklappen"}">
+        <span class="lesson-seq-caret">${collapsed ? "▸" : "▾"}</span>
+        <strong>${esc(b.label || "Lernbereich")}</strong>
+        <span class="muted small">${b.items.length} Stunde(n)${chosen ? ` · ${chosen} gewählt` : ""}</span>
+      </button>${rows}
+    </div>`;
   }).join("");
+  list.querySelectorAll("[data-seq-block]").forEach((btn) => {
+    btn.onclick = () => {
+      const id = Number(btn.dataset.seqBlock);
+      if (collapsedSeqBlocks.has(id)) collapsedSeqBlocks.delete(id); else collapsedSeqBlocks.add(id);
+      renderLessonSeqList();
+    };
+  });
   list.querySelectorAll("[data-lesson-seq]").forEach((cb) => {
     cb.onchange = () => toggleLessonSeqSelection(Number(cb.dataset.lessonSeq), cb.checked);
   });
@@ -2592,7 +2719,7 @@ function calTtApplyToCells(data) {
     if (!Array.isArray(day.items) || !day.items.length) return;
     const strip = document.createElement("div");
     strip.className = "cal-tt-strip";
-    strip.innerHTML = day.items.map((it) => {
+    strip.innerHTML = day.items.map((it, idx) => {
       const color = calTtSafeColor(it.color);            // nur Hex → im style-Attribut abgesichert
       const tip = [it.timeRange, it.subtitle].filter(Boolean).join(" · ");
       // U30: Vertretungen (source="override") sind einmalig und per Klick auf das „×" wieder entfernbar.
@@ -2600,11 +2727,19 @@ function calTtApplyToCells(data) {
         ? '<button type="button" class="cal-tt-chip-del" data-tt-override-del="' + it.entryId + '" ' +
           'title="Vertretung entfernen" aria-label="Vertretung entfernen">×</button>'
         : "";
-      return '<span class="cal-tt-chip" style="--cal-tt-c:' + esc(color) + '" title="' + esc(tip) + '">' +
+      return '<span class="cal-tt-chip" data-tt-item="' + idx + '" style="--cal-tt-c:' + esc(color) + '" title="' + esc(tip) + '">' +
         '<span class="cal-tt-dot"></span>' +
         '<span class="cal-tt-title">' + esc(it.title) + '</span>' + delBtn + '</span>';
     }).join("");
     cell.insertBefore(strip, toggle.nextSibling);
+    // U35: Klick auf eine Stunde des Stundenplans → geplante Stunde oder „Stunde jetzt planen".
+    strip.querySelectorAll("[data-tt-item]").forEach((chip) => {
+      chip.onclick = (ev) => {
+        if (ev.target.closest("[data-tt-override-del]")) return;
+        ev.stopPropagation();
+        openTimetableSlotModal(day.date, day.items[Number(chip.dataset.ttItem)]);
+      };
+    });
     strip.querySelectorAll("[data-tt-override-del]").forEach((btn) => {
       btn.onclick = (ev) => { ev.stopPropagation(); calTtDeleteOverride(Number(btn.dataset.ttOverrideDel)); };
     });
@@ -2693,6 +2828,79 @@ async function calTtRenderWeek(mondayStr, gen) {
   }
   if (calTtOn || calOnlyTt) calTtApplyToCells(data);
 }
+/* ---------- U35: Klick auf eine Stunde der Stundenplan-Ebene ----------
+   Ist für diesen Tag und diese Klasse bereits eine Stunde geplant, öffnet sich deren
+   Detailansicht (mit „Stunde bearbeiten“); sonst ein kleines Fenster mit „Stunde jetzt
+   planen“, das die Unterrichtsplanung mit Datum/Klasse/Zeit/Dauer vorbefüllt. */
+function ttStartTime(item) {
+  return String(item.timeRange || "").split("–")[0].trim().slice(0, 5);
+}
+function minutesOfTime(t) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(t || "");
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+}
+// Zuordnung Stundenplan-Stunde → geplante Stunde: gleiche Klasse am selben Tag, Uhrzeit
+// nahe am Stundenbeginn (Toleranz 20 Min., da Stunden auch manuell erfasst werden).
+// Stunden ohne Uhrzeit gelten als passend, solange keine bessere Übereinstimmung existiert.
+function findLessonForTimetableItem(dStr, item) {
+  if (item.classId == null) return null;
+  const cands = state.lessons.filter((l) => l.date === dStr && l.classId === item.classId);
+  if (!cands.length) return null;
+  const start = minutesOfTime(ttStartTime(item));
+  const near = start == null ? null : cands.find((l) => {
+    const t = minutesOfTime(l.time);
+    return t != null && Math.abs(t - start) <= 20;
+  });
+  return near || cands.find((l) => !l.time) || null;
+}
+
+function planLessonFromTimetableItem(dStr, item) {
+  closeModal();
+  showView("stunde");
+  resetLessonEditState();
+  clearLessonForm();
+  const cls = item.classId != null ? state.classes.find((c) => c.id === item.classId) : null;
+  if (cls) {
+    $("lessonClass").value = String(cls.id);
+    if (cls.subject && $("lessonSubject").querySelector(`option[value="${CSS.escape(cls.subject)}"]`)) {
+      $("lessonSubject").value = cls.subject;
+    }
+    if (cls.grade != null) $("lessonGrade").value = String(cls.grade);
+  }
+  $("lessonDate").value = dStr;
+  const start = ttStartTime(item);
+  if (start) $("lessonTime").value = start;
+  const slot = (lessonSlotsCache || []).find((s) => s.id === item.slotId);
+  if (slot) $("lessonSlot").value = String(slot.id);
+  $("lessonDuration").value = (item.spanSlots || 1) >= 2 ? "90" : "45";
+  updateLessonLbOptions(null);
+  updateLessonSeqOptions();
+  updateSozialformMonotonyHint();
+  validatePhaseTimes();
+}
+
+function openTimetableSlotModal(dStr, item) {
+  const planned = findLessonForTimetableItem(dStr, item);
+  if (planned) { openLessonModal(planned); return; }
+  const d = parseIso(dStr);
+  const dateLabel = d ? d.toLocaleDateString("de-DE", { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" }) : dStr;
+  const cls = item.classId != null ? state.classes.find((c) => c.id === item.classId) : null;
+  $("modalRoot").innerHTML =
+    `<div class="modal-overlay" id="modalOverlay"><div class="modal-box">
+      <button class="modal-close" id="modalCloseBtn">Schließen</button>
+      <h2>${esc(item.title || "Stunde")}</h2>
+      <p class="muted small">${esc(dateLabel)}${item.timeRange ? " – " + esc(item.timeRange) : ""}${item.slotLabel ? " – " + esc(item.slotLabel) : ""}</p>
+      <div class="modal-section">
+        <p class="small">Für diese Stunde laut Stundenplan ist noch keine Unterrichtsstunde geplant.</p>
+        ${cls ? "" : '<p class="muted small">Dieser Eintrag ist keiner Klasse zugeordnet – Klasse in der Planung bitte selbst wählen.</p>'}
+        <button class="btn" id="ttPlanNowBtn">Stunde jetzt planen</button>
+      </div>
+    </div></div>`;
+  $("modalOverlay").onclick = (e) => { if (e.target.id === "modalOverlay") closeModal(); };
+  $("modalCloseBtn").onclick = closeModal;
+  $("ttPlanNowBtn").onclick = () => planLessonFromTimetableItem(dStr, item);
+}
+
 // U15: Kalender auf ein Datum springen lassen und den Tag kurz farblich hervorheben.
 function jumpCalendarToDate(dStr) {
   const d = parseIso(dStr);
@@ -2933,16 +3141,26 @@ async function renderDayAgendaTt(dStr) {
   if (calSelectedDate !== dStr) return;                 // U34: Auswahl inzwischen weitergesprungen → Ergebnis verwerfen
   const day = data && Array.isArray(data.days) ? data.days.find((x) => x.date === dStr) : null;
   const items = day && Array.isArray(day.items) ? day.items : [];
-  list.innerHTML = items.length ? items.map((it) => {
+  list.innerHTML = items.length ? items.map((it, idx) => {
     const color = calTtSafeColor(it.color);
     const style = ` style="background:${color};color:${readableTextColor(color)}"`;
     const delBtn = it.source === "override"
       ? `<button type="button" class="cal-tt-chip-del" data-tt-override-del="${it.entryId}" title="Vertretung entfernen" aria-label="Vertretung entfernen">×</button>`
       : "";
-    return `<div class="cal-day-agenda-item"${style}>` +
+    // U35: geplante Stunde erkennbar machen – Klick öffnet sie bzw. bietet das Planen an.
+    const planned = findLessonForTimetableItem(dStr, it);
+    return `<div class="cal-day-agenda-item" data-tt-item="${idx}"${style}>` +
       `<span class="cal-day-agenda-time">${esc(it.timeRange || "")}</span>` +
-      `<span class="cal-day-agenda-title">${esc(it.title)}${it.subtitle ? ` <span class="muted small">· ${esc(it.subtitle)}</span>` : ""}</span>${delBtn}</div>`;
+      `<span class="cal-day-agenda-title">${esc(planned ? planned.title : it.title)}` +
+      `${it.subtitle ? ` <span class="muted small">· ${esc(it.subtitle)}</span>` : ""}` +
+      `${planned ? "" : ' <span class="muted small">· noch nicht geplant</span>'}</span>${delBtn}</div>`;
   }).join("") : `<p class="muted small cal-day-agenda-empty">Keine Stunden an diesem Tag.</p>`;
+  list.querySelectorAll("[data-tt-item]").forEach((el) => {
+    el.onclick = (ev) => {
+      if (ev.target.closest("[data-tt-override-del]")) return;
+      openTimetableSlotModal(dStr, items[Number(el.dataset.ttItem)]);
+    };
+  });
   list.querySelectorAll("[data-tt-override-del]").forEach((btn) => {
     btn.onclick = (ev) => { ev.stopPropagation(); calTtDeleteOverride(Number(btn.dataset.ttOverrideDel)); };
   });
@@ -3368,7 +3586,7 @@ function openLessonModal(l) {
   const zieleHtml = ziele.length
     ? (ziele.filter((z) => z.kind === "grob").map((z) => `<p class="small"><strong>Grobziel:</strong> ${esc(z.text)}${bloomBadge(z)}</p>`).join("") +
        ziele.filter((z) => z.kind === "fein").map((z) => `<p class="small">• ${esc(z.text)}${bloomBadge(z)}` +
-         `${z.phaseSortOrder != null ? ` <span class="muted small">(${esc(phaseNames[z.phaseSortOrder] || "Phase")})</span>` : ""}</p>`).join(""))
+         `${z.phaseSortOrder != null ? ` <span class="muted small">(${esc(((l.phases || [])[z.phaseSortOrder] || {}).phaseName || "Phase")})</span>` : ""}</p>`).join(""))
     : '<p class="muted small">Noch keine Lernziele erfasst.</p>';
   const k = l.klafki || {};
   const kLabels = [["gegenwart", "Gegenwartsbedeutung"], ["zukunft", "Zukunftsbedeutung"],
@@ -3462,7 +3680,14 @@ async function saveClass() {
 async function saveLesson() {
   const title = $("lessonTitle").value.trim();
   if (!title) { toast("Bitte einen Titel angeben.", false); return; }
+  const rest = validatePhaseTimes();
+  if (rest !== 0) {
+    const duration = Number($("lessonDuration").value) || 45;
+    const hint = rest > 0 ? `${rest} Min. sind noch nicht verplant` : `${-rest} Min. sind zu viel verplant`;
+    if (!window.confirm(`Die Phasenzeiten füllen die ${duration} Minuten nicht exakt aus – ${hint}. Trotzdem speichern?`)) return;
+  }
   const meyer = readMeyerGrid("meyerPlanGrid");
+  const phases = readPhases();          // setzt phaseIndexMap für readLernziele()
   const body = {
     title, subject: $("lessonSubject").value, grade: Number($("lessonGrade").value),
     lessonType: $("lessonType").value,
@@ -3478,8 +3703,8 @@ async function saveLesson() {
     meyerPlan: meyer.some((v) => v) ? meyer : null,
     diff: $("diff").value, selbstLernen: $("lernen").value,
     bibox: { werk: $("biboxWerk").value, seite: $("biboxSeite").value, notiz: $("biboxNotiz").value },
-    phases: readPhases(),
-    lernziele: readLernziele(),
+    phases,
+    lernziele: readLernziele(phaseIndexMap),
   };
   try {
     let saved;
@@ -4018,6 +4243,7 @@ async function aiLessonSuggest() {
       lessonType: $("lessonType").value,
       classId: $("lessonClass").value ? Number($("lessonClass").value) : null,
       date: $("lessonDate").value || null,
+      durationMinutes: Number($("lessonDuration").value) || 45,
     });
     const s = res.suggestion || {};
     if (s.title && !$("lessonTitle").value) $("lessonTitle").value = s.title;
@@ -4027,14 +4253,7 @@ async function aiLessonSuggest() {
       $("klafki5").value = s.klafki.struktur || "";
     }
     if (Array.isArray(s.meyerPlan)) setMeyerGrid("meyerPlanGrid", s.meyerPlan);
-    (s.phases || []).forEach((p, i) => {
-      if (i >= phaseNames.length) return;
-      $("time" + i).value = p.minutes == null ? "" : p.minutes;
-      $("social" + i).value = p.socialForm || "EA";
-      $("method" + i).value = p.method || ""; $("material" + i).value = p.material || "";
-      $("teacher" + i).value = p.teacherActivity || ""; $("student" + i).value = p.studentActivity || "";
-      $("gme" + i).value = p.gme || "";
-    });
+    if (Array.isArray(s.phases) && s.phases.length) setPhasesFromLesson(s.phases);
     toast(res.cached ? "KI-Vorschlag (aus Cache) eingefügt." : "KI-Vorschlag eingefügt – bitte prüfen.");
   } catch (e) { toast(e.message, false); }
   finally { btn.disabled = false; btn.textContent = label; }
@@ -5191,8 +5410,8 @@ function wireEvents() {
   buildMeyerGrid("meyerPlanGrid");
   buildMeyerGrid("meyerReflectGrid");
   initSidebarSections();
-  buildPhases();
-  renderLernziele();
+  lessonPhases = defaultPhases();
+  renderPhases();
   wireAppearance();
   // U25: Globale Volltextsuche aus der Topbar (Enter/Button).
   const gsf = $("globalSearchForm");
@@ -5289,8 +5508,9 @@ function wireEvents() {
     const opt = $("lessonSlot").selectedOptions[0];
     if (opt && opt.dataset.start) $("lessonTime").value = opt.dataset.start;
   });
-  $("phases").addEventListener("input", (ev) => { if (/^time\d$/.test(ev.target.id || "")) validatePhaseTimes(); });
+  $("phases").addEventListener("input", (ev) => { if (/^time\d+$/.test(ev.target.id || "")) validatePhaseTimes(); });
   $("lessonDuration").addEventListener("change", validatePhaseTimes);
+  $("addPhaseBtn").onclick = addPhase;
   ["lessonFilterClass", "lessonFilterSubject", "lessonFilterType"].forEach((id) => {
     const el = $(id);
     if (el) el.addEventListener("change", renderLessonTable);

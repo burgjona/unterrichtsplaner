@@ -487,6 +487,7 @@ class LessonSuggestIn(Base):
     lesson_type: Optional[str] = None
     class_id: Optional[int] = None
     date: Optional[str] = None
+    duration_minutes: Optional[int] = None
 
 
 class StoffplanIn(Base):

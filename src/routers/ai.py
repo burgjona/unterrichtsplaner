@@ -47,8 +47,12 @@ _LESSON_SYSTEM = (
     "Du bist didaktische Assistenz für eine Referendarin an einer sächsischen Oberschule "
     "(Fächer Deutsch und WTH). Erzeuge aus losen Ideen einen Erstentwurf einer Unterrichtsstunde: "
     "Titel, Klafki-Analyse (5 Grundfragen), Meyer-Ampel (10 Merkmale: gruen/gelb/rot) und eine "
-    "Phasentabelle (Einstieg, Erarbeitung, Sicherung, Abschluss) mit Sozialform (EA/PA/GA/Plenum), "
-    "Methode, Material, Lehrer-/Schülertätigkeit und Differenzierung G/M/E. Sei konkret, knapp, "
+    "Phasentabelle mit Sozialform (EA/PA/GA/Plenum), Methode, Material, Lehrer-/Schülertätigkeit "
+    "und Differenzierung G/M/E. Erlaubte Phasenbezeichnungen: Einstieg, Erarbeitung, Sicherung, "
+    "Ausstieg, Puffer. Nach einer Sicherung darf eine weitere Erarbeitung folgen; nummeriere in "
+    "diesem Fall römisch (Erarbeitung I, Sicherung I, Erarbeitung II, Sicherung II …) und lasse "
+    "die Nummer weg, wenn eine Bezeichnung nur einmal vorkommt. Die Summe aller Phasenminuten "
+    "muss die Stundendauer exakt ergeben. Sei konkret, knapp, "
     "praxistauglich. Umlaute korrekt. Nur Vorschlag – die Lehrkraft prüft und ändert."
 )
 _LESSON_SCHEMA = {
@@ -90,7 +94,9 @@ def lesson_suggestion(body: LessonSuggestIn, conn: sqlite3.Connection = Depends(
         cls = row_or_404(conn.execute("SELECT * FROM classes WHERE id=? AND user_id=?",
                                       (body.class_id, user_id)).fetchone(), "Klasse")
     ctx = ai.fts_context(conn, user_id, f"{body.ideas} {body.title or ''}", body.subject, body.grade)
-    lines = [f"Fach: {body.subject or '-'} · Klassenstufe: {body.grade or '-'}"]
+    dur = body.duration_minutes if body.duration_minutes in (45, 90) else 45
+    lines = [f"Fach: {body.subject or '-'} · Klassenstufe: {body.grade or '-'}",
+             f"Stundendauer: {dur} Minuten – die Phasenminuten müssen exakt {dur} ergeben."]
     if body.title:
         lines.append(f"Titel/Thema: {body.title}")
     if body.lesson_type:
@@ -376,9 +382,9 @@ _LERNZIELE_SYSTEM = (
     "formulierte Lernziele nach der Bloom-Taxonomie "
     f"(Stufen: {', '.join(_BLOOM_STUFEN)}) und – wo möglich – SMART. Unterscheide Grobziele "
     "(übergeordnet, 'grob') und Feinziele (konkret, operationalisiert, überprüfbar, 'fein'). "
-    "Ordne jedes Feinziel möglichst einer Phase der Stunde zu (phaseSortOrder: 0=Einstieg, "
-    "1=Erarbeitung, 2=Sicherung, 3=Abschluss, sonst null), damit nachweisbar ist, an welcher "
-    "Stelle der Stunde welches Ziel erreicht wird. "
+    "Ordne jedes Feinziel möglichst einer Phase der Stunde zu – phaseSortOrder ist die in "
+    "eckigen Klammern angegebene Nummer der Phase aus der übergebenen Phasentabelle, sonst "
+    "null –, damit nachweisbar ist, an welcher Stelle der Stunde welches Ziel erreicht wird. "
     "Schreibe jedes Ziel im Feld 'text' aus Schülersicht, beginnend mit 'Die Schülerinnen und "
     "Schüler', und wähle ein aktives, beobachtbares Bloom-Verb passend zur bloomStufe (z. B. "
     "benennen, erläutern, anwenden, unterscheiden, beurteilen, entwerfen). Baue in jedes "

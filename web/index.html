@@ -587,13 +587,11 @@
 
       <div class="card" style="margin-top:14px;">
         <h3>Phasentabelle</h3>
+        <p class="muted small">Die angegebene Stundendauer (45 oder 90 Min.) wird exakt verplant. Phasen lassen sich ergänzen und benennen – nach einer Sicherung darf eine weitere Erarbeitung folgen (Erarbeitung II, Sicherung II …). Die römische Nummerierung erscheint automatisch, sobald eine Bezeichnung mehrfach vorkommt.</p>
         <div id="phases"></div>
         <p class="phase-time-error hidden" id="phaseTimeError"></p>
-        <div class="phase-buffer">
-          <label>Puffer (Min., optional)</label>
-          <input placeholder="darf leer bleiben" id="phaseBuffer" style="max-width:160px;" />
-          <label>Lehrertätigkeit</label><textarea id="bufferTeacher"></textarea>
-          <label>Schülertätigkeit</label><textarea id="bufferStudent"></textarea>
+        <div style="margin-top:10px;">
+          <button class="btn small secondary" id="addPhaseBtn">+ Phase hinzufügen</button>
         </div>
       </div>
 
