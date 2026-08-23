@@ -96,6 +96,21 @@ def _start_ai_job(conn, user_id: int, background_tasks: BackgroundTasks, request
     return {"jobId": job_id}
 
 
+def _require_nonempty(list_key: str):
+    """post_process-Fabrik: Das erzwungene JSON-Schema garantiert nur gültiges, nicht
+    sinnvolles JSON – die KI kann z. B. bei sehr großem/verwirrendem Kontext ein leeres,
+    aber schema-konformes Ergebnis liefern ({"stunden": []}). Das bisher stillschweigend
+    als Erfolg durchzureichen führte zu einem irreführenden "0 Stunden erzeugt"-Toast, ohne
+    dass für die Lehrkraft ersichtlich war, dass etwas schiefgegangen ist. Ein leeres
+    Ergebnis ist nie ein sinnvoller Vorschlag – als Job-Fehler melden, damit ein erneuter
+    Versuch naheliegt statt eines scheinbar leeren, aber "fertigen" Plans."""
+    def _check(data):
+        if not data.get(list_key):
+            raise ValueError("KI-Antwort enthielt keinen Vorschlag (leere Liste) – bitte erneut versuchen.")
+        return data
+    return _check
+
+
 def _ctx_block(ctx: List[dict]) -> str:
     if not ctx:
         return "Keine verknüpften Begleitmaterialien gefunden."
@@ -189,7 +204,7 @@ _STOFF_SYSTEM = (
 )
 _STOFF_SCHEMA = {
     "type": "object", "additionalProperties": False, "required": ["blocks"],
-    "properties": {"blocks": {"type": "array", "items": {
+    "properties": {"blocks": {"type": "array", "minItems": 1, "items": {
         "type": "object", "additionalProperties": False,
         "required": ["code", "title", "ustd", "weeks", "note"],
         "properties": {"code": _STR, "title": _STR, "ustd": {"type": "integer"},
@@ -259,7 +274,8 @@ def stoffplan(body: StoffplanIn, background_tasks: BackgroundTasks, request: Req
     sy_start, sy_end = _d(sy["start_date"]), _d(sy["end_date"])
 
     def _dates(data):
-        blocks = data.get("blocks") or []
+        data = _require_nonempty("blocks")(data)
+        blocks = data["blocks"]
         for b, d_ in zip(blocks, assign_dates_from_weeks(sy_start, sy_end, ferien_d, blocks)):
             b["startDate"] = d_["start_date"]
             b["endDate"] = d_["end_date"]
@@ -286,7 +302,7 @@ _SEQUENZ_SYSTEM = (
 _SEQUENZ_NOTENART = {"lk", "referat", "komplexeArbeit", "klassenarbeit"}
 _SEQUENZ_SCHEMA = {
     "type": "object", "additionalProperties": False, "required": ["stunden"],
-    "properties": {"stunden": {"type": "array", "items": {
+    "properties": {"stunden": {"type": "array", "minItems": 1, "items": {
         "type": "object", "additionalProperties": False,
         "required": ["title", "grobziel", "notenarten"],
         "properties": {
@@ -355,7 +371,7 @@ def sequenzplan(body: SequenzplanIn, background_tasks: BackgroundTasks, request:
     # Kein Cache: „nochmal generieren" muss einen wirklich neuen Vorschlag liefern.
     return _start_ai_job(conn, user_id, background_tasks, request, "sequenzplan", "sequenzplan",
                          _SEQUENZ_SYSTEM, user_text, _SEQUENZ_SCHEMA, max_tokens=32000,
-                         bypass_cache=True)
+                         bypass_cache=True, post_process=_require_nonempty("stunden"))
 
 
 # ---------- 3) ASUV-Ausformulierung ----------

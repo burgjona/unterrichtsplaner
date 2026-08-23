@@ -250,6 +250,32 @@ def test_sequenzplan_truncated_answer_reported_in_job(client, auth, monkeypatch)
     assert "abgeschnitten" in body["error"]
 
 
+def test_sequenzplan_empty_result_reported_as_error(client, auth, monkeypatch):
+    """Schema-valides, aber leeres Ergebnis ({"stunden": []}) ist kein Erfolg – der Job
+    endet mit status=error statt einem irreführenden "0 Stunden erzeugt"."""
+    cls = client.post("/api/classes", json={"name": "8a", "subject": "Deutsch", "grade": 8, "track": "RS"}).json()
+    plan = client.post("/api/stoff-plans", json={
+        "classId": cls["id"], "title": "P", "blocks": [{"lbCode": "LB1", "title": "X", "ustd": 5}],
+    }).json()
+    _install(monkeypatch, json.dumps({"stunden": []}))
+    _set_key(client)
+    r = client.post("/api/ai/sequenzplan", json={"blockId": plan["blocks"][0]["id"]})
+    body = client.get(f"/api/ai/jobs/{r.json()['jobId']}").json()
+    assert body["status"] == "error", body
+    assert "leer" in body["error"] or "keinen Vorschlag" in body["error"]
+
+
+def test_stoffplan_empty_result_reported_as_error(client, auth, monkeypatch):
+    sy = client.post("/api/school-years", json={"label": "2025/2026", "startDate": "2025-08-11", "endDate": "2026-06-30"}).json()
+    cls = client.post("/api/classes", json={"name": "8a", "subject": "Deutsch", "grade": 8, "track": "RS"}).json()
+    client.post("/api/lernbereiche", json={"subject": "Deutsch", "grade": 8, "track": "RS", "code": "LB1", "title": "Gewusst wie", "richtwertUstd": 15})
+    _install(monkeypatch, json.dumps({"blocks": []}))
+    _set_key(client)
+    r = client.post("/api/ai/stoffplan", json={"schoolYearId": sy["id"], "classId": cls["id"]})
+    body = client.get(f"/api/ai/jobs/{r.json()['jobId']}").json()
+    assert body["status"] == "error", body
+
+
 def test_sequenzplan_requires_api_key(client, auth):
     cls = client.post("/api/classes", json={"name": "8a", "subject": "Deutsch", "grade": 8, "track": "RS"}).json()
     plan = client.post("/api/stoff-plans", json={
