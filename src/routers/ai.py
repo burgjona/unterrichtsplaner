@@ -263,6 +263,11 @@ def sequenzplan(body: SequenzplanIn, conn: sqlite3.Connection = Depends(get_db),
             f"({cls['subject']}, Klassenstufe {cls['grade']}, Bildungsgang {cls['track'] or '-'})."]
     if lb_detail:
         lines.append(f"Lehrplantext des Lernbereichs:\n{lb_detail}")
+    if cls["subject"] == "Deutsch":
+        lines.append("Da Lernbereich 1 und 2 (Sprechen/Zuhören bzw. Sprache untersuchen/"
+                     "Rechtschreibung) nicht als eigene Blöcke geführt werden, nenne im Grobziel "
+                     "jeder Stunde zusätzlich zum thematischen Lernbereich explizit den "
+                     "Lehrplanbezug zu LB 1 und LB 2.")
     if existing:
         lines.append(f"Es existieren bereits {existing} Sequenzstunden für diesen Block – "
                      "erzeuge einen kompletten, in sich stimmigen Vorschlag (ersetzt die bisherigen).")
