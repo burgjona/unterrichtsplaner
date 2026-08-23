@@ -233,22 +233,20 @@ export function createStoffplanModule(ctx) {
     renderStoffPlans();
   }
 
-  async function renderStoffPlanEditor(id) {
-    const box = document.querySelector(`[data-editor="${id}"]`);
-    if (!box) return;
-    const p = state.stoffPlans.find((x) => String(x.id) === String(id));
-    if (!p) { toast("Plan nicht gefunden.", false); return; }
-    const rows = (p.blocks || []).map((b, i) =>
-      `<tbody data-local-undo-block="stoffblock-${i}">
+  // Manuell hinzugefügte Blöcke bekommen bewusst keinen lbCode (kein Lehrplan-Bezug) –
+  // lbCode wird ohnehin nur angezeigt (Text, keine Eingabe), siehe saveStoffPlanEdits.
+  function stoffEditorRowHtml(b, i) {
+    return `<tbody data-local-undo-block="stoffblock-${i}">
       <tr data-i="${i}">
         <td>${esc(b.lbCode || "")}</td>
         <td><input type="text" data-f="title" value="${esc(b.title || "")}" /></td>
         <td><input type="number" data-f="ustd" min="0" value="${esc(b.ustd ?? "")}" style="width:70px;" /></td>
         <td><input type="text" readonly class="date-picker-input" data-f="startDate" value="${esc(b.startDate || "")}" placeholder="jjjj-mm-tt" /></td>
         <td><input type="text" readonly class="date-picker-input" data-f="endDate" value="${esc(b.endDate || "")}" placeholder="jjjj-mm-tt" /></td>
+        <td><button class="btn tiny danger" data-sp-block-del title="Block entfernen">✕</button></td>
       </tr>
       <tr class="stoff-note-row">
-        <td colspan="5" class="stoff-note-cell">
+        <td colspan="6" class="stoff-note-cell">
           <div class="stoff-note-head">
             <label class="small stoff-note-label">Hinweis</label>
             <button class="btn tiny secondary" data-local-undo-btn disabled title="Letzte ungespeicherte Änderung an diesem Block rückgängig machen">Rückgängig</button>
@@ -256,28 +254,68 @@ export function createStoffplanModule(ctx) {
           <textarea class="stoff-note-textarea" data-note-i="${i}" data-f="conflictNote" rows="2">${esc(b.conflictNote || "")}</textarea>
         </td>
       </tr>
-      </tbody>`).join("");
+      </tbody>`;
+  }
+
+  // Verkabelt Datepicker/Kaskade/Löschen-Button für genau eine Block-Zeile (initial für
+  // alle vorhandenen Zeilen, sonst gezielt nur für eine neu eingefügte – vermeidet doppelt
+  // gebundene Listener bei „Block hinzufügen".
+  function wireStoffEditorRow(tbody, box) {
+    tbody.querySelectorAll(".date-picker-input").forEach((inp) => inp.addEventListener("click", () => openDatePicker(inp)));
+    // Endet ein Block, wird für den nächsten Block „nächster Montag danach" vorgeschlagen und die Kette bei Bedarf nachgezogen.
+    tbody.querySelectorAll('[data-f="endDate"]').forEach((inp) => inp.addEventListener("change", (e) => {
+      const tr = e.target.closest("tr[data-i]");
+      if (tr) cascadeStoffPlanDates(box, Number(tr.dataset.i));
+    }));
+    const delBtn = tbody.querySelector("[data-sp-block-del]");
+    if (delBtn) delBtn.onclick = () => {
+      tbody.remove();
+      const table = box.querySelector(".stoff-edit-table");
+      if (table && !table.querySelector("tr[data-i]")) {
+        table.querySelectorAll("tbody").forEach((tb) => tb.remove());
+        table.insertAdjacentHTML("beforeend", '<tbody><tr><td colspan="6" class="muted small">Keine Blöcke.</td></tr></tbody>');
+      }
+    };
+  }
+
+  function addStoffEditorBlock(box) {
+    const table = box.querySelector(".stoff-edit-table");
+    if (!table) return;
+    table.querySelectorAll("tbody").forEach((tb) => { if (!tb.querySelector("tr[data-i]")) tb.remove(); });
+    const i = Number(box.dataset.nextIdx || "0");
+    box.dataset.nextIdx = String(i + 1);
+    table.insertAdjacentHTML("beforeend", stoffEditorRowHtml({}, i));
+    const newTbody = table.lastElementChild;
+    wireStoffEditorRow(newTbody, box);
+    const titleInput = newTbody.querySelector('[data-f="title"]');
+    if (titleInput) titleInput.focus();
+  }
+
+  async function renderStoffPlanEditor(id) {
+    const box = document.querySelector(`[data-editor="${id}"]`);
+    if (!box) return;
+    const p = state.stoffPlans.find((x) => String(x.id) === String(id));
+    if (!p) { toast("Plan nicht gefunden.", false); return; }
+    const rows = (p.blocks || []).map((b, i) => stoffEditorRowHtml(b, i)).join("");
     box.innerHTML = `
       <div class="stoff-plan-edit-inner">
         <label class="small">Titel</label>
         <input type="text" data-edit-title value="${esc(p.title)}" style="width:100%; margin-bottom:8px;" />
         <div class="table-scroll"><table class="stoff-edit-table">
-          <thead><tr><th>LB</th><th>Thema</th><th>Ustd.</th><th>Beginn</th><th>Ende</th></tr></thead>
-          ${rows || '<tbody><tr><td colspan="5" class="muted small">Keine Blöcke.</td></tr></tbody>'}
+          <thead><tr><th>LB</th><th>Thema</th><th>Ustd.</th><th>Beginn</th><th>Ende</th><th></th></tr></thead>
+          ${rows || '<tbody><tr><td colspan="6" class="muted small">Keine Blöcke.</td></tr></tbody>'}
         </table></div>
+        <button class="btn tiny secondary" data-sp-block-add style="margin-top:6px;">+ Block hinzufügen</button>
         <div style="margin-top:10px;">
           <button class="btn small" data-sp-save="${id}">Änderungen speichern</button>
           <button class="btn small secondary" data-sp-cancel="${id}">Schließen</button>
         </div>
       </div>`;
+    box.dataset.nextIdx = String((p.blocks || []).length);
     box.querySelector(`[data-sp-save="${id}"]`).onclick = () => saveStoffPlanEdits(id);
     box.querySelector(`[data-sp-cancel="${id}"]`).onclick = () => { editingStoffPlanId = null; renderStoffPlans(); };
-    box.querySelectorAll(".date-picker-input").forEach((inp) => inp.addEventListener("click", () => openDatePicker(inp)));
-    // Endet ein Block, wird für den nächsten Block „nächster Montag danach" vorgeschlagen und die Kette bei Bedarf nachgezogen.
-    box.querySelectorAll('[data-f="endDate"]').forEach((inp) => inp.addEventListener("change", (e) => {
-      const tr = e.target.closest("tr[data-i]");
-      if (tr) cascadeStoffPlanDates(box, Number(tr.dataset.i));
-    }));
+    box.querySelector("[data-sp-block-add]").onclick = () => addStoffEditorBlock(box);
+    box.querySelectorAll("tbody").forEach((tb) => { if (tb.querySelector("tr[data-i]")) wireStoffEditorRow(tb, box); });
   }
 
   async function saveStoffPlanEdits(id) {
