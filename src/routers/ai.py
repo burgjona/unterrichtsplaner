@@ -204,7 +204,7 @@ _STOFF_SYSTEM = (
 )
 _STOFF_SCHEMA = {
     "type": "object", "additionalProperties": False, "required": ["blocks"],
-    "properties": {"blocks": {"type": "array", "minItems": 1, "items": {
+    "properties": {"blocks": {"type": "array", "items": {
         "type": "object", "additionalProperties": False,
         "required": ["code", "title", "ustd", "weeks", "note"],
         "properties": {"code": _STR, "title": _STR, "ustd": {"type": "integer"},
@@ -302,7 +302,7 @@ _SEQUENZ_SYSTEM = (
 _SEQUENZ_NOTENART = {"lk", "referat", "komplexeArbeit", "klassenarbeit"}
 _SEQUENZ_SCHEMA = {
     "type": "object", "additionalProperties": False, "required": ["stunden"],
-    "properties": {"stunden": {"type": "array", "minItems": 1, "items": {
+    "properties": {"stunden": {"type": "array", "items": {
         "type": "object", "additionalProperties": False,
         "required": ["title", "grobziel", "notenarten"],
         "properties": {
@@ -336,7 +336,10 @@ def sequenzplan(body: SequenzplanIn, background_tasks: BackgroundTasks, request:
             "SELECT detail_md FROM lernbereiche WHERE subject=? AND grade=? AND track=? AND code=?",
             (cls["subject"], cls["grade"], track, block["lb_code"]),
         ).fetchone()
-        lb_detail = (lb["detail_md"] or "") if lb else ""
+        # Ungekürzt konnte ein langer/OCR-holpriger Lehrplantext den Kontext sprengen und die
+        # KI aus dem Tritt bringen (leere/ungültige Antwort) – wie bei den anderen Stellen, die
+        # denselben Text nutzen (Lernziele/Einordnung), deshalb hier ebenfalls gekappt.
+        lb_detail = (lb["detail_md"] or "")[:3000] if lb else ""
 
     existing = conn.execute(
         "SELECT COUNT(*) AS n FROM sequenz_stunden WHERE block_id = ?", (body.block_id,)
