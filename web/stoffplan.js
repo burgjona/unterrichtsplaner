@@ -593,24 +593,9 @@ export function createStoffplanModule(ctx) {
     const btn = $("stoffAiBtn"), label = btn.textContent;
     btn.disabled = true; btn.textContent = "✨ generiere …";
     try {
-      // Asynchroner Job: sofort jobId, dann alle 3 s pollen (Cloudflare-Timeout-sicher).
-      const { jobId } = await API.post("/ai/stoffplan", { schoolYearId: syId, classId: clsId });
-      const deadline = Date.now() + 5 * 60 * 1000;
-      let job;
-      do {
-        if (Date.now() > deadline) {
-          throw new Error("Zeitüberschreitung: Die KI-Antwort kam nicht innerhalb von 5 Minuten.");
-        }
-        await new Promise((r) => setTimeout(r, 3000));
-        try {
-          job = await API.get(`/ai/jobs/${jobId}`);
-        } catch (e) {
-          if (e.status !== undefined) throw e; // echter HTTP-Fehler (401/404/…) -> abbrechen
-          job = { status: "pending" };         // Netzwerk-Aussetzer -> weiter pollen
-        }
-      } while (job.status === "pending");
-      if (job.status === "error") throw new Error(job.error || "KI-Anfrage fehlgeschlagen.");
-      const res = job.result || {};
+      // Hintergrund-Job mit Polling (Cloudflare-Timeout-sicher).
+      const res = await API.aiJob("/ai/stoffplan", { schoolYearId: syId, classId: clsId },
+        (sec) => { btn.textContent = `✨ generiere … ${sec} s`; });
       const blocks = (res.suggestion && res.suggestion.blocks) || [];
       $("planSummary").textContent = `KI-Vorschlag: ${blocks.length} Lernbereiche` + (res.cached ? " (aus Cache)" : "");
       const b = document.querySelector("#planTable tbody");

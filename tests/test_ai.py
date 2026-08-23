@@ -223,9 +223,31 @@ def test_sequenzplan_suggestion(client, auth, monkeypatch):
     _set_key(client)
     r = client.post("/api/ai/sequenzplan", json={"blockId": block_id, "ideas": "Bezug zu Alltagssprache", "wantLk": True})
     assert r.status_code == 200, r.text
-    stunden = r.json()["suggestion"]["stunden"]
+    body = client.get(f"/api/ai/jobs/{r.json()['jobId']}").json()
+    assert body["status"] == "done", body
+    assert body["kind"] == "sequenzplan"
+    stunden = body["result"]["suggestion"]["stunden"]
     assert len(stunden) == 2
     assert stunden[1]["notenarten"] == ["lk"]
+
+
+def test_sequenzplan_truncated_answer_reported_in_job(client, auth, monkeypatch):
+    """Abgeschnittene Antwort (max_tokens ausgeschöpft) landet als lesbare Job-Fehlermeldung."""
+    cls = client.post("/api/classes", json={"name": "8a", "subject": "Deutsch", "grade": 8, "track": "RS"}).json()
+    plan = client.post("/api/stoff-plans", json={
+        "classId": cls["id"], "title": "P", "blocks": [{"lbCode": "LB1", "title": "X", "ustd": 5}],
+    }).json()
+    _install(monkeypatch, json.dumps({"stunden": []}))
+    _set_key(client)
+
+    def _truncated(*a, **kw):
+        raise ai.ResponseTruncated("sequenzplan")
+
+    monkeypatch.setattr(ai, "run", _truncated)
+    r = client.post("/api/ai/sequenzplan", json={"blockId": plan["blocks"][0]["id"]})
+    body = client.get(f"/api/ai/jobs/{r.json()['jobId']}").json()
+    assert body["status"] == "error"
+    assert "abgeschnitten" in body["error"]
 
 
 def test_sequenzplan_requires_api_key(client, auth):

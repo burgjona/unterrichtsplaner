@@ -68,11 +68,38 @@ const API = (() => {
     }
     return data;
   }
+  /* Lang laufende KI-Calls laufen serverseitig als Hintergrund-Job, weil der Cloudflare-Tunnel
+     Requests nach ~100 s abbricht: POST liefert sofort eine jobId, danach wird GET /ai/jobs/{id}
+     gepollt, bis der Job fertig ist. onTick(sekunden) meldet die Wartezeit für die Anzeige. */
+  async function aiJob(path, body, onTick, timeoutMs) {
+    const { jobId } = await req("POST", path, body === undefined ? {} : body);
+    const started = Date.now();
+    const deadline = started + (timeoutMs || 15 * 60 * 1000);
+    let job;
+    do {
+      if (Date.now() > deadline) {
+        const min = Math.round((deadline - started) / 60000);
+        throw new Error(`Zeitüberschreitung: Die KI-Antwort kam nicht innerhalb von ${min} Minuten.`);
+      }
+      await new Promise((r) => setTimeout(r, 3000));
+      if (onTick) onTick(Math.round((Date.now() - started) / 1000));
+      try {
+        job = await req("GET", `/ai/jobs/${jobId}`);
+      } catch (e) {
+        if (e.status !== undefined) throw e; // echter HTTP-Fehler (401/404/…) -> abbrechen
+        job = { status: "pending" };         // Netzwerk-Aussetzer -> weiter pollen
+      }
+    } while (job.status === "pending");
+    if (job.status === "error") throw new Error(job.error || "KI-Anfrage fehlgeschlagen.");
+    return job.result || {};
+  }
+
   return {
     get: (p) => req("GET", p),
     post: (p, b) => req("POST", p, b),
     put: (p, b) => req("PUT", p, b),
     del: (p, b) => req("DELETE", p, b),
     upload,
+    aiJob,
   };
 })();

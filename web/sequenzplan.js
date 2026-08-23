@@ -198,11 +198,13 @@ export function createSequenzplanModule(ctx) {
     const btn = $("seqAiBtn"), label = btn.textContent;
     btn.disabled = true; btn.textContent = "✨ generiere …";
     try {
-      const res = await API.post("/ai/sequenzplan", {
+      // Hintergrund-Job mit Polling (Cloudflare-Timeout-sicher) – ein kompletter Block kann
+      // mehrere Minuten dauern, deshalb Wartezeit im Button anzeigen.
+      const res = await API.aiJob("/ai/sequenzplan", {
         blockId, ideas: $("seqIdeas").value,
         wantLk: $("seqWantLk").checked, wantReferat: $("seqWantReferat").checked,
         wantKomplexeArbeit: $("seqWantKomplexeArbeit").checked, wantKlassenarbeit: $("seqWantKlassenarbeit").checked,
-      });
+      }, (sec) => { btn.textContent = `✨ generiere … ${sec} s`; });
       const stunden = (res.suggestion && res.suggestion.stunden) || [];
       seqCards = stunden.map((s) => ({
         id: null, title: s.title, grobziel: s.grobziel || "", weitereNotenart: "", date: "",

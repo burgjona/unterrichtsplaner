@@ -33,6 +33,69 @@ def _run_json(conn, user_id, function, system, user_text, schema, max_tokens=200
         raise HTTPException(status_code=502, detail="KI-Antwort war kein gültiges JSON.")
 
 
+# ---------- Job-Infrastruktur für lang laufende KI-Calls ----------
+# Der Cloudflare-Tunnel bricht Requests nach ~100 s ab. Ein synchroner Sonnet-Call, der einen
+# kompletten Plan erzeugt, läuft deutlich länger – der Nutzer sah dann nur einen Abbruch
+# (HTML-Fehlerseite statt JSON). Deshalb laufen alle langen Calls als Background-Job:
+# POST legt den Job an und liefert sofort {"jobId": …}, das Frontend pollt GET /ai/jobs/{id}.
+
+
+def _run_ai_job(db_path: str, job_id: int, user_id: int, function: str, system: str,
+                user_text: str, schema: dict, max_tokens: int, bypass_cache: bool,
+                post_process=None):
+    """Background-Task: eigener DB-Connect (keine Request-Dependency), Ergebnis in ai_jobs."""
+    conn = connect(db_path)
+    try:
+        status, result_json, error = "error", None, None
+        try:
+            result = ai.run(conn, user_id, function, system, user_text, schema, max_tokens, bypass_cache)
+            data = json.loads(result["text"])
+        except ai.NoApiKey:
+            error = "Kein API-Key hinterlegt – bitte in den Einstellungen eintragen."
+        except ai.ResponseTruncated:
+            error = ("KI-Antwort war zu lang und wurde abgeschnitten – bitte erneut versuchen "
+                     "oder Hinweise/Vorgaben kürzen.")
+        except (ValueError, TypeError):
+            error = "KI-Antwort war kein gültiges JSON."
+        except Exception as exc:  # Netz-/Auth-/API-Fehler lesbar ablegen
+            error = f"KI-Anfrage fehlgeschlagen: {exc}"
+        else:
+            try:
+                if post_process is not None:
+                    data = post_process(data)
+            except Exception as exc:  # Nachbearbeitung getrennt melden, nicht als JSON-Fehler
+                error = f"Nachbearbeitung der KI-Antwort fehlgeschlagen: {exc}"
+            else:
+                status = "done"
+                result_json = json.dumps({"suggestion": data, "cached": result["cached"]},
+                                         ensure_ascii=False)
+        conn.execute("UPDATE ai_jobs SET status=?, result_json=?, error=? WHERE id=?",
+                     (status, result_json, error, job_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _start_ai_job(conn, user_id: int, background_tasks: BackgroundTasks, request: Request,
+                  kind: str, function: str, system: str, user_text: str, schema: dict,
+                  max_tokens: int, bypass_cache: bool = False, post_process=None) -> dict:
+    """Legt den Job an und startet den KI-Call im Hintergrund. Liefert {"jobId": …}.
+
+    Der fehlende API-Key wird noch synchron gemeldet (400), damit der Nutzer nicht erst
+    über den Umweg eines fehlgeschlagenen Jobs davon erfährt.
+    """
+    if not ai.get_api_key(conn, user_id):
+        raise HTTPException(status_code=400,
+                            detail="Kein API-Key hinterlegt – bitte in den Einstellungen eintragen.")
+    cur = conn.execute("INSERT INTO ai_jobs(user_id, kind, status) VALUES (?,?,'pending')",
+                       (user_id, kind))
+    conn.commit()
+    job_id = cur.lastrowid
+    background_tasks.add_task(_run_ai_job, request.app.state.db_path, job_id, user_id, function,
+                              system, user_text, schema, max_tokens, bypass_cache, post_process)
+    return {"jobId": job_id}
+
+
 def _ctx_block(ctx: List[dict]) -> str:
     if not ctx:
         return "Keine verknüpften Begleitmaterialien gefunden."
@@ -134,40 +197,6 @@ _STOFF_SCHEMA = {
 }
 
 
-def _run_stoffplan_job(db_path: str, job_id: int, user_id: int, user_text: str,
-                        sy_start: str, sy_end: str, ferien: list):
-    """Background-Task: eigener DB-Connect (keine Request-Dependency), Ergebnis in ai_jobs."""
-    conn = connect(db_path)
-    try:
-        status, result_json, error = "error", None, None
-        try:
-            result = ai.run(conn, user_id, "stoffplan", _STOFF_SYSTEM, user_text, _STOFF_SCHEMA,
-                             max_tokens=8000, bypass_cache=True)
-            data = json.loads(result["text"])
-        except ai.NoApiKey:
-            error = "Kein API-Key hinterlegt – bitte in den Einstellungen eintragen."
-        except ai.ResponseTruncated:
-            error = "KI-Antwort war zu lang und wurde abgeschnitten – bitte erneut versuchen oder Hinweise/Vorgaben kürzen."
-        except (ValueError, TypeError):
-            error = "KI-Antwort war kein gültiges JSON."
-        except Exception as exc:  # Netz-/Auth-/API-Fehler lesbar ablegen
-            error = f"KI-Anfrage fehlgeschlagen: {exc}"
-        else:
-            from ..lib.planning import assign_dates_from_weeks, _d
-            ferien_d = [(_d(s), _d(e)) for s, e in ferien]
-            dated = assign_dates_from_weeks(_d(sy_start), _d(sy_end), ferien_d, data.get("blocks") or [])
-            for b, d_ in zip(data.get("blocks") or [], dated):
-                b["startDate"] = d_["start_date"]
-                b["endDate"] = d_["end_date"]
-            status = "done"
-            result_json = json.dumps({"suggestion": data, "cached": result["cached"]}, ensure_ascii=False)
-        conn.execute("UPDATE ai_jobs SET status=?, result_json=?, error=? WHERE id=?",
-                     (status, result_json, error, job_id))
-        conn.commit()
-    finally:
-        conn.close()
-
-
 @router.post("/stoffplan")
 def stoffplan(body: StoffplanIn, background_tasks: BackgroundTasks, request: Request,
               conn: sqlite3.Connection = Depends(get_db),
@@ -224,16 +253,23 @@ def stoffplan(body: StoffplanIn, background_tasks: BackgroundTasks, request: Req
                      "thematischen Lernbereiche 3–6 integrieren und in den Blocknotizen erwähnen.")
     parts.append("Lernbereiche:\n" + lb_text)
     user_text = "\n\n".join(parts)
-    # Lang laufender KI-Call asynchron (Cloudflare-Tunnel bricht Requests nach 100 s ab):
-    # Job anlegen, sofort jobId liefern, Frontend pollt GET /ai/jobs/{id}. Kein Cache: Stoffplan-
-    # Vorschlag ist ein bewusster Einzelaufruf, ein gecachter alter (evtl. unvollständiger)
-    # Vorschlag soll nie stillschweigend erneut ausgeliefert werden.
-    cur = conn.execute("INSERT INTO ai_jobs(user_id, kind, status) VALUES (?, 'stoffplan', 'pending')", (user_id,))
-    conn.commit()
-    job_id = cur.lastrowid
-    background_tasks.add_task(_run_stoffplan_job, request.app.state.db_path, job_id, user_id, user_text,
-                               sy["start_date"], sy["end_date"], ferien)
-    return {"jobId": job_id}
+    # Zeiträume erst nach der KI-Antwort aus den vorgeschlagenen Wochen + Ferienkalender setzen.
+    from ..lib.planning import assign_dates_from_weeks
+    ferien_d = [(_d(a), _d(b)) for a, b in ferien]
+    sy_start, sy_end = _d(sy["start_date"]), _d(sy["end_date"])
+
+    def _dates(data):
+        blocks = data.get("blocks") or []
+        for b, d_ in zip(blocks, assign_dates_from_weeks(sy_start, sy_end, ferien_d, blocks)):
+            b["startDate"] = d_["start_date"]
+            b["endDate"] = d_["end_date"]
+        return data
+
+    # Kein Cache: Der Stoffplan-Vorschlag ist ein bewusster Einzelaufruf, ein gecachter alter
+    # (evtl. unvollständiger) Vorschlag soll nie stillschweigend erneut ausgeliefert werden.
+    return _start_ai_job(conn, user_id, background_tasks, request, "stoffplan", "stoffplan",
+                         _STOFF_SYSTEM, user_text, _STOFF_SCHEMA, max_tokens=8000,
+                         bypass_cache=True, post_process=_dates)
 
 
 # ---------- 2b) Sequenzplan-Generierung (Einzelstunden je Stoffplan-Block) ----------
@@ -263,7 +299,8 @@ _SEQUENZ_SCHEMA = {
 
 
 @router.post("/sequenzplan")
-def sequenzplan(body: SequenzplanIn, conn: sqlite3.Connection = Depends(get_db),
+def sequenzplan(body: SequenzplanIn, background_tasks: BackgroundTasks, request: Request,
+                conn: sqlite3.Connection = Depends(get_db),
                 user_id: int = Depends(get_user_id)):
     block = conn.execute(
         "SELECT b.*, p.class_id FROM stoff_plan_blocks b JOIN stoff_plans p ON p.id = b.plan_id "
@@ -312,8 +349,13 @@ def sequenzplan(body: SequenzplanIn, conn: sqlite3.Connection = Depends(get_db),
         lines.append(f"Ideen/Hinweise der Lehrkraft:\n{body.ideas.strip()}")
     user_text = "\n\n".join(lines) + f"\n\n{_ctx_block(ctx)}"
 
-    data, cached = _run_json(conn, user_id, "sequenzplan", _SEQUENZ_SYSTEM, user_text, _SEQUENZ_SCHEMA, max_tokens=16000)
-    return {"suggestion": data, "cached": cached}
+    # Längster KI-Call der App (ein kompletter Block mit bis zu ~40 Stunden). Als Job im
+    # Hintergrund darf er beliebig lange laufen, deshalb ist max_tokens großzügig gesetzt –
+    # das frühere Pendeln zwischen abgeschnittener Antwort und Gateway-Timeout entfällt.
+    # Kein Cache: „nochmal generieren" muss einen wirklich neuen Vorschlag liefern.
+    return _start_ai_job(conn, user_id, background_tasks, request, "sequenzplan", "sequenzplan",
+                         _SEQUENZ_SYSTEM, user_text, _SEQUENZ_SCHEMA, max_tokens=32000,
+                         bypass_cache=True)
 
 
 # ---------- 3) ASUV-Ausformulierung ----------
@@ -330,38 +372,12 @@ _ASUV_SCHEMA = {
 }
 
 
-def _run_asuv_job(db_path: str, job_id: int, user_id: int, user_text: str):
-    """Background-Task: eigener DB-Connect (keine Request-Dependency), Ergebnis in ai_jobs."""
-    conn = connect(db_path)
-    try:
-        status, result_json, error = "error", None, None
-        try:
-            result = ai.run(conn, user_id, "asuv", _ASUV_SYSTEM, user_text, _ASUV_SCHEMA, max_tokens=4000)
-            data = json.loads(result["text"])
-        except ai.NoApiKey:
-            error = "Kein API-Key hinterlegt – bitte in den Einstellungen eintragen."
-        except (ValueError, TypeError):
-            error = "KI-Antwort war kein gültiges JSON."
-        except Exception as exc:  # Netz-/Auth-/API-Fehler lesbar ablegen
-            error = f"KI-Anfrage fehlgeschlagen: {exc}"
-        else:
-            status = "done"
-            result_json = json.dumps({"suggestion": data, "cached": result["cached"]}, ensure_ascii=False)
-        conn.execute("UPDATE ai_jobs SET status=?, result_json=?, error=? WHERE id=?",
-                     (status, result_json, error, job_id))
-        conn.commit()
-    finally:
-        conn.close()
-
-
 @router.post("/asuv/{lesson_id}")
 def asuv_suggestion(lesson_id: int, background_tasks: BackgroundTasks, request: Request,
                     body: AsuvSuggestIn = AsuvSuggestIn(),
                     conn: sqlite3.Connection = Depends(get_db), user_id: int = Depends(get_user_id)):
     l = row_or_404(conn.execute("SELECT * FROM lessons WHERE id=? AND user_id=?",
                                 (lesson_id, user_id)).fetchone(), "Stunde")
-    if not ai.get_api_key(conn, user_id):
-        raise HTTPException(status_code=400, detail="Kein API-Key hinterlegt – bitte in den Einstellungen eintragen.")
     phases = conn.execute("SELECT * FROM lesson_phases WHERE lesson_id=? ORDER BY sort_order",
                           (lesson_id,)).fetchall()
     klafki = [l["klafki_gegenwart"], l["klafki_zukunft"], l["klafki_exemplarisch"],
@@ -389,13 +405,8 @@ def asuv_suggestion(lesson_id: int, background_tasks: BackgroundTasks, request: 
                  f"Phasen: {phase_text}\n"
                  f"{lz_text}\n"
                  f"Lehrwerk: {l['bibox_werk'] or '-'} {l['bibox_seite'] or ''}\n\n{_ctx_block(ctx)}")
-    # Lang laufender KI-Call asynchron (Cloudflare-Tunnel bricht Requests nach 100 s ab):
-    # Job anlegen, sofort jobId liefern, Frontend pollt GET /ai/jobs/{id}.
-    cur = conn.execute("INSERT INTO ai_jobs(user_id, kind, status) VALUES (?, 'asuv', 'pending')", (user_id,))
-    conn.commit()
-    job_id = cur.lastrowid
-    background_tasks.add_task(_run_asuv_job, request.app.state.db_path, job_id, user_id, user_text)
-    return {"jobId": job_id}
+    return _start_ai_job(conn, user_id, background_tasks, request, "asuv", "asuv",
+                         _ASUV_SYSTEM, user_text, _ASUV_SCHEMA, max_tokens=4000)
 
 
 @router.get("/jobs/{job_id}")
