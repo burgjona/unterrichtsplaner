@@ -134,8 +134,43 @@ _STOFF_SCHEMA = {
 }
 
 
+def _run_stoffplan_job(db_path: str, job_id: int, user_id: int, user_text: str,
+                        sy_start: str, sy_end: str, ferien: list):
+    """Background-Task: eigener DB-Connect (keine Request-Dependency), Ergebnis in ai_jobs."""
+    conn = connect(db_path)
+    try:
+        status, result_json, error = "error", None, None
+        try:
+            result = ai.run(conn, user_id, "stoffplan", _STOFF_SYSTEM, user_text, _STOFF_SCHEMA,
+                             max_tokens=8000, bypass_cache=True)
+            data = json.loads(result["text"])
+        except ai.NoApiKey:
+            error = "Kein API-Key hinterlegt – bitte in den Einstellungen eintragen."
+        except ai.ResponseTruncated:
+            error = "KI-Antwort war zu lang und wurde abgeschnitten – bitte erneut versuchen oder Hinweise/Vorgaben kürzen."
+        except (ValueError, TypeError):
+            error = "KI-Antwort war kein gültiges JSON."
+        except Exception as exc:  # Netz-/Auth-/API-Fehler lesbar ablegen
+            error = f"KI-Anfrage fehlgeschlagen: {exc}"
+        else:
+            from ..lib.planning import assign_dates_from_weeks, _d
+            ferien_d = [(_d(s), _d(e)) for s, e in ferien]
+            dated = assign_dates_from_weeks(_d(sy_start), _d(sy_end), ferien_d, data.get("blocks") or [])
+            for b, d_ in zip(data.get("blocks") or [], dated):
+                b["startDate"] = d_["start_date"]
+                b["endDate"] = d_["end_date"]
+            status = "done"
+            result_json = json.dumps({"suggestion": data, "cached": result["cached"]}, ensure_ascii=False)
+        conn.execute("UPDATE ai_jobs SET status=?, result_json=?, error=? WHERE id=?",
+                     (status, result_json, error, job_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+
 @router.post("/stoffplan")
-def stoffplan(body: StoffplanIn, conn: sqlite3.Connection = Depends(get_db),
+def stoffplan(body: StoffplanIn, background_tasks: BackgroundTasks, request: Request,
+              conn: sqlite3.Connection = Depends(get_db),
               user_id: int = Depends(get_user_id)):
     sy = row_or_404(conn.execute("SELECT * FROM school_years WHERE id=? AND user_id=?",
                                  (body.school_year_id, user_id)).fetchone(), "Schuljahr")
@@ -189,19 +224,16 @@ def stoffplan(body: StoffplanIn, conn: sqlite3.Connection = Depends(get_db),
                      "thematischen Lernbereiche 3–6 integrieren und in den Blocknotizen erwähnen.")
     parts.append("Lernbereiche:\n" + lb_text)
     user_text = "\n\n".join(parts)
-    # Kein Cache: Stoffplan-Vorschlag ist ein bewusster Einzelaufruf, ein gecachter alter
-    # (evtl. unvollständiger) Vorschlag soll nie stillschweigend erneut ausgeliefert werden.
-    data, cached = _run_json(conn, user_id, "stoffplan", _STOFF_SYSTEM, user_text, _STOFF_SCHEMA,
-                              max_tokens=8000, bypass_cache=True)
-
-    from ..lib.planning import assign_dates_from_weeks
-    ferien_d = [(_d(s), _d(e)) for s, e in ferien]
-    dated = assign_dates_from_weeks(_d(sy["start_date"]), _d(sy["end_date"]), ferien_d, data.get("blocks") or [])
-    for b, d_ in zip(data.get("blocks") or [], dated):
-        b["startDate"] = d_["start_date"]
-        b["endDate"] = d_["end_date"]
-
-    return {"suggestion": data, "cached": cached}
+    # Lang laufender KI-Call asynchron (Cloudflare-Tunnel bricht Requests nach 100 s ab):
+    # Job anlegen, sofort jobId liefern, Frontend pollt GET /ai/jobs/{id}. Kein Cache: Stoffplan-
+    # Vorschlag ist ein bewusster Einzelaufruf, ein gecachter alter (evtl. unvollständiger)
+    # Vorschlag soll nie stillschweigend erneut ausgeliefert werden.
+    cur = conn.execute("INSERT INTO ai_jobs(user_id, kind, status) VALUES (?, 'stoffplan', 'pending')", (user_id,))
+    conn.commit()
+    job_id = cur.lastrowid
+    background_tasks.add_task(_run_stoffplan_job, request.app.state.db_path, job_id, user_id, user_text,
+                               sy["start_date"], sy["end_date"], ferien)
+    return {"jobId": job_id}
 
 
 # ---------- 2b) Sequenzplan-Generierung (Einzelstunden je Stoffplan-Block) ----------

@@ -202,7 +202,10 @@ def test_stoffplan_suggestion(client, auth, monkeypatch):
     _set_key(client)
     r = client.post("/api/ai/stoffplan", json={"schoolYearId": sy["id"], "classId": cls["id"]})
     assert r.status_code == 200, r.text
-    assert r.json()["suggestion"]["blocks"][0]["code"] == "LB1"
+    job_id = r.json()["jobId"]
+    body = client.get(f"/api/ai/jobs/{job_id}").json()
+    assert body["status"] == "done"
+    assert body["result"]["suggestion"]["blocks"][0]["code"] == "LB1"
 
 
 def test_sequenzplan_suggestion(client, auth, monkeypatch):
