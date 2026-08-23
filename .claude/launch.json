@@ -4,14 +4,28 @@
     {
       "name": "dashboard",
       "runtimeExecutable": ".venv/bin/python",
-      "runtimeArgs": ["-m", "uvicorn", "src.main:app", "--host", "127.0.0.1", "--port", "8097"],
+      "runtimeArgs": [
+        "-m",
+        "uvicorn",
+        "src.main:app",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8097"
+      ],
       "port": 8097
     },
     {
       "name": "offlinetest",
-      "runtimeExecutable": "/private/tmp/claude-501/-Users-joad-Claude-Projects-Unterrichtsplaner/0163da88-6cd8-47a3-a92f-1e541804b670/scratchpad/offlinetest/run.sh",
+      "runtimeExecutable": "/private/tmp/claude-501/-Users-joad-Claude-Projects-Unterrichtsplaner/f9e47f93-5041-4ce9-8c7c-7ddbd0d496c4/scratchpad/offlinetest/run.sh",
       "runtimeArgs": [],
       "port": 8199
+    },
+    {
+      "name": "uicheck",
+      "runtimeExecutable": "/private/tmp/claude-501/-Users-joad-Claude-Projects-Unterrichtsplaner/cc04b03d-a78e-4849-853b-dd7a9e474478/scratchpad/uitest/run.sh",
+      "runtimeArgs": [],
+      "port": 8196
     }
   ]
 }

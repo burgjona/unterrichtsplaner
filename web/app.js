@@ -5679,6 +5679,17 @@ function wireEvents() {
     }
   });
 
+  $("lessonTodoInput").addEventListener("keydown", async (e) => {
+    if (e.key === "Enter" && e.target.value.trim()) {
+      try {
+        await SyncEngine.create("todos", { text: e.target.value.trim(), source: "manuell" });
+        e.target.value = "";
+        await refresh();
+        toast("To-Do hinzugefügt.");
+      } catch (err) { toast(err.message, false); }
+    }
+  });
+
   $("saveApiKey").onclick = async () => {
     const key = $("apiKeyInput").value.trim();
     if (!key) { toast("Bitte einen API-Key eingeben.", false); return; }
