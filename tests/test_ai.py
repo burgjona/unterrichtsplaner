@@ -250,6 +250,52 @@ def test_sequenzplan_truncated_answer_reported_in_job(client, auth, monkeypatch)
     assert "abgeschnitten" in body["error"]
 
 
+def test_sequenzplan_retries_once_and_recovers(client, auth, monkeypatch):
+    """Erster Call liefert ungültiges JSON (Modell-Aussetzer), zweiter Call gelingt – der Job
+    endet trotzdem mit status=done, der Nutzer sieht nichts vom ersten Fehlversuch."""
+    cls = client.post("/api/classes", json={"name": "8a", "subject": "Deutsch", "grade": 8, "track": "RS"}).json()
+    plan = client.post("/api/stoff-plans", json={
+        "classId": cls["id"], "title": "P", "blocks": [{"lbCode": "LB1", "title": "X", "ustd": 5}],
+    }).json()
+    valid_payload = json.dumps({"stunden": [{"title": "Einstieg", "grobziel": "G", "notenarten": []}]})
+    responses = iter(["<html>kein JSON</html>", valid_payload])
+    calls = []
+
+    class _FlakyClient:
+        def __init__(self):
+            self.messages = self
+
+        def create(self, **kwargs):
+            calls.append(kwargs)
+            return _Resp(next(responses))
+
+    monkeypatch.setattr(ai, "_make_client", lambda api_key: _FlakyClient())
+    _set_key(client)
+    r = client.post("/api/ai/sequenzplan", json={"blockId": plan["blocks"][0]["id"]})
+    body = client.get(f"/api/ai/jobs/{r.json()['jobId']}").json()
+    assert body["status"] == "done", body
+    assert len(body["result"]["suggestion"]["stunden"]) == 1
+    assert len(calls) == 2  # genau ein Retry, kein Endlos-Loop
+
+
+def test_sequenzplan_no_retry_without_api_key(client, auth, monkeypatch):
+    """Fehlender API-Key ist deterministisch – wird nicht wiederholt, Job endet sofort."""
+    cls = client.post("/api/classes", json={"name": "8a", "subject": "Deutsch", "grade": 8, "track": "RS"}).json()
+    plan = client.post("/api/stoff-plans", json={
+        "classId": cls["id"], "title": "P", "blocks": [{"lbCode": "LB1", "title": "X", "ustd": 5}],
+    }).json()
+    _set_key(client)
+
+    def _remove_key(*a, **kw):
+        raise ai.NoApiKey()
+
+    monkeypatch.setattr(ai, "run", _remove_key)
+    r = client.post("/api/ai/sequenzplan", json={"blockId": plan["blocks"][0]["id"]})
+    body = client.get(f"/api/ai/jobs/{r.json()['jobId']}").json()
+    assert body["status"] == "error", body
+    assert "API-Key" in body["error"]
+
+
 def test_sequenzplan_empty_result_reported_as_error(client, auth, monkeypatch):
     """Schema-valides, aber leeres Ergebnis ({"stunden": []}) ist kein Erfolg – der Job
     endet mit status=error statt einem irreführenden "0 Stunden erzeugt"."""

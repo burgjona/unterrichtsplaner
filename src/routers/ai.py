@@ -15,6 +15,10 @@ from ..schemas import AsuvSuggestIn, LessonSuggestIn, SequenzplanIn, StoffplanIn
 router = APIRouter(prefix="/ai", tags=["ai"])
 
 _STR = {"type": "string"}
+# Deckel für ungeprüfte Freitext-/OCR-Bausteine im Prompt (Ideenfeld, Hinweise, Lehrplantext):
+# unbegrenzt eingefügt kann so ein Baustein den Kontext sprengen und die KI aus dem Tritt
+# bringen (leere/ungültige Antwort statt eines Vorschlags) – siehe Sequenzplan-Vorfall.
+_FREE_TEXT_CAP = 4000
 
 
 def _run_json(conn, user_id, function, system, user_text, schema, max_tokens=2000, bypass_cache=False):
@@ -40,35 +44,52 @@ def _run_json(conn, user_id, function, system, user_text, schema, max_tokens=200
 # POST legt den Job an und liefert sofort {"jobId": …}, das Frontend pollt GET /ai/jobs/{id}.
 
 
+_JOB_MAX_ATTEMPTS = 2  # ein automatischer Retry bei inhaltlich schlechter (nicht: fehlender-Key-) Antwort
+
+
 def _run_ai_job(db_path: str, job_id: int, user_id: int, function: str, system: str,
                 user_text: str, schema: dict, max_tokens: int, bypass_cache: bool,
                 post_process=None):
-    """Background-Task: eigener DB-Connect (keine Request-Dependency), Ergebnis in ai_jobs."""
+    """Background-Task: eigener DB-Connect (keine Request-Dependency), Ergebnis in ai_jobs.
+
+    Inhaltlich schlechte Antworten (kein gültiges JSON, oder ein über post_process als leer
+    erkanntes Ergebnis) sind meist Modell-Varianz, kein deterministischer Fehler – ein zweiter
+    Versuch löst die meisten davon unsichtbar für die Lehrkraft. Deshalb hier ein Retry, jeweils
+    mit umgangenem Cache (sonst würde ein zweiter Versuch nur die exakt gleiche schlechte
+    Antwort aus dem lokalen Prompt-Cache zurückbekommen). Ein fehlender API-Key wird NICHT
+    wiederholt – der ändert sich zwischen zwei Versuchen im selben Job nicht.
+    """
     conn = connect(db_path)
     try:
         status, result_json, error = "error", None, None
-        try:
-            result = ai.run(conn, user_id, function, system, user_text, schema, max_tokens, bypass_cache)
-            data = json.loads(result["text"])
-        except ai.NoApiKey:
-            error = "Kein API-Key hinterlegt – bitte in den Einstellungen eintragen."
-        except ai.ResponseTruncated:
-            error = ("KI-Antwort war zu lang und wurde abgeschnitten – bitte erneut versuchen "
-                     "oder Hinweise/Vorgaben kürzen.")
-        except (ValueError, TypeError):
-            error = "KI-Antwort war kein gültiges JSON."
-        except Exception as exc:  # Netz-/Auth-/API-Fehler lesbar ablegen
-            error = f"KI-Anfrage fehlgeschlagen: {exc}"
-        else:
+        for attempt in range(_JOB_MAX_ATTEMPTS):
+            retry_bypass = bypass_cache or attempt > 0
+            try:
+                result = ai.run(conn, user_id, function, system, user_text, schema, max_tokens, retry_bypass)
+            except ai.NoApiKey:
+                error = "Kein API-Key hinterlegt – bitte in den Einstellungen eintragen."
+                break
+            except ai.ResponseTruncated:
+                error = ("KI-Antwort war zu lang und wurde abgeschnitten – bitte erneut versuchen "
+                         "oder Hinweise/Vorgaben kürzen.")
+                continue
+            except Exception as exc:  # Netz-/Auth-/API-Fehler lesbar ablegen
+                error = f"KI-Anfrage fehlgeschlagen: {exc}"
+                continue
+            try:
+                data = json.loads(result["text"])
+            except (ValueError, TypeError):
+                error = "KI-Antwort war kein gültiges JSON."
+                continue
             try:
                 if post_process is not None:
                     data = post_process(data)
             except Exception as exc:  # Nachbearbeitung getrennt melden, nicht als JSON-Fehler
                 error = f"Nachbearbeitung der KI-Antwort fehlgeschlagen: {exc}"
-            else:
-                status = "done"
-                result_json = json.dumps({"suggestion": data, "cached": result["cached"]},
-                                         ensure_ascii=False)
+                continue
+            status, error = "done", None
+            result_json = json.dumps({"suggestion": data, "cached": result["cached"]}, ensure_ascii=False)
+            break
         conn.execute("UPDATE ai_jobs SET status=?, result_json=?, error=? WHERE id=?",
                      (status, result_json, error, job_id))
         conn.commit()
@@ -183,7 +204,7 @@ def lesson_suggestion(body: LessonSuggestIn, conn: sqlite3.Connection = Depends(
         lines.append(f"Klasse: {cls['name']} · Bildungsgang: {cls['track'] or '-'}")
     if body.date:
         lines.append(f"Datum der Stunde: {body.date}")
-    lines.append(f"Ideen/Impulse der Lehrkraft:\n{body.ideas.strip() or '-'}")
+    lines.append(f"Ideen/Impulse der Lehrkraft:\n{body.ideas.strip()[:_FREE_TEXT_CAP] or '-'}")
     user_text = "\n".join(lines) + f"\n\n{_ctx_block(ctx)}"
     data, cached = _run_json(conn, user_id, "lesson_suggestion", _LESSON_SYSTEM, user_text, _LESSON_SCHEMA, max_tokens=4000)
     return {"suggestion": data, "cached": cached}
@@ -257,7 +278,8 @@ def stoffplan(body: StoffplanIn, background_tasks: BackgroundTasks, request: Req
                 f"(ca. {available_ustd} Unterrichtsstunden). Summe der Richtwertstunden aller "
                 f"Lernbereiche: {richtwert_sum} Ustd.")
     if note:
-        parts.append("Hinweise/Ideen des Lehrers – diese haben Vorrang vor den Standardregeln:\n" + note)
+        parts.append("Hinweise/Ideen des Lehrers – diese haben Vorrang vor den Standardregeln:\n"
+                     + note[:_FREE_TEXT_CAP])
     if cls["subject"] == "Deutsch" and cls["track"] == "gemischt" and (cls["grade"] or 0) >= 7:
         parts.append("Die Klasse ist ein gemischter Bildungsgang: Richte die Planung nach dem "
                      "Realschulbildungsgang aus und plane durchgängig Differenzierung auf "
@@ -365,7 +387,7 @@ def sequenzplan(body: SequenzplanIn, background_tasks: BackgroundTasks, request:
     if wanted:
         lines.append("Gewünschte Bewertungsformen, die im Verlauf vorkommen sollen: " + ", ".join(wanted) + ".")
     if body.ideas.strip():
-        lines.append(f"Ideen/Hinweise der Lehrkraft:\n{body.ideas.strip()}")
+        lines.append(f"Ideen/Hinweise der Lehrkraft:\n{body.ideas.strip()[:_FREE_TEXT_CAP]}")
     user_text = "\n\n".join(lines) + f"\n\n{_ctx_block(ctx)}"
 
     # Längster KI-Call der App (ein kompletter Block mit bis zu ~40 Stunden). Als Job im
