@@ -14,6 +14,7 @@ from ..schemas import (
     SequenzStundeCalendarEntryIn, SequenzStundeCreate, SequenzStundeLinkIn, SequenzStundeOut,
     SequenzStundeReorderIn, SequenzStundeShiftIn, SequenzStundeShiftOut, SequenzStundeUpdate,
 )
+from .lessons import _sync_calendar_entry
 
 router = APIRouter(prefix="/sequenz-stunden", tags=["sequenzplan"])
 
@@ -344,16 +345,6 @@ def _next_class_slot(conn, user_id: int, class_id: int, after_date_iso: str, max
     return None
 
 
-def _sync_calendar_entry_date(conn, lesson_id: int, new_date: str) -> None:
-    """Hält den automatisch erzeugten Kalendereintrag einer verschobenen Stunde synchron
-    (analog routers/lessons.py::_sync_calendar_entry, hier nur der Datums-Teil)."""
-    conn.execute(
-        "UPDATE calendar_entries SET entry_date = ?, "
-        "updated_at = strftime('%Y-%m-%d %H:%M:%f','now') WHERE lesson_id = ? AND auto_generated = 1",
-        (new_date, lesson_id),
-    )
-
-
 @router.post("/{sid}/shift", response_model=SequenzStundeShiftOut)
 def shift(sid: int, body: SequenzStundeShiftIn, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
     """"Nach hinten verschieben": erhöht sort_order dieser und aller nachfolgenden Stunden im
@@ -392,7 +383,7 @@ def shift(sid: int, body: SequenzStundeShiftIn, conn=Depends(get_db), user_id: i
                     "UPDATE lessons SET date = ?, time = ?, updated_at = strftime('%Y-%m-%d %H:%M:%f','now') WHERE id = ?",
                     (nxt["date"], nxt["time"], lesson["id"]),
                 )
-                _sync_calendar_entry_date(conn, lesson["id"], nxt["date"])
+                _sync_calendar_entry(conn, user_id, lesson["id"])
     planned_count = conn.execute(
         "SELECT COUNT(*) AS n FROM sequenz_stunden WHERE block_id = ? AND user_id = ?",
         (block_id, user_id),

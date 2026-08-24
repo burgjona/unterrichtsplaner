@@ -6,6 +6,7 @@ sodass keine verwaisten Phasen entstehen.
 """
 import json
 import sqlite3
+from datetime import datetime, timedelta
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -37,10 +38,20 @@ def _sync_calendar_entry(conn, user_id: int, lesson_id: int) -> None:
     manuellen Termin heraus geplante Stunden nicht zusätzlich einen Auto-Eintrag erzeugen.
     """
     l = conn.execute(
-        "SELECT date, title, class_id FROM lessons WHERE id = ? AND user_id = ?", (lesson_id, user_id)
+        "SELECT date, title, class_id, time, duration_minutes FROM lessons WHERE id = ? AND user_id = ?",
+        (lesson_id, user_id),
     ).fetchone()
     if l is None:
         return
+    all_day = 1 if not l["time"] else 0
+    start_time = l["time"] if l["time"] else None
+    end_time = None
+    if l["time"]:
+        try:
+            start_dt = datetime.strptime(l["time"], "%H:%M")
+            end_time = (start_dt + timedelta(minutes=l["duration_minutes"] or 45)).strftime("%H:%M")
+        except ValueError:
+            all_day, start_time = 1, None
     # archivierte Einträge zählen nicht als "existing" – sonst würde ein Nutzer, der einen
     # archivierten Auto-Eintrag hat, bei jeder Stunden-Aktualisierung nur dessen (weiterhin
     # verstecktes) archived_at-Feld erben, statt einen neuen sichtbaren Eintrag zu bekommen.
@@ -57,16 +68,18 @@ def _sync_calendar_entry(conn, user_id: int, lesson_id: int) -> None:
         if existing:
             conn.execute(
                 "UPDATE calendar_entries SET title = ?, entry_date = ?, class_id = ?, "
+                "all_day = ?, start_time = ?, end_time = ?, "
                 "updated_at = strftime('%Y-%m-%d %H:%M:%f','now') WHERE id = ?",
-                (l["title"], l["date"], l["class_id"], existing["id"]),
+                (l["title"], l["date"], l["class_id"], all_day, start_time, end_time, existing["id"]),
             )
             _set_entry_classes(conn, user_id, existing["id"], class_ids)
         else:
             cur = conn.execute(
                 "INSERT INTO calendar_entries"
-                "(user_id, class_id, lesson_id, title, entry_date, entry_type, auto_generated, updated_at) "
-                "VALUES (?,?,?,?,?, 'normal', 1, strftime('%Y-%m-%d %H:%M:%f','now'))",
-                (user_id, l["class_id"], lesson_id, l["title"], l["date"]),
+                "(user_id, class_id, lesson_id, title, entry_date, all_day, start_time, end_time, "
+                "entry_type, auto_generated, updated_at) "
+                "VALUES (?,?,?,?,?,?,?,?, 'normal', 1, strftime('%Y-%m-%d %H:%M:%f','now'))",
+                (user_id, l["class_id"], lesson_id, l["title"], l["date"], all_day, start_time, end_time),
             )
             _set_entry_classes(conn, user_id, cur.lastrowid, class_ids)
     elif existing:
