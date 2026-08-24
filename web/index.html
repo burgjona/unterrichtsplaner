@@ -126,6 +126,11 @@
         <input id="globalSearchInput" type="search" placeholder="Alles durchsuchen…" aria-label="Volltextsuche" autocomplete="off" />
         <button class="btn small" type="submit">Suchen</button>
       </form>
+      <!-- M1d: Schulmanager-Abgleich – Glocke nur sichtbar, wenn ein ICS-Link hinterlegt ist -->
+      <button type="button" class="sm-bell hidden" id="smBellBtn" title="Schulmanager-Änderungen" aria-label="Schulmanager-Änderungen">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        <span class="sm-bell-dot hidden" id="smBellCount">0</span>
+      </button>
     </div>
 
     <!-- SUCHE (U25; U27 Variante C: zweispaltig – Filter links, Treffer rechts) -->
@@ -932,6 +937,27 @@
           <button class="btn danger" id="removeGoogleKey">Entfernen</button>
         </div>
       </div>
+      <!-- M1a: Schulmanager-Online-Abgleich (ICS-Stundenplan-Link, kein Login) -->
+      <div class="card" style="margin-top:14px;" id="schulmanagerCard">
+        <h3>Schulmanager Online</h3>
+        <p class="muted small">Liest deine Unterrichtsstunden, Vertretungen und Aufsichten aus dem persönlichen Schulmanager-Kalenderabo. Kein Passwort nötig – nur ein geheimer Link, der wie ein Kennwort verschlüsselt gespeichert wird.</p>
+        <div style="margin:8px 0 12px;"><span id="schulmanagerStatus" class="badge bad">Nicht verbunden</span> <span class="small muted" id="schulmanagerMeta"></span></div>
+        <details style="margin-bottom:12px;">
+          <summary style="cursor:pointer; font-weight:600; color:var(--primary-dark);">Wo finde ich den Link?</summary>
+          <ol class="small muted" style="margin:8px 0 0; padding-left:20px; line-height:1.6;">
+            <li>In Schulmanager Online in den <strong>Stundenplan</strong> wechseln.</li>
+            <li>Unten links auf <strong>„Kalender abonnieren"</strong> klicken.</li>
+            <li>Den angezeigten Link kopieren und hier einfügen.</li>
+          </ol>
+        </details>
+        <label>ICS-Link</label>
+        <input id="schulmanagerUrlInput" placeholder="https://login.schulmanager-online.de/ical/schedules/…" />
+        <div id="schulmanagerWarn" class="note-box hidden">Serverseitig ist kein <code>APP_SECRET_KEY</code> gesetzt – der Link kann nicht verschlüsselt gespeichert werden.</div>
+        <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap;">
+          <button class="btn" id="saveSchulmanagerUrl">Verbinden</button>
+          <button class="btn danger" id="removeSchulmanagerUrl">Entfernen</button>
+        </div>
+      </div>
     </section>
   </main>
 </div>
@@ -993,6 +1019,17 @@
 </div>
 
 <div id="modalRoot"></div>
+
+<!-- M1d: Schulmanager-Abgleich-Schublade (Konzept B) -->
+<div class="sm-drawer-overlay hidden" id="smDrawerOverlay">
+  <div class="sm-drawer" role="dialog" aria-modal="true" aria-label="Schulmanager-Änderungen">
+    <div class="sm-drawer-head">
+      <h4>Schulmanager-Änderungen</h4>
+      <button type="button" class="drawer-close" id="smDrawerCloseBtn" aria-label="Schließen">&times;</button>
+    </div>
+    <div id="smDrawerBody" class="sm-drawer-body"></div>
+  </div>
+</div>
 
 <!-- Spruch des Tages: Vollbild-Vorschau (schließen per „×" oder Esc) -->
 <div id="screensaver" class="screensaver hidden" role="dialog" aria-modal="true" aria-label="Spruch des Tages, Vollbild">

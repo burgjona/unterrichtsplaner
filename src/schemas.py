@@ -40,6 +40,11 @@ class GoogleKeyIn(Base):
     calendar_id: str
 
 
+class SchulmanagerIcalIn(Base):
+    """Persönlicher Schulmanager-ICS-Stundenplan-Link (M1a)."""
+    url: str
+
+
 class SettingsOut(Base):
     api_key_status: str            # "aktiv" | "kein Key"
     api_key_last4: Optional[str] = None
@@ -52,6 +57,9 @@ class SettingsOut(Base):
     google_key_set: bool = False
     google_calendar_id: Optional[str] = None
     google_last_sync: Optional[str] = None
+    # Schulmanager-ICS-Sync (M1a)
+    schulmanager_ical_set: bool = False
+    schulmanager_last_sync: Optional[str] = None
     # Deploy-Info (aus Docker-Build-Args, siehe DEPLOY.md)
     deploy_commit: str = "unbekannt"
     deploy_time: str = "unbekannt"
@@ -1242,3 +1250,30 @@ class SyncMutationResult(Base):
 
 class SyncPushOut(Base):
     results: List[SyncMutationResult]
+
+
+# --- Schulmanager-Online-Abgleich (M1c) ---
+class SchulmanagerEventRef(Base):
+    title: Optional[str] = None
+    room: Optional[str] = None
+    uid: Optional[str] = None
+
+
+class SchulmanagerChangeOut(Base):
+    date: str
+    start: str
+    end: Optional[str] = None
+    expected: Optional[SchulmanagerEventRef] = None
+    actual: Optional[SchulmanagerEventRef] = None
+    # Nur bei Unterricht (Vertretung/Ausfall) gesetzt – Frontend nutzt es, um "Ausarbeiten"
+    # direkt in den Unterrichtsplanung-Editor zu leiten (wie die U27-Stundenplan-Ansicht).
+    class_id: Optional[int] = None
+    # Nur bei aufsicht_geaendert gesetzt – Frontend öffnet damit das bestehende Bearbeiten-Modal.
+    entry_id: Optional[int] = None
+
+
+class SchulmanagerChangesOut(Base):
+    vertretung: List[SchulmanagerChangeOut] = Field(default_factory=list)
+    ausfall: List[SchulmanagerChangeOut] = Field(default_factory=list)
+    aufsicht_neu: List[SchulmanagerChangeOut] = Field(default_factory=list)
+    aufsicht_geaendert: List[SchulmanagerChangeOut] = Field(default_factory=list)

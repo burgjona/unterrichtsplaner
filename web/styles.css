@@ -903,3 +903,35 @@ body.cmd-open { overflow:hidden; }
 .notiz-ws-mini-editor { border:1px solid var(--line); border-radius:12px; overflow:hidden; }
 .notiz-ws-mini-editor .notizen-text { min-height:160px; padding:14px 16px; }
 .notiz-ws-mini-editor .notizen-foot { padding:6px 16px 12px; }
+
+/* ---------- M1d: Schulmanager-Abgleich (Glocke + Schublade, Konzept B) ---------- */
+.sm-bell { position:relative; width:38px; height:38px; border-radius:10px; border:1px solid var(--line); background:var(--surface-2); display:flex; align-items:center; justify-content:center; cursor:pointer; color:var(--primary-dark); flex-shrink:0; }
+.sm-bell svg { width:18px; height:18px; }
+.sm-bell:hover { background:var(--surface); }
+.sm-bell-dot { position:absolute; top:-5px; right:-5px; background:var(--orange); color:#fff; font-size:10px; font-weight:var(--fw-bold); min-width:17px; height:17px; border-radius:999px; display:flex; align-items:center; justify-content:center; border:2px solid var(--surface); }
+
+.sm-drawer-overlay { position:fixed; inset:0; background:rgba(20,38,26,0.35); display:flex; justify-content:flex-end; z-index:120; }
+.sm-drawer { width:380px; max-width:92vw; height:100%; background:var(--surface); box-shadow:var(--shadow); overflow-y:auto; display:flex; flex-direction:column; }
+.sm-drawer-head { padding:16px 18px; border-bottom:1px solid var(--line); display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
+.sm-drawer-head h4 { margin:0; font-size:15px; color:var(--primary-dark); }
+.sm-drawer-body { padding:6px 0 18px; overflow-y:auto; }
+.sm-drawer-day { font-size:10.5px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); padding:14px 18px 4px; font-weight:var(--fw-bold); }
+.sm-drawer-item { padding:10px 18px 14px; border-bottom:1px solid var(--line); }
+.sm-drawer-item:last-child { border-bottom:none; }
+.sm-di-top { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
+.sm-di-title { font-size:13.5px; font-weight:var(--fw-bold); }
+.sm-di-compare { font-size:12px; color:var(--muted); margin:6px 0 10px; line-height:1.55; }
+.sm-di-compare .row { display:flex; gap:6px; }
+.sm-di-compare .lbl { font-size:10px; text-transform:uppercase; opacity:.7; width:56px; flex-shrink:0; padding-top:1px; }
+.sm-di-compare .old { text-decoration:line-through; opacity:.65; }
+.sm-di-compare .new { color:var(--text); font-weight:var(--fw-bold); }
+.sm-di-actions { display:flex; gap:7px; }
+.sm-di-actions .btn { flex:1; padding:6px 8px; font-size:11.5px; }
+.sm-drawer-empty { padding:30px 18px; text-align:center; color:var(--muted); font-size:13px; }
+.sm-chip { display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:var(--fw-bold); padding:4px 9px; border-radius:999px; white-space:nowrap; }
+.sm-chip.vertretung { background:var(--badge-warn-bg); color:var(--badge-warn-text); }
+.sm-chip.ausfall { background:var(--badge-bad-bg); color:var(--badge-bad-text); }
+.sm-chip.aufsicht { background:var(--badge-ok-bg); color:var(--badge-ok-text); }
+@media (max-width: 600px) {
+  .sm-drawer { width:100%; max-width:100%; }
+}

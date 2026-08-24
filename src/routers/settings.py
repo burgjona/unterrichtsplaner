@@ -12,9 +12,10 @@ from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFil
 from fastapi.responses import FileResponse
 
 from ..deps import get_db, get_storage_root, get_user_id
+from ..lib import schulmanager_ical
 from ..lib.branding import media_type_for, resolve_relpath, save_image_upload
 from ..lib.security import encrypt_secret, secret_available
-from ..schemas import ApiKeyIn, AppearanceIn, GoogleKeyIn, SettingsOut
+from ..schemas import ApiKeyIn, AppearanceIn, GoogleKeyIn, SchulmanagerIcalIn, SettingsOut
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -22,12 +23,14 @@ router = APIRouter(prefix="/settings", tags=["settings"])
 def _settings_out(conn, user_id) -> SettingsOut:
     row = conn.execute(
         "SELECT anthropic_key_last4, anthropic_key_set_at, theme, dark_mode, font, "
-        "       google_key_cipher, google_calendar_id, google_last_sync "
+        "       google_key_cipher, google_calendar_id, google_last_sync, "
+        "       schulmanager_ical_cipher, schulmanager_last_sync "
         "FROM user_settings WHERE user_id = ?",
         (user_id,),
     ).fetchone()
     has_key = row is not None and row["anthropic_key_last4"] is not None
     google_set = row is not None and row["google_key_cipher"] is not None
+    schulmanager_set = row is not None and row["schulmanager_ical_cipher"] is not None
     return SettingsOut(
         api_key_status="aktiv" if has_key else "kein Key",
         api_key_last4=row["anthropic_key_last4"] if has_key else None,
@@ -39,6 +42,8 @@ def _settings_out(conn, user_id) -> SettingsOut:
         google_key_set=google_set,
         google_calendar_id=row["google_calendar_id"] if google_set else None,
         google_last_sync=row["google_last_sync"] if row is not None else None,
+        schulmanager_ical_set=schulmanager_set,
+        schulmanager_last_sync=row["schulmanager_last_sync"] if schulmanager_set else None,
         deploy_commit=os.environ.get("GIT_COMMIT", "unbekannt"),
         deploy_time=os.environ.get("DEPLOY_TIME", "unbekannt"),
     )
@@ -155,6 +160,67 @@ def delete_google_key(conn: sqlite3.Connection = Depends(get_db),
     )
     conn.commit()
     return _settings_out(conn, user_id)
+
+
+# ---------- Schulmanager-Online-ICS-Sync (M1a) ----------
+@router.put("/schulmanager-ical", response_model=SettingsOut)
+def set_schulmanager_ical(body: SchulmanagerIcalIn, conn: sqlite3.Connection = Depends(get_db),
+                          user_id: int = Depends(get_user_id)):
+    """Persönlichen ICS-Link (aus Schulmanager: Stundenplan → 'Kalender abonnieren') verschlüsselt speichern."""
+    if not secret_available():
+        raise HTTPException(
+            status_code=503,
+            detail="APP_SECRET_KEY ist nicht konfiguriert – der Link kann nicht verschlüsselt gespeichert werden.",
+        )
+    url = body.url.strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="Leerer ICS-Link.")
+    if not url.startswith("https://"):
+        raise HTTPException(status_code=400, detail="Der Link muss mit https:// beginnen.")
+    cipher, nonce = encrypt_secret(url)
+    conn.execute(
+        """INSERT INTO user_settings (user_id, schulmanager_ical_cipher, schulmanager_ical_nonce,
+                                      schulmanager_ical_set_at, updated_at)
+           VALUES (?, ?, ?, datetime('now'), datetime('now'))
+           ON CONFLICT(user_id) DO UPDATE SET
+             schulmanager_ical_cipher  = excluded.schulmanager_ical_cipher,
+             schulmanager_ical_nonce   = excluded.schulmanager_ical_nonce,
+             schulmanager_ical_set_at  = excluded.schulmanager_ical_set_at,
+             updated_at                = datetime('now')""",
+        (user_id, cipher, nonce),
+    )
+    conn.commit()
+    return _settings_out(conn, user_id)
+
+
+@router.delete("/schulmanager-ical", response_model=SettingsOut)
+def delete_schulmanager_ical(conn: sqlite3.Connection = Depends(get_db),
+                             user_id: int = Depends(get_user_id)):
+    conn.execute(
+        """UPDATE user_settings SET schulmanager_ical_cipher = NULL, schulmanager_ical_nonce = NULL,
+             schulmanager_ical_set_at = NULL, schulmanager_last_sync = NULL, updated_at = datetime('now')
+           WHERE user_id = ?""",
+        (user_id,),
+    )
+    conn.commit()
+    return _settings_out(conn, user_id)
+
+
+@router.post("/schulmanager-ical/test-sync")
+def test_schulmanager_ical(conn: sqlite3.Connection = Depends(get_db),
+                           user_id: int = Depends(get_user_id)):
+    """Ruft den hinterlegten Feed ab und zählt die erkannten Event-Typen (M1a-Smoke-Test,
+    noch ohne Soll/Ist-Abgleich oder Übernahme in den Kalender)."""
+    try:
+        events = schulmanager_ical.fetch_and_parse(conn, user_id)
+    except schulmanager_ical.NoIcalUrl:
+        raise HTTPException(status_code=400, detail="Kein Schulmanager-ICS-Link hinterlegt.")
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Abruf fehlgeschlagen: {exc}")
+    counts: dict = {}
+    for ev in events:
+        counts[ev["kind"]] = counts.get(ev["kind"], 0) + 1
+    return {"total": len(events), "byKind": counts}
 
 
 # ---------- Darstellung (Meilenstein 12, U9) ----------

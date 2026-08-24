@@ -23,9 +23,9 @@
     },
     {
       "name": "uicheck",
-      "runtimeExecutable": "/private/tmp/claude-501/-Users-joad-Claude-Projects-Unterrichtsplaner/cc04b03d-a78e-4849-853b-dd7a9e474478/scratchpad/uitest/run.sh",
+      "runtimeExecutable": "/private/tmp/claude-501/-Users-joad-Claude-Projects-Unterrichtsplaner/97774f15-d4bc-455f-8fb9-7339e5729a38/scratchpad/uitest/run.sh",
       "runtimeArgs": [],
-      "port": 8196
+      "port": 8198
     }
   ]
 }

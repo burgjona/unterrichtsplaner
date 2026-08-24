@@ -8,7 +8,7 @@ from .config import settings
 from .db import init_db
 from .routers import (
     ai, asuv, auth, branding, calendar, calendar_categories, classes, lernbereiche,
-    lessons, materials, notes, planning, reflections, school_years, search, seating,
+    lessons, materials, notes, planning, reflections, school_years, schulmanager, search, seating,
     sequenzplan, settings as settings_router, stoffplan, students, stundenplan, sync, todos, users,
 )
 
@@ -30,7 +30,7 @@ def create_app(db_path: str = None, storage_root: str = None) -> FastAPI:
     for module in (auth, settings_router, users, school_years, classes, lernbereiche,
                    lessons, calendar, calendar_categories, materials, reflections, todos,
                    notes, planning, stoffplan, sequenzplan, students, seating, asuv, ai, search,
-                   stundenplan, sync):
+                   stundenplan, sync, schulmanager):
         app.include_router(module.router, prefix="/api")
 
     # Branding-Routen (Favicon/Manifest, teils Root-Level) VOR dem StaticFiles-Mount.

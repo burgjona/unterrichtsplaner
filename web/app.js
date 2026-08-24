@@ -3361,6 +3361,158 @@ async function saveVertretung(kindId) {
   } catch (e) { toast(e.message, false); }
 }
 
+/* ---------- M1d: Schulmanager-Abgleich (Glocke + Schublade, Konzept B) ----------
+Referenzpunkt Unterricht (Vertretung/Ausfall) = U27-Stundenplan, Aufsicht = Planungskalender
+(schulmanager_diff.py, Server). "Ignorieren" ist bewusst nur clientseitig für diese Sitzung –
+keine Persistenz, blendet nur bis zum nächsten vollständigen Neuladen aus. */
+let smChanges = null;        // letzter Abgleich-Stand vom Server (kategorisiert)
+const smIgnored = new Set(); // Schlüssel ignorierter Änderungen, nur für diese Sitzung
+
+function smChangeKey(kind, c) {
+  return kind + "|" + ((c.actual && c.actual.uid) || (c.date + "T" + c.start));
+}
+
+function smVisibleChanges() {
+  const empty = { vertretung: [], ausfall: [], aufsichtNeu: [], aufsichtGeaendert: [] };
+  if (!smChanges) return empty;
+  const filt = (kind, list) => (list || []).filter((c) => !smIgnored.has(smChangeKey(kind, c)));
+  return {
+    vertretung: filt("vertretung", smChanges.vertretung),
+    ausfall: filt("ausfall", smChanges.ausfall),
+    aufsichtNeu: filt("aufsichtNeu", smChanges.aufsichtNeu),
+    aufsichtGeaendert: filt("aufsichtGeaendert", smChanges.aufsichtGeaendert),
+  };
+}
+
+function smTotalCount(v) {
+  return v.vertretung.length + v.ausfall.length + v.aufsichtNeu.length + v.aufsichtGeaendert.length;
+}
+
+// Bell nur sichtbar, wenn ein ICS-Link hinterlegt ist; Abruf-Fehler (Feed nicht erreichbar)
+// lassen die Glocke stehen, aber ohne Badge – kein Toast bei jedem Seitenaufruf.
+async function refreshSchulmanagerChanges() {
+  const bell = $("smBellBtn");
+  if (!bell) return;
+  let iconSet = false;
+  try { iconSet = Boolean((await API.get("/settings")).schulmanagerIcalSet); } catch (e) { /* ignore */ }
+  if (!iconSet) { bell.classList.add("hidden"); smChanges = null; return; }
+  bell.classList.remove("hidden");
+  try { smChanges = await API.get("/schulmanager/changes"); }
+  catch (e) { smChanges = null; }
+  renderSchulmanagerBell();
+}
+
+function renderSchulmanagerBell() {
+  const dot = $("smBellCount");
+  if (!dot) return;
+  const count = smTotalCount(smVisibleChanges());
+  dot.textContent = String(count);
+  dot.classList.toggle("hidden", count === 0);
+}
+
+function smLabelFor(kind) {
+  return { vertretung: "Vertretung", ausfall: "Ausfall", aufsichtNeu: "Neu", aufsichtGeaendert: "Geändert" }[kind] || kind;
+}
+function smChipClassFor(kind) {
+  return kind === "vertretung" ? "vertretung" : kind === "ausfall" ? "ausfall" : "aufsicht";
+}
+
+async function openSchulmanagerDrawer() {
+  $("smDrawerOverlay").classList.remove("hidden");
+  await refreshSchulmanagerChanges();  // frischer Stand bei jedem Öffnen
+  renderSchulmanagerDrawer();
+}
+function closeSchulmanagerDrawer() { $("smDrawerOverlay").classList.add("hidden"); }
+
+function renderSchulmanagerDrawer() {
+  const body = $("smDrawerBody");
+  if (!body) return;
+  const v = smVisibleChanges();
+  const items = [
+    ...v.vertretung.map((c) => ({ kind: "vertretung", c })),
+    ...v.ausfall.map((c) => ({ kind: "ausfall", c })),
+    ...v.aufsichtNeu.map((c) => ({ kind: "aufsichtNeu", c })),
+    ...v.aufsichtGeaendert.map((c) => ({ kind: "aufsichtGeaendert", c })),
+  ].sort((a, b) => (a.c.date + a.c.start).localeCompare(b.c.date + b.c.start));
+
+  if (!items.length) {
+    body.innerHTML = `<p class="sm-drawer-empty">Keine offenen Änderungen.</p>`;
+    return;
+  }
+
+  let html = "";
+  let lastDate = null;
+  items.forEach(({ kind, c }, idx) => {
+    if (c.date !== lastDate) {
+      lastDate = c.date;
+      const d = parseIso(c.date);
+      html += `<div class="sm-drawer-day">${d ? esc(d.toLocaleDateString("de-DE", { weekday: "long", day: "2-digit", month: "2-digit" })) : esc(c.date)}</div>`;
+    }
+    const titleNow = (c.actual && c.actual.title) || (c.expected && c.expected.title) || "";
+    const isUnterricht = kind === "vertretung" || kind === "ausfall";
+    const actionLabel = isUnterricht ? "Ausarbeiten" : "Übernehmen";
+    html += `<div class="sm-drawer-item">
+      <div class="sm-di-top">
+        <div class="sm-di-title">${esc(titleNow)}, ${esc(c.start)}${c.end ? "–" + esc(c.end) : ""}</div>
+        <span class="sm-chip ${smChipClassFor(kind)}">${esc(smLabelFor(kind))}</span>
+      </div>
+      <div class="sm-di-compare">
+        ${c.expected ? `<div class="row"><span class="lbl">Dein Plan</span><span class="old">${esc((c.expected.title || "") + (c.expected.room ? " · " + c.expected.room : ""))}</span></div>` : ""}
+        <div class="row"><span class="lbl">Jetzt</span><span class="new">${c.actual ? esc((c.actual.title || "") + (c.actual.room ? " · " + c.actual.room : "")) : "entfällt"}</span></div>
+      </div>
+      <div class="sm-di-actions">
+        <button class="btn" data-sm-act="act" data-sm-idx="${idx}">${actionLabel}</button>
+        <button class="btn ghost" data-sm-act="ignore" data-sm-idx="${idx}">Ignorieren</button>
+      </div>
+    </div>`;
+  });
+  body.innerHTML = html;
+
+  body.querySelectorAll("[data-sm-act]").forEach((btn) => {
+    btn.onclick = () => {
+      const { kind, c } = items[Number(btn.dataset.smIdx)];
+      if (btn.dataset.smAct === "ignore") { smIgnoreChange(kind, c); return; }
+      smActOnChange(kind, c);
+    };
+  });
+}
+
+function smIgnoreChange(kind, c) {
+  smIgnored.add(smChangeKey(kind, c));
+  renderSchulmanagerDrawer();
+  renderSchulmanagerBell();
+}
+
+// "Ausarbeiten"/"Übernehmen": übernimmt nichts blind, sondern öffnet den passenden
+// bestehenden Editor vorausgefüllt – der eigentliche Kalendereintrag entsteht erst,
+// wenn dort gespeichert wird (Absprache mit dem Nutzer).
+function smActOnChange(kind, c) {
+  smIgnored.add(smChangeKey(kind, c));  // aus der Schublade nehmen, sobald in Bearbeitung
+  renderSchulmanagerBell();
+  closeSchulmanagerDrawer();
+  if (kind === "vertretung" || kind === "ausfall") {
+    const item = {
+      classId: c.classId != null ? c.classId : null,
+      title: (c.expected && c.expected.title) || (c.actual && c.actual.title) || "",
+      timeRange: c.start + "–" + (c.end || c.start),
+      slotLabel: "", spanSlots: 1,
+    };
+    openTimetableSlotModal(c.date, item);
+  } else if (kind === "aufsichtNeu") {
+    showView("kalender");
+    openCalEntryPanel(c.date);
+    if ($("calEntryTitle")) $("calEntryTitle").value = (c.actual && c.actual.title) || "Aufsicht";
+    if ($("calEntryAllDay")) $("calEntryAllDay").checked = false;
+    if ($("calEntryTimeRow")) $("calEntryTimeRow").style.display = "flex";
+    if ($("calEntryStartTime")) $("calEntryStartTime").value = c.start;
+    if ($("calEntryEndTime")) $("calEntryEndTime").value = c.end || "";
+    if ($("calEntryRoom") && c.actual) $("calEntryRoom").value = c.actual.room || "";
+  } else if (kind === "aufsichtGeaendert" && c.entryId != null) {
+    showView("kalender");
+    openCalendarEventModal(c.entryId);
+  }
+}
+
 /* ---------- Kalender-Kategorien (U11) ---------- */
 function renderCategorySelect() {
   const sel = $("calEntryCategory");
@@ -3810,6 +3962,10 @@ async function loadSettings() {
     $("saveGoogleKey").disabled = !s.secretConfigured;
     if (s.googleCalendarId && !$("googleCalendarIdInput").value) $("googleCalendarIdInput").value = s.googleCalendarId;
     applyGoogleStatus();
+    // M1a: Schulmanager-ICS-Status übernehmen.
+    $("schulmanagerWarn").classList.toggle("hidden", s.secretConfigured);
+    $("saveSchulmanagerUrl").disabled = !s.secretConfigured;
+    applySchulmanagerStatus(s);
     state.aiActive = s.apiKeyStatus === "aktiv";
     applyAiGating(state.aiActive);
     applyAppearance(s.theme, s.darkMode, s.font);
@@ -3920,6 +4076,37 @@ async function removeGoogleKey() {
     $("googleCalendarIdInput").value = "";
     await loadSettings();
     toast("Google-Verbindung entfernt.");
+  } catch (e) { toast(e.message, false); }
+}
+
+/* ---------- M1a: Schulmanager-Online-ICS-Link (Einstellungen) ---------- */
+function applySchulmanagerStatus(s) {
+  const badge = $("schulmanagerStatus");
+  if (!badge) return;
+  badge.className = s.schulmanagerIcalSet ? "badge ok" : "badge bad";
+  badge.textContent = s.schulmanagerIcalSet ? "Verbunden" : "Nicht verbunden";
+  const meta = $("schulmanagerMeta");
+  if (meta) meta.textContent = s.schulmanagerIcalSet && s.schulmanagerLastSync ? `zuletzt abgerufen: ${s.schulmanagerLastSync}` : "";
+}
+
+async function saveSchulmanagerUrl() {
+  const url = $("schulmanagerUrlInput").value.trim();
+  if (!url) { toast("Bitte den ICS-Link einfügen.", false); return; }
+  try {
+    await API.put("/settings/schulmanager-ical", { url });
+    $("schulmanagerUrlInput").value = "";  // Link nicht im Formular stehen lassen (Geheimnis)
+    await loadSettings();
+    refreshSchulmanagerChanges();
+    toast("Schulmanager verbunden.");
+  } catch (e) { toast(e.message, false); }
+}
+
+async function removeSchulmanagerUrl() {
+  try {
+    await API.del("/settings/schulmanager-ical");
+    await loadSettings();
+    refreshSchulmanagerChanges();
+    toast("Schulmanager-Verbindung entfernt.");
   } catch (e) { toast(e.message, false); }
 }
 
@@ -5356,6 +5543,7 @@ async function startApp() {
   if (location.hash) routeFromHash();  // U28: Deep-Link aus URL (neuer Tab/Fenster, Reload)
   await refreshAiStatus();
   startGoogleAutoSync();  // U24: periodischer Auto-Sync (B), solange die App offen ist
+  refreshSchulmanagerChanges();  // M1d: Glocke initial befüllen (kein await – blockiert den Start nicht)
 }
 
 // Sidebar-Sektionen ein-/ausklappbar (Burgermenü Variante B): Zustand je Sektion in
@@ -5424,6 +5612,11 @@ function wireEvents() {
     if (el) { el.scrollIntoView({ behavior: "smooth", block: "center" }); el.click(); }
   };
   $("qlVertretungBtn").onclick = openVertretungModal;
+
+  // M1d: Schulmanager-Abgleich
+  $("smBellBtn").onclick = openSchulmanagerDrawer;
+  $("smDrawerCloseBtn").onclick = closeSchulmanagerDrawer;
+  $("smDrawerOverlay").onclick = (ev) => { if (ev.target.id === "smDrawerOverlay") closeSchulmanagerDrawer(); };
 
   // Spruch des Tages: Kachel öffnet Vollbild-Vorschau (Klick/Enter/Leertaste); Schließen per „×"/Esc.
   $("spruchCard").onclick = openScreensaver;
@@ -5688,6 +5881,8 @@ function wireEvents() {
   // U21: Google-Kalender-Sync
   $("saveGoogleKey").onclick = saveGoogleKey;
   $("removeGoogleKey").onclick = removeGoogleKey;
+  $("saveSchulmanagerUrl").onclick = saveSchulmanagerUrl;
+  $("removeSchulmanagerUrl").onclick = removeSchulmanagerUrl;
   $("calGoogleSyncBtn").onclick = syncGoogle;
   $("logoutBtn").onclick = async () => {
     try { await API.post("/auth/logout"); } catch (e) { /* egal */ }
