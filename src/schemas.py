@@ -277,6 +277,30 @@ class LessonOut(Base):
     updated_at: str
 
 
+class LessonUpcomingSlotOut(Base):
+    """Ein laut Stundenplan realer künftiger Unterrichtstermin der Klasse dieser Stunde –
+    Auswahlliste für "Stunde verschieben" im Planungskalender (nur echte Slots, kein Freitext)."""
+    date: str
+    time: Optional[str] = None
+    span_slots: Optional[int] = None
+
+
+class LessonMoveSlotIn(Base):
+    date: str
+    time: Optional[str] = None
+    with_calendar: bool = True   # auch nachfolgende, bereits terminierte Sequenzstunden nachrücken?
+
+
+class LessonMoveSlotOut(Base):
+    lesson: LessonOut
+    # gesetzt, wenn die Stunde mit einer Sequenzstunde verknüpft war -- die neue, an den
+    # Zielort verschobene Kopie (die Ursprungszeile bleibt mit moved_to_id darauf stehen).
+    new_sequenz_stunde_id: Optional[int] = None
+    over_budget: bool = False
+    planned_count: Optional[int] = None
+    richtwert_ustd: Optional[int] = None
+
+
 # ---------- Kalender ----------
 class CalendarCreate(Base):
     title: str
@@ -842,6 +866,8 @@ class SequenzStundeOut(Base):
     weitere_notenart: Optional[str] = None
     date: Optional[str] = None
     lesson_id: Optional[int] = None
+    moved_to_id: Optional[int] = None   # gesetzt, wenn diese Karte per "Stunde verschieben" auf
+                                          # eine neue Zeile (moved_to_id) umgezogen ist
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 

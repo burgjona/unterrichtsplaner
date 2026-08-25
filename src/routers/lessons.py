@@ -6,15 +6,15 @@ sodass keine verwaisten Phasen entstehen.
 """
 import json
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..deps import get_db, get_user_id, row_or_404
 from ..schemas import (
-    Bibox, Klafki, LernzielIn, LernzielOut, LessonCreate, LessonOut, LessonUpdate,
-    MaterialOut, PhaseIn, PhaseOut,
+    Bibox, Klafki, LernzielIn, LernzielOut, LessonCreate, LessonMoveSlotIn, LessonMoveSlotOut,
+    LessonOut, LessonUpcomingSlotOut, LessonUpdate, MaterialOut, PhaseIn, PhaseOut,
 )
 from .calendar import _set_entry_classes
 
@@ -298,6 +298,53 @@ def _apply_delete_lesson(conn, user_id: int, lid: int) -> None:
 @router.delete("/{lid}", status_code=204)
 def delete(lid: int, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
     _apply_delete_lesson(conn, user_id, lid)
+
+
+@router.get("/{lid}/upcoming-slots", response_model=List[LessonUpcomingSlotOut])
+def upcoming_slots(lid: int, count: int = Query(default=8, ge=1, le=20),
+                    conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+    """Liste der nächsten laut Stundenplan realen Unterrichtstermine der Klasse dieser Stunde –
+    Auswahlbasis für "Stunde verschieben" im Planungskalender (nur echte Stundenplan-Slots
+    wählbar, kein Freitext-Datum)."""
+    from .sequenzplan import _next_class_slot   # lokal: sequenzplan.py importiert umgekehrt von hier
+    row = row_or_404(_fetch(conn, user_id, lid), "Stunde")
+    if row["class_id"] is None:
+        return []
+    after = row["date"] or date.today().isoformat()
+    slots = []
+    for _ in range(count):
+        nxt = _next_class_slot(conn, user_id, row["class_id"], after)
+        if nxt is None:
+            break
+        slots.append(LessonUpcomingSlotOut(date=nxt["date"], time=nxt["time"], span_slots=nxt["span_slots"]))
+        after = nxt["date"]
+    return slots
+
+
+@router.post("/{lid}/move-to-slot", response_model=LessonMoveSlotOut)
+def move_to_slot(lid: int, body: LessonMoveSlotIn, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+    """"Stunde verschieben" im Planungskalender: setzt Datum/Uhrzeit der Stunde neu (Auswahl aus
+    upcoming_slots) und verschiebt eine ggf. verknüpfte Sequenzstunde mit an eine neue Zeile am
+    Zielort – die Ursprungszeile bleibt stehen (moved_to_id verweist auf die neue Zeile), siehe
+    sequenzplan.py::move_sequenz_for_lesson."""
+    from .sequenzplan import move_sequenz_for_lesson   # lokal: s. upcoming_slots oben
+    row_or_404(_fetch(conn, user_id, lid), "Stunde")
+    with conn:
+        conn.execute(
+            "UPDATE lessons SET date = ?, time = ?, updated_at = strftime('%Y-%m-%d %H:%M:%f','now') "
+            "WHERE id = ? AND user_id = ?",
+            (body.date, body.time, lid, user_id),
+        )
+        _sync_calendar_entry(conn, user_id, lid)
+        moved = move_sequenz_for_lesson(conn, user_id, lid, body.date, body.with_calendar)
+    lesson_out = _row_to_out(conn, _fetch(conn, user_id, lid))
+    if moved is None:
+        return LessonMoveSlotOut(lesson=lesson_out)
+    new_id, over_budget, planned_count, richtwert = moved
+    return LessonMoveSlotOut(
+        lesson=lesson_out, new_sequenz_stunde_id=new_id,
+        over_budget=over_budget, planned_count=planned_count, richtwert_ustd=richtwert,
+    )
 
 
 # ---------- Sync-Handler-Registry: lessons (src/routers/sync.py) ----------

@@ -527,6 +527,10 @@ function clearLessonForm() {
   ["lessonIdeas", "lessonTitle", "lessonDate", "klafki1", "klafki2", "klafki3", "klafki4", "klafki5",
    "biboxWerk", "biboxSeite", "biboxNotiz", "lessonMatSubject"].forEach((id) => ($(id).value = ""));
   if ($("lessonMatFile")) $("lessonMatFile").value = "";
+  if (lessonAutosaveTimer) { clearTimeout(lessonAutosaveTimer); lessonAutosaveTimer = null; }
+  lessonPendingLinksApplied = false;
+  lessonFormOpenedAsNew = true;
+  lessonSetStatus("");
   pendingLessonMaterialFile = null;
   pendingLessonMaterialSubject = "";
   if ($("lessonMaterials")) $("lessonMaterials").innerHTML = "";
@@ -578,6 +582,126 @@ let editingLessonId = null;
 // U30: Termin, aus dem heraus "jetzt Unterrichtsstunde planen" die neue Stunde anlegt —
 // wird nach dem ersten Speichern mit dem Termin verlinkt (siehe saveLesson()).
 let pendingCalendarEntryLink = null;
+
+// Autosave (Formular-Freitext + Struktur): debounced, still, per Event-Delegation auf die
+// gesamte #stunde-Sektion (input+change) statt einzelner Feld-Listener – das Formular ist zu
+// groß/dynamisch (Phasen, Lernziele werden nachträglich ins DOM gerendert), um jedes Feld
+// einzeln zu verdrahten. lessonPendingLinksApplied entkoppelt die einmaligen Seiteneffekte
+// (Material-Upload, Termin-/Sequenzstunden-Verknüpfung) davon, OB der Autosave die Stunde
+// bereits im Hintergrund angelegt hat – sonst würde ein späterer manueller Klick auf
+// "Stunde speichern" sie fälschlich als reines Update ansehen und die Verknüpfungen nie
+// anwenden (isNew wäre dann schon false).
+const LESSON_AUTOSAVE_EXCLUDE = new Set(["lessonIdeas", "lessonMatFile", "lessonMatSubject", "lessonTodoInput"]);
+let lessonAutosaveTimer = null;
+let lessonPendingLinksApplied = false;
+let lessonFormOpenedAsNew = true;   // für die "gespeichert"/"aktualisiert"-Toast-Formulierung
+
+function lessonSetStatus(text) {
+  const el = $("lessonSaveStatus");
+  if (el) el.textContent = text;
+}
+
+function scheduleLessonAutosave() {
+  if (!$("lessonTitle").value.trim()) {
+    if (lessonAutosaveTimer) { clearTimeout(lessonAutosaveTimer); lessonAutosaveTimer = null; }
+    lessonSetStatus("");
+    return;
+  }
+  lessonSetStatus("Ungespeicherte Änderungen …");
+  if (lessonAutosaveTimer) clearTimeout(lessonAutosaveTimer);
+  lessonAutosaveTimer = setTimeout(silentSaveLesson, 1200);
+}
+
+function buildLessonBody() {
+  const meyer = readMeyerGrid("meyerPlanGrid");
+  const phases = readPhases();          // setzt phaseIndexMap für readLernziele()
+  return {
+    title: $("lessonTitle").value.trim(), subject: $("lessonSubject").value, grade: Number($("lessonGrade").value),
+    lessonType: $("lessonType").value,
+    durationMinutes: Number($("lessonDuration").value) || 45,
+    classId: $("lessonClass").value ? Number($("lessonClass").value) : null,
+    lernbereichId: $("lessonLb") && $("lessonLb").value ? Number($("lessonLb").value) : null,
+    date: $("lessonDate").value || null,
+    time: $("lessonTime").value || null,
+    klafki: {
+      gegenwart: $("klafki1").value, zukunft: $("klafki2").value, exemplarisch: $("klafki3").value,
+      zugang: $("klafki4").value, struktur: $("klafki5").value,
+    },
+    meyerPlan: meyer.some((v) => v) ? meyer : null,
+    diff: $("diff").value, selbstLernen: $("lernen").value,
+    bibox: { werk: $("biboxWerk").value, seite: $("biboxSeite").value, notiz: $("biboxNotiz").value },
+    phases,
+    lernziele: readLernziele(phaseIndexMap),
+  };
+}
+
+// Legt die Stunde beim ersten Aufruf an (create), jeder weitere Aufruf aktualisiert dieselbe
+// Zeile – von saveLesson() und silentSaveLesson() gleichermaßen genutzt.
+async function persistLessonBody(body) {
+  if (editingLessonId) return await SyncEngine.update("lessons", editingLessonId, body);
+  const saved = await SyncEngine.createAndSync("lessons", body);
+  editingLessonId = saved.id;
+  return saved;
+}
+
+// Material-Upload/Kalender-Verknüpfung/Sequenz-Verknüpfung: einmalige Seiteneffekte, sobald die
+// Stunde erstmals eine echte id hat (egal ob durch Autosave oder manuelles Speichern ausgelöst).
+async function applyPendingLessonLinks(saved, body) {
+  if (lessonPendingLinksApplied) return;
+  lessonPendingLinksApplied = true;
+  if (pendingLessonMaterialFile) {
+    const fd = new FormData();
+    fd.append("file", pendingLessonMaterialFile);
+    fd.append("subject", pendingLessonMaterialSubject || body.subject);
+    if (body.grade) fd.append("grade", body.grade);
+    fd.append("lessonId", saved.id);
+    try { await API.upload("/materials/upload", fd); }
+    catch (e2) { toast("Stunde gespeichert, Material-Upload ist aber fehlgeschlagen: " + e2.message, false); }
+    pendingLessonMaterialFile = null;
+    pendingLessonMaterialSubject = "";
+  }
+  if (pendingCalendarEntryLink) {
+    const linkId = pendingCalendarEntryLink;
+    pendingCalendarEntryLink = null;
+    try {
+      await SyncEngine.update("calendar_entries", linkId, { lessonId: saved.id });
+      // s. Kommentar in der ursprünglichen saveLesson()-Fassung: verwaisten Auto-Kalendereintrag
+      // entfernen, der beim Anlegen der Stunde nebenbei entstanden ist.
+      await SyncEngine.pull();
+      const dupes = (await SyncEngine.materialize("calendar_entries")).filter(
+        (c) => c.lessonId === saved.id && c.id !== linkId && c.autoGenerated
+      );
+      for (const d of dupes) await SyncEngine.remove("calendar_entries", d.id);
+    } catch (e2) { toast("Stunde gespeichert, Verknüpfung mit dem Termin ist aber fehlgeschlagen: " + e2.message, false); }
+  }
+  for (const seqId of pendingSeqLinkIds) {
+    const seqInfo = seqOptionsCache.find((x) => x.id === seqId);
+    try {
+      await API.post(`/sequenz-stunden/${seqId}/link`, { lessonId: saved.id });
+      await offerSeqCalendarEntry(seqId, seqInfo, body.date);
+    }
+    catch (e) { toast("Stunde gespeichert, Verknüpfung mit der Sequenzstunde ist aber fehlgeschlagen: " + e.message, false); }
+  }
+  pendingSeqLinkIds = [];
+}
+
+async function silentSaveLesson() {
+  lessonAutosaveTimer = null;
+  if (!$("lessonTitle").value.trim()) { lessonSetStatus(""); return; }
+  validatePhaseTimes();   // aktualisiert nur die Inline-Anzeige – kein Confirm-Dialog beim Autosave
+  const body = buildLessonBody();
+  try {
+    const saved = await persistLessonBody(body);
+    await applyPendingLessonLinks(saved, body);
+    lessonSetStatus("Automatisch gespeichert.");
+  } catch (e) { lessonSetStatus("Automatisches Speichern fehlgeschlagen."); }
+}
+
+// Vor View-Wechsel aufrufen, damit ein ausstehender Autosave nicht verworfen wird.
+async function flushLessonAutosave() {
+  if (lessonAutosaveTimer) { clearTimeout(lessonAutosaveTimer); lessonAutosaveTimer = null; await silentSaveLesson(); }
+}
+
 function resetLessonEditState() {
   editingLessonId = null;
   $("editHint").classList.add("hidden");
@@ -587,6 +711,7 @@ function resetLessonEditState() {
 function loadLessonIntoForm(l) {
   clearLessonForm();
   editingLessonId = l.id;
+  lessonFormOpenedAsNew = false;
   syncHash("stunde");
   $("lessonTitle").value = l.title || "";
   $("lessonSubject").value = l.subject || "Deutsch";
@@ -642,6 +767,7 @@ function loadLessonIntoForm(l) {
 function duplicateLessonIntoForm(l) {
   loadLessonIntoForm(l);
   editingLessonId = null;
+  lessonFormOpenedAsNew = true;
   $("lessonDate").value = "";
   if ($("lessonMaterials")) $("lessonMaterials").innerHTML = '<p class="muted small">Noch kein Material verknüpft.</p>';
   $("editHint").classList.add("hidden");
@@ -3709,7 +3835,7 @@ function getSequenzplanModule() {
   if (!_sequenzplanModulePromise) {
     _sequenzplanModulePromise = import("./sequenzplan.js").then((mod) => {
       _sequenzplanModuleInstance = mod.createSequenzplanModule({
-        $, esc, API, toast, state, setUndo, resetLocalUndo, restoreSequenzStunden,
+        $, esc, API, toast, state, setUndo, resetLocalUndo, restoreSequenzStunden, deDate,
       });
       return _sequenzplanModuleInstance;
     });
@@ -3748,15 +3874,20 @@ function openLessonModal(l) {
   const bibox = l.bibox && l.bibox.werk
     ? `<p class="small"><strong>Lehrwerk:</strong> ${esc(l.bibox.werk)} – ${esc(l.bibox.seite || "")} ${l.bibox.notiz ? "– " + esc(l.bibox.notiz) : ""}</p>`
     : '<p class="muted small">Keine Lehrbuch-Referenz hinterlegt.</p>';
+  const moveBtn = l.classId != null
+    ? '<button class="btn small secondary" id="modalMoveBtn" style="float:right; margin-right:10px;">Stunde verschieben</button>'
+    : "";
   $("modalRoot").innerHTML =
     `<div class="modal-overlay" id="modalOverlay"><div class="modal-box">
       <button class="modal-close" id="modalCloseBtn">Schließen</button>
       <button class="btn small secondary" id="modalAsuvBtn" style="float:right; margin-right:10px;">ASUV-Entwurf</button>
       <button class="btn small secondary" id="modalDuplicateBtn" style="float:right; margin-right:10px;">Duplizieren</button>
       <button class="btn small secondary" id="modalEditBtn" style="float:right; margin-right:10px;">Stunde bearbeiten</button>
+      ${moveBtn}
       <button class="btn small danger" id="modalDeleteBtn" style="float:right; margin-right:10px;">Löschen</button>
       <h2>${esc(l.title)}</h2>
       <p class="muted small">${esc(l.subject)} – Klasse ${esc(l.grade || "?")} – ${esc(l.lessonType || "")} – ${esc(l.durationMinutes || 45)} Min. ${l.time ? "– " + esc(l.time) + " Uhr" : ""}</p>
+      <div id="modalMoveSlots"></div>
       <div class="modal-section"><h3>Lernziele</h3>${zieleHtml}</div>
       <div class="modal-section"><h3>Phasentabelle</h3>${phases}</div>
       <div class="modal-section"><h3>Lehrbuch-Referenz</h3>${bibox}</div>
@@ -3773,6 +3904,7 @@ function openLessonModal(l) {
   $("modalAsuvBtn").onclick = () => { closeModal(); showView("asuv"); loadAsuv(l.id); };
   $("modalEditBtn").onclick = () => { closeModal(); showView("stunde"); loadLessonIntoForm(l); };
   $("modalDuplicateBtn").onclick = () => { closeModal(); showView("stunde"); duplicateLessonIntoForm(l); };
+  if ($("modalMoveBtn")) $("modalMoveBtn").onclick = () => loadMoveSlotsPanel(l);
   $("modalDeleteBtn").onclick = async () => {
     if (!window.confirm("Diese Stunde wirklich löschen?")) return;
     try {
@@ -3809,6 +3941,52 @@ async function loadModalMaterials(l) {
 }
 function closeModal() { $("modalRoot").innerHTML = ""; }
 
+// "Stunde verschieben" (Planungskalender u.a. Aufrufer von openLessonModal): Zieldatum nur aus
+// den nächsten laut Stundenplan realen Terminen der Klasse wählbar (kein Freitext-Datum) –
+// Liste kommt vom Server (/lessons/{id}/upcoming-slots), das eigentliche Verschieben inkl.
+// Sequenzplan-Kaskade läuft über /lessons/{id}/move-to-slot (s. dortiger Serverkommentar:
+// Ursprungszeile bleibt mit "verschoben nach ..."-Hinweis stehen, neue Zeile am Zielort).
+async function loadMoveSlotsPanel(l) {
+  const box = $("modalMoveSlots");
+  if (!box) return;
+  box.innerHTML = '<p class="muted small" style="margin-top:10px;">Lade nächste Termine laut Stundenplan …</p>';
+  let slots = [];
+  try { slots = await API.get(`/lessons/${l.id}/upcoming-slots?count=8`); }
+  catch (e) { box.innerHTML = `<p class="muted small" style="margin-top:10px;">${esc(e.message)}</p>`; return; }
+  if (!slots.length) {
+    box.innerHTML = '<p class="muted small" style="margin-top:10px;">Kein künftiger Stundenplan-Termin für diese Klasse gefunden.</p>';
+    return;
+  }
+  const rows = slots.map((s, i) => {
+    const wd = WEEKDAY_SHORT[weekdayOf(s.date)];
+    const label = `${wd} ${esc(deDate(s.date))}${s.time ? ", " + esc(s.time) + " Uhr" : ""}`;
+    return `<button class="btn tiny secondary" data-move-slot="${i}" style="margin:2px;">${label}</button>`;
+  }).join("");
+  box.innerHTML = `<div class="note-box" style="margin-top:10px;">
+    <strong>Auf welchen Termin verschieben?</strong><br>${rows}
+  </div>`;
+  box.querySelectorAll("[data-move-slot]").forEach((b) => b.onclick = () =>
+    moveLessonToSlot(l, slots[Number(b.dataset.moveSlot)]));
+}
+
+async function moveLessonToSlot(l, slot) {
+  const withCalendar = window.confirm(
+    "Auch bereits terminierte, verknüpfte Sequenzstunden automatisch nachrücken lassen?"
+  );
+  try {
+    const res = await API.post(`/lessons/${l.id}/move-to-slot`, { date: slot.date, time: slot.time, withCalendar });
+    closeModal();
+    await refresh();
+    if (res.newSequenzStundeId != null) {
+      toast(res.overBudget
+        ? `Verschoben. Achtung: ${res.plannedCount} Stunden geplant, Richtwert ${res.richtwertUstd ?? "?"} Ustd. im Sequenzplan.`
+        : "Verschoben – im Sequenzplan als neue Karte übernommen.");
+    } else {
+      toast("Stunde verschoben.");
+    }
+  } catch (e) { toast(e.message, false); }
+}
+
 /* ---------- Speichern ---------- */
 async function saveClass() {
   const name = $("className").value.trim();
@@ -3830,87 +4008,27 @@ async function saveClass() {
 }
 
 async function saveLesson() {
-  const title = $("lessonTitle").value.trim();
-  if (!title) { toast("Bitte einen Titel angeben.", false); return; }
+  if (lessonAutosaveTimer) { clearTimeout(lessonAutosaveTimer); lessonAutosaveTimer = null; }
+  if (!$("lessonTitle").value.trim()) { toast("Bitte einen Titel angeben.", false); return; }
   const rest = validatePhaseTimes();
   if (rest !== 0) {
     const duration = Number($("lessonDuration").value) || 45;
     const hint = rest > 0 ? `${rest} Min. sind noch nicht verplant` : `${-rest} Min. sind zu viel verplant`;
     if (!window.confirm(`Die Phasenzeiten füllen die ${duration} Minuten nicht exakt aus – ${hint}. Trotzdem speichern?`)) return;
   }
-  const meyer = readMeyerGrid("meyerPlanGrid");
-  const phases = readPhases();          // setzt phaseIndexMap für readLernziele()
-  const body = {
-    title, subject: $("lessonSubject").value, grade: Number($("lessonGrade").value),
-    lessonType: $("lessonType").value,
-    durationMinutes: Number($("lessonDuration").value) || 45,
-    classId: $("lessonClass").value ? Number($("lessonClass").value) : null,
-    lernbereichId: $("lessonLb") && $("lessonLb").value ? Number($("lessonLb").value) : null,
-    date: $("lessonDate").value || null,
-    time: $("lessonTime").value || null,
-    klafki: {
-      gegenwart: $("klafki1").value, zukunft: $("klafki2").value, exemplarisch: $("klafki3").value,
-      zugang: $("klafki4").value, struktur: $("klafki5").value,
-    },
-    meyerPlan: meyer.some((v) => v) ? meyer : null,
-    diff: $("diff").value, selbstLernen: $("lernen").value,
-    bibox: { werk: $("biboxWerk").value, seite: $("biboxSeite").value, notiz: $("biboxNotiz").value },
-    phases,
-    lernziele: readLernziele(phaseIndexMap),
-  };
+  const body = buildLessonBody();
   try {
-    let saved;
-    const isNew = !editingLessonId;
-    if (editingLessonId) {
-      saved = await SyncEngine.update("lessons", editingLessonId, body);
-    } else {
-      // Material-Upload/Kalender-Verknüpfung/Sequenz-Verknüpfung unten brauchen zwingend die
-      // echte Server-id (eigene REST-Calls, kein Sync-Payload) — createAndSync() wartet den
-      // Push einmalig ab statt nur optimistisch die lokale id zurückzugeben (siehe Kommentar
-      // dort). Offline schlägt das bewusst fehl, statt eine lokale id vorzutäuschen.
-      saved = await SyncEngine.createAndSync("lessons", body);
-    }
-    if (isNew && pendingLessonMaterialFile) {
-      const fd = new FormData();
-      fd.append("file", pendingLessonMaterialFile);
-      fd.append("subject", pendingLessonMaterialSubject || body.subject);
-      if (body.grade) fd.append("grade", body.grade);
-      fd.append("lessonId", saved.id);
-      try { await API.upload("/materials/upload", fd); }
-      catch (e2) { toast("Stunde gespeichert, Material-Upload ist aber fehlgeschlagen: " + e2.message, false); }
-      pendingLessonMaterialFile = null;
-      pendingLessonMaterialSubject = "";
-    }
-    if (isNew && pendingCalendarEntryLink) {
-      const linkId = pendingCalendarEntryLink;
-      pendingCalendarEntryLink = null;
-      try {
-        await SyncEngine.update("calendar_entries", linkId, { lessonId: saved.id });
-        // Das Anlegen der Stunde hat nebenbei einen eigenen Auto-Kalendereintrag erzeugt
-        // (der Termin, aus dem heraus geplant wurde, war dem Backend zu dem Zeitpunkt noch
-        // nicht bekannt) — den verwaisten Duplikat-Eintrag entfernen. Dieser Auto-Eintrag
-        // entstand als reiner Server-Seiteneffekt (nicht über eine eigene Client-Mutation),
-        // daher erst pull() (holt ihn per sync/changes in die OfflineDB), sonst würde
-        // materialize() ihn nicht kennen und der Duplikat-Eintrag bliebe stehen.
-        await SyncEngine.pull();
-        const dupes = (await SyncEngine.materialize("calendar_entries")).filter(
-          (c) => c.lessonId === saved.id && c.id !== linkId && c.autoGenerated
-        );
-        for (const d of dupes) await SyncEngine.remove("calendar_entries", d.id);
-      } catch (e2) { toast("Stunde gespeichert, Verknüpfung mit dem Termin ist aber fehlgeschlagen: " + e2.message, false); }
-    }
-    for (const seqId of pendingSeqLinkIds) {
-      const seqInfo = seqOptionsCache.find((x) => x.id === seqId);
-      try {
-        await API.post(`/sequenz-stunden/${seqId}/link`, { lessonId: saved.id });
-        await offerSeqCalendarEntry(seqId, seqInfo, body.date);
-      }
-      catch (e) { toast("Stunde gespeichert, Verknüpfung mit der Sequenzstunde ist aber fehlgeschlagen: " + e.message, false); }
-    }
-    const updated = Boolean(editingLessonId);
+    // Material-Upload/Kalender-Verknüpfung/Sequenz-Verknüpfung (in applyPendingLessonLinks)
+    // brauchen zwingend die echte Server-id (eigene REST-Calls, kein Sync-Payload) —
+    // createAndSync() wartet den Push einmalig ab statt nur optimistisch die lokale id
+    // zurückzugeben (siehe Kommentar dort). Offline schlägt das bewusst fehl, statt eine
+    // lokale id vorzutäuschen.
+    const saved = await persistLessonBody(body);
+    await applyPendingLessonLinks(saved, body);
+    const wasNew = lessonFormOpenedAsNew;
     resetLessonEditState();
     clearLessonForm(); await refresh();
-    toast(updated ? "Stunde aktualisiert." : "Stunde gespeichert.");
+    toast(wasNew ? "Stunde gespeichert." : "Stunde aktualisiert.");
   } catch (e) { toast(e.message, false); }
 }
 
@@ -4534,6 +4652,10 @@ async function stundeEinordnungSuggest() {
    Jahresplan, Lernbereichsplanung, Unterrichtsablauf heute. */
 const PRAESENT_COLORS = ["#16a34a", "#eab308", "#f97316", "#0ea5e9", "#22c55e", "#a855f7"];
 const praesent = { mode: "jahresplan", classId: "", lessonId: null, sequenzStundeId: null, phaseIdx: 0, editMode: false };
+// { classId, time } der laut Stundenplan aktuell laufenden/nächsten Stunde heute, FALLS dafür
+// noch keine lessons-Zeile existiert – von suggestPraesentLessonId() mitgeführt, treibt den
+// "Jetzt planen"-Button im Ablauf-Tab (renderPraesentAblauf).
+let praesentTodaySlot = null;
 let praesentSeqCache = [];   // aktuell im Lernbereich-Tab angezeigte Sequenzstunden (für Klick -> Ablauf)
 // Individuelle Anzeige-Einstellungen für "Unterrichtsablauf heute" (persistiert, gilt auch im
 // Vollbild) – nur im Bearbeitungsmodus änderbar.
@@ -4582,35 +4704,47 @@ function renderPraesentControls() {
 
 // Ermittelt die laut Stundenplan gerade laufende bzw. nächste Stunde (heute, optional auf die
 // gewählte Klasse eingeschränkt) und liefert die passende Lesson-ID, sonst die erste Stunde
-// des Tages bzw. null. Manuelle Auswahl im Select bleibt jederzeit möglich.
+// des Tages bzw. null. Manuelle Auswahl im Select bleibt jederzeit möglich. Nebenbei wird
+// praesentTodaySlot gepflegt: findet sich für die aktuelle/nächste Stundenplan-Stunde heute
+// KEINE passende lessons-Zeile, steht dort Klasse+Uhrzeit für den "Jetzt planen"-Button.
 async function suggestPraesentLessonId() {
+  praesentTodaySlot = null;
   let candidates = todayLessons();
   if (praesent.classId) candidates = candidates.filter((l) => String(l.classId) === String(praesent.classId));
-  if (!candidates.length) return null;
+  const fallback = candidates[0] ? candidates[0].id : null;
   const wd = new Date().getDay();
-  if (wd < 1 || wd > 5) return candidates[0].id;
+  if (wd < 1 || wd > 5) return fallback;
   try {
     const monday = new Date();
     monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
     const data = await calTtFetch(isoDate(monday));
     const todayStr = isoDate(new Date());
     const day = data.days.find((d) => d.date === todayStr);
-    if (!day) return candidates[0].id;
+    if (!day) return fallback;
     const now = String(new Date().getHours()).padStart(2, "0") + ":" + String(new Date().getMinutes()).padStart(2, "0");
     const items = day.items
+      .filter((it) => it.classId != null)
       .filter((it) => !praesent.classId || String(it.classId) === String(praesent.classId))
       .map((it) => { const [start, end] = (it.timeRange || "").split("–"); return { it, start, end }; })
       .filter((x) => x.start && x.end)
       .sort((a, b) => a.start.localeCompare(b.start));
     const pick = items.find((x) => now >= x.start && now < x.end) || items.find((x) => x.start > now);
     const match = pick && candidates.find((l) => l.classId === pick.it.classId);
-    return match ? match.id : candidates[0].id;
-  } catch (e) { return candidates[0].id; }   // kein Stundenplan hinterlegt o. Ä. → Fallback
+    if (match) return match.id;
+    if (pick) praesentTodaySlot = { classId: pick.it.classId, time: pick.start };
+    return fallback;
+  } catch (e) { return fallback; }   // kein Stundenplan hinterlegt o. Ä. → Fallback
 }
 
 async function applyPraesentLessonSuggestion() {
   const id = await suggestPraesentLessonId();
-  if (id == null) return;
+  if (id == null) {
+    // Keine Stunde vorgeschlagen, aber ggf. steht jetzt praesentTodaySlot (aktuelle Stundenplan-
+    // Stunde ohne lessons-Zeile) – dafür muss der "Jetzt planen"-Button trotzdem nachgerendert
+    // werden, sonst bleibt die vorherige (evtl. veraltete) Anzeige unverändert stehen.
+    if (praesentTodaySlot) renderPraesentation();
+    return;
+  }
   praesent.lessonId = id;
   const sel = $("praesentLesson");
   if (sel) sel.value = String(id);
@@ -4799,6 +4933,44 @@ async function savePraesentPhaseMinutes(l, phaseIdx, minutes) {
   } catch (e) { toast(e.message, false); }
 }
 
+// Klickbarer Hinweis für den Ablauf-Tab: Für die laut Stundenplan aktuelle/nächste Stunde
+// heute existiert (noch) keine lessons-Zeile – bietet einen Sprung in die Unterrichtsplanung
+// an, statt nur eine andere (ggf. veraltete) "frei gewählte Stunde" anzuzeigen. Nie im
+// Vollbildmodus (Schülersicht auf dem Beamer) – das Planen bleibt Sache des Lehrers am Pult.
+function praesentPlanButtonHtml() {
+  if (!praesentTodaySlot || isPraesentFullscreen()) return "";
+  const cls = state.classes.find((c) => c.id === praesentTodaySlot.classId);
+  const label = cls ? `${esc(cls.name)} (${esc(cls.subject)})` : "diese Klasse";
+  const timeLabel = praesentTodaySlot.time ? `, ${esc(praesentTodaySlot.time)} Uhr` : "";
+  return `<div class="praesent-sub" style="color:var(--orange);">
+    Für die aktuelle Stunde (${label}${timeLabel}) ist noch keine Unterrichtsstunde geplant.
+    <button class="btn tiny" id="praesentPlanBtn">Jetzt planen</button>
+  </div>`;
+}
+function wirePraesentPlanBtn(stage) {
+  const btn = stage.querySelector("#praesentPlanBtn");
+  if (btn) btn.onclick = planTodayFromPraesent;
+}
+// Springt aus dem Ablauf-Tab in die Unterrichtsplanung, Klasse+Datum(heute)+Uhrzeit aus
+// praesentTodaySlot vorbefüllt – analog planLessonFromCalendarEntry() beim Sprung aus einem
+// Kalendertermin.
+function planTodayFromPraesent() {
+  if (!praesentTodaySlot) return;
+  const { classId, time } = praesentTodaySlot;
+  showView("stunde");
+  clearLessonForm();
+  const cls = state.classes.find((c) => c.id === classId);
+  if (cls) {
+    $("lessonClass").value = String(cls.id);
+    if (cls.subject) $("lessonSubject").value = cls.subject;
+    if (cls.grade != null) $("lessonGrade").value = String(cls.grade);
+  }
+  $("lessonDate").value = isoDate(new Date());
+  if ($("lessonTime")) $("lessonTime").value = time || "";
+  updateLessonLbOptions(null);
+  updateSozialformMonotonyHint();
+}
+
 function renderPraesentAblauf() {
   const stage = $("praesentStage");
   if (!stage) return;
@@ -4814,21 +4986,27 @@ function renderPraesentAblauf() {
           '<div class="praesent-sub" style="color:var(--orange);">Diese Sequenzstunde ist noch nicht in der Unterrichtsplanung angelegt.</div>' +
           (s.grobziel
             ? `<div class="praesent-goals"><div class="praesent-goal grob"><span class="praesent-goal-kind">Grobziel</span><span class="praesent-goal-text">${esc(s.grobziel)}</span></div></div>`
-            : '<div class="praesent-empty">Für diese Stunde ist noch kein Grobziel hinterlegt.</div>');
+            : '<div class="praesent-empty">Für diese Stunde ist noch kein Grobziel hinterlegt.</div>') +
+          praesentPlanButtonHtml();
+        wirePraesentPlanBtn(stage);
         return;
       }
     }
-    stage.innerHTML = '<div class="praesent-empty">Noch keine Stunden geplant. Lege eine Stunde in der Unterrichtsplanung an.</div>';
+    stage.innerHTML = '<div class="praesent-empty">Noch keine Stunden geplant. Lege eine Stunde in der Unterrichtsplanung an.</div>' +
+      praesentPlanButtonHtml();
+    wirePraesentPlanBtn(stage);
     return;
   }
   const phases = l.phases || [];
   const ziele = l.lernziele || [];
   const isToday = l.date === isoDate(new Date());
-  const hint = isToday ? "" :
-    '<div class="praesent-sub" style="color:var(--orange);">Diese Stunde ist nicht für heute geplant – frei gewählte Stunde.</div>';
+  const hint = (isToday ? "" :
+    '<div class="praesent-sub" style="color:var(--orange);">Diese Stunde ist nicht für heute geplant – frei gewählte Stunde.</div>') +
+    praesentPlanButtonHtml();
   if (!phases.length) {
     stage.innerHTML = `<h2 class="praesent-h">${esc(l.title)}</h2>${hint}` +
       '<div class="praesent-empty">Für diese Stunde sind noch keine Phasen erfasst.</div>';
+    wirePraesentPlanBtn(stage);
     return;
   }
   if (praesent.phaseIdx >= phases.length) praesent.phaseIdx = phases.length - 1;
@@ -4863,6 +5041,7 @@ function renderPraesentAblauf() {
       `</div></div>`;
   }).join("");
   stage.innerHTML = `<h2 class="praesent-h">${esc(l.title)}</h2>${hint}${settingsBar}<div class="praesent-steps">${steps}</div>`;
+  wirePraesentPlanBtn(stage);
   stage.querySelectorAll("[data-phaseidx]").forEach((el) => {
     el.onclick = (e) => {
       if (e.target.closest("[data-goal-edit-open],[data-goal-save],[data-goal-cancel],.praesent-goal-edit-input,.praesent-time-edit")) return;
@@ -5050,6 +5229,11 @@ function expandSidebarSectionFor(view) {
 }
 
 function showView(view) {
+  // Ausstehende Autosaves der bisherigen Ansicht sichern, bevor umgeschaltet wird (Fire-and-
+  // forget – die Requests laufen im Hintergrund weiter, auch wenn die DOM schon wechselt).
+  flushLessonAutosave().catch(() => {});
+  if (_sequenzplanModuleInstance) _sequenzplanModuleInstance.flushSeqAutosave().catch(() => {});
+  if (_stoffplanModuleInstance) _stoffplanModuleInstance.flushStoffplanAutosave().catch(() => {});
   expandSidebarSectionFor(view);
   document.querySelectorAll(".nav-btn").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
   document.querySelectorAll(".bn-item").forEach((b) => {
@@ -5679,6 +5863,13 @@ function wireEvents() {
   $("spAiBtn").onclick = () => getSeatPlanModule().then((m) => m.aiArrangeSeats());
   $("saveLesson").onclick = saveLesson;
   $("cancelEditBtn").onclick = () => { resetLessonEditState(); clearLessonForm(); toast("Formular geleert – neue Stunde."); };
+  // Autosave-Trigger per Delegation statt Einzel-Listener je Feld (Formular ist groß und Phasen/
+  // Lernziele werden dynamisch nachgerendert). Ideenfeld/Material/To-do-Eingabe ausgenommen –
+  // die gehören nicht zum lessons-Datensatz, den saveLesson()/buildLessonBody() speichert.
+  ["input", "change"].forEach((evt) => $("stunde").addEventListener(evt, (e) => {
+    if (!e.target || LESSON_AUTOSAVE_EXCLUDE.has(e.target.id)) return;
+    scheduleLessonAutosave();
+  }));
   $("deleteLessonBtn").onclick = deleteLesson;
   $("lessonClass").addEventListener("change", () => { updateLessonLbOptions(null); updateLessonSeqOptions(); updateSozialformMonotonyHint(); });
   fillLessonSlotSelect();

@@ -386,3 +386,130 @@ def test_suggest_date_reports_span_slots_for_real_doppelstunde(client, auth):
 def test_suggest_date_unknown_block_rejected(client, auth):
     r = client.get("/api/sequenz-stunden/suggest-date?blockId=9999")
     assert r.status_code == 404
+
+
+# ---------- "Stunde verschieben" im Planungskalender (lessons.py, cascade hier getestet
+# wegen der engen Kopplung an move_sequenz_for_lesson in diesem Modul) ----------
+
+def _timetable_entry(client, cid, weekday=0, slot_label="1."):
+    kinds = client.get("/api/stundenplan/kinds").json()
+    slots = client.get("/api/stundenplan/slots").json()
+    plans = client.get("/api/stundenplan/plans").json()   # löst Seeding aus (Default-Plan gilt ab "heute")
+    slot = next(s for s in slots if s["slotType"] == "lesson" and s["label"] == slot_label)
+    r = client.post("/api/stundenplan/entries", json={
+        "planId": plans[0]["id"], "slotId": slot["id"], "kindId": kinds[0]["id"],
+        "classId": cid, "weekday": weekday,
+    })
+    assert r.status_code == 201, r.text
+    return slot
+
+
+def test_upcoming_slots_lists_next_real_timetable_dates(client, auth):
+    cid = _class(client)
+    slot = _timetable_entry(client, cid, weekday=0)   # Montag
+    lesson = client.post("/api/lessons", json={
+        "title": "A", "subject": "Deutsch", "grade": 7, "classId": cid, "date": "2030-01-07",
+    }).json()
+    r = client.get(f"/api/lessons/{lesson['id']}/upcoming-slots?count=3")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert [x["date"] for x in body] == ["2030-01-14", "2030-01-21", "2030-01-28"]
+    assert body[0]["time"] == slot["startTime"]
+
+
+def test_upcoming_slots_without_class_is_empty(client, auth):
+    lesson = client.post("/api/lessons", json={"title": "A", "subject": "Deutsch", "grade": 7}).json()
+    r = client.get(f"/api/lessons/{lesson['id']}/upcoming-slots")
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_move_to_slot_without_sequenz_link_just_moves_lesson(client, auth):
+    cid = _class(client)
+    lesson = client.post("/api/lessons", json={
+        "title": "A", "subject": "Deutsch", "grade": 7, "classId": cid, "date": "2030-01-07",
+    }).json()
+    r = client.post(f"/api/lessons/{lesson['id']}/move-to-slot",
+                     json={"date": "2030-01-14", "time": "08:00"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["lesson"]["date"] == "2030-01-14"
+    assert body["lesson"]["time"] == "08:00"
+    assert body["newSequenzStundeId"] is None
+
+
+def test_move_to_slot_duplicates_linked_sequenz_stunde_and_cascades(client, auth):
+    """Kernverhalten: die verschobene Sequenzstunde bekommt eine neue, verknüpfte Zeile am
+    Zielort; die Ursprungszeile bleibt (moved_to_id) stehen statt gelöscht zu werden – "die
+    Stunde erscheint zweimal im Sequenzplan". Übrige Karten rücken sinnvoll nach (sort_order,
+    plus verknüpfte künftige Lessons auf den nächsten realen Termin)."""
+    cid = _class(client)
+    _timetable_entry(client, cid, weekday=0)   # Montag, für die kaskadierte Folge-Lesson
+
+    plan = _plan(client, cid)
+    bid = _block_id(plan)
+    s1 = _stunde(client, bid, "Verschobene Stunde")
+    s2 = _stunde(client, bid, "Nachfolgerin")
+
+    lesson1 = client.post("/api/lessons", json={
+        "title": "Verschobene Stunde", "subject": "Deutsch", "grade": 7, "classId": cid,
+        "date": "2030-01-07",
+    }).json()
+    lesson2 = client.post("/api/lessons", json={
+        "title": "Nachfolgerin", "subject": "Deutsch", "grade": 7, "classId": cid,
+        "date": "2030-01-14",
+    }).json()
+    client.post(f"/api/sequenz-stunden/{s1['id']}/link", json={"lessonId": lesson1["id"]})
+    client.post(f"/api/sequenz-stunden/{s2['id']}/link", json={"lessonId": lesson2["id"]})
+
+    r = client.post(f"/api/lessons/{lesson1['id']}/move-to-slot",
+                     json={"date": "2030-02-04", "time": "07:30", "withCalendar": True})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    new_id = body["newSequenzStundeId"]
+    assert new_id is not None
+    assert body["lesson"]["date"] == "2030-02-04"
+
+    rows = {x["id"]: x for x in client.get(f"/api/sequenz-stunden?blockId={bid}").json()}
+    original = rows[s1["id"]]
+    assert original["movedToId"] == new_id
+    assert original["lessonId"] is None
+    assert original["title"] == "Verschobene Stunde"   # Inhalt bleibt als Hinweis erhalten
+
+    new_row = rows[new_id]
+    assert new_row["date"] == "2030-02-04"
+    assert new_row["lessonId"] == lesson1["id"]
+    assert new_row["title"] == "Verschobene Stunde"
+
+    # s2 ("Nachfolgerin") rückt sinnvoll nach: sort_order hinter die neue Zeile geschoben,
+    # und die verknüpfte lesson2 auf den nächsten realen Montags-Termin vorgezogen.
+    assert rows[s2["id"]]["sortOrder"] > new_row["sortOrder"]
+    updated_lesson2 = client.get(f"/api/lessons/{lesson2['id']}").json()
+    assert updated_lesson2["date"] == "2030-01-21"   # nächster Montag laut Stundenplan
+
+
+def test_move_to_slot_doppelstunde_moves_both_linked_rows_together(client, auth):
+    cid = _class(client)
+    plan = _plan(client, cid)
+    bid = _block_id(plan)
+    s1 = _stunde(client, bid, "Teil 1")
+    s2 = _stunde(client, bid, "Teil 2")
+    lesson = client.post("/api/lessons", json={
+        "title": "Doppelstunde", "subject": "Deutsch", "grade": 7, "classId": cid,
+        "date": "2030-01-07", "durationMinutes": 90,
+    }).json()
+    client.post(f"/api/sequenz-stunden/{s1['id']}/link", json={"lessonId": lesson["id"]})
+    client.post(f"/api/sequenz-stunden/{s2['id']}/link", json={"lessonId": lesson["id"]})
+
+    r = client.post(f"/api/lessons/{lesson['id']}/move-to-slot",
+                     json={"date": "2030-02-04", "withCalendar": False})
+    assert r.status_code == 200, r.text
+
+    rows = {x["id"]: x for x in client.get(f"/api/sequenz-stunden?blockId={bid}").json()}
+    assert rows[s1["id"]]["movedToId"] is not None
+    assert rows[s2["id"]]["movedToId"] is not None
+    new_ids = {rows[s1["id"]]["movedToId"], rows[s2["id"]]["movedToId"]}
+    assert len(new_ids) == 2   # zwei eigenständige neue Zeilen, keine geteilte
+    for nid in new_ids:
+        assert rows[nid]["lessonId"] == lesson["id"]
+        assert rows[nid]["date"] == "2030-02-04"

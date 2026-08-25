@@ -12,11 +12,83 @@
    ~100-620 in app.js) gehört NICHT zu diesem Modul – geprüft, keine Überschneidung. */
 
 export function createSequenzplanModule(ctx) {
-  const { $, esc, API, toast, state, setUndo, resetLocalUndo, restoreSequenzStunden } = ctx;
+  const { $, esc, API, toast, state, setUndo, resetLocalUndo, restoreSequenzStunden, deDate } = ctx;
 
   // Karte = { id: number|null, title, grobziel, isLk, isReferat, isKomplexeArbeit,
-  //           isKlassenarbeit, weitereNotenart }. id=null → noch nicht gespeichert (neu/KI).
+  //           isKlassenarbeit, weitereNotenart, movedToId }. id=null → noch nicht gespeichert
+  // (neu/KI). movedToId != null → per "Stunde verschieben" (Planungskalender) auf eine neue,
+  // ebenfalls in dieser Liste stehende Karte umgezogen (s. seqCardHtml-Hinweis).
   let seqCards = [];
+
+  // Autosave (Feld-Edits an bereits geladenen Karten): debounced, still, ohne Toast/Undo-
+  // Eintrag – verhindert Datenverlust bei Tab-Wechsel oder vor "Nicht gereicht"/Verschieben.
+  // seqActiveBlockId (statt live $("seqBlock").value) verhindert, dass ein Autosave nach dem
+  // Wechsel auf einen anderen Block versehentlich in den neuen Block schreibt. Ein frischer
+  // KI-Vorschlag markiert bewusst NICHT dirty (aiSequenzplan() ruft markSeqDirty() nicht auf) –
+  // der Hinweistext "erst Speichern übernimmt ihn dauerhaft" bleibt so grundsätzlich gültig;
+  // erst eine tatsächliche Bearbeitung einer Karte löst Autosave (und damit Persistenz) aus.
+  let seqActiveBlockId = null;
+  let seqAutosaveTimer = null;
+  let seqDirty = false;
+
+  function seqSetStatus(text) {
+    const el = $("seqSaveStatus");
+    if (el) el.textContent = text;
+  }
+
+  function markSeqDirty() {
+    seqDirty = true;
+    seqSetStatus("Ungespeicherte Änderungen …");
+    if (seqAutosaveTimer) clearTimeout(seqAutosaveTimer);
+    seqAutosaveTimer = setTimeout(() => { silentSaveSequenzplan(); }, 1200);
+  }
+
+  // Speichert im Hintergrund alle Karten mit Titel (leere Neu-Karten bleiben bis zur
+  // Titeleingabe rein lokal). Reordert nur die bereits gespeicherten Karten – kein Re-Render
+  // (würde Fokus/Cursor mitten in der Eingabe zerstören), stattdessen werden neu vergebene
+  // ids und der "Nicht gereicht"-Button direkt im DOM nachgezogen.
+  async function silentSaveSequenzplan() {
+    seqAutosaveTimer = null;
+    if (!seqDirty || !seqActiveBlockId) return;
+    const blockId = seqActiveBlockId;
+    let original = [];
+    try { original = await API.get(`/sequenz-stunden?blockId=${blockId}`); } catch (e) { return; }
+    const keepIds = new Set(seqCards.filter((c) => c.id != null).map((c) => c.id));
+    try {
+      for (const o of original) {
+        if (!keepIds.has(o.id)) await API.del(`/sequenz-stunden/${o.id}`);
+      }
+      for (let i = 0; i < seqCards.length; i++) {
+        const c = seqCards[i];
+        if (!c.title.trim()) continue;   // noch keine gültige Karte – wartet auf Titel
+        const body = {
+          blockId, title: c.title.trim(), grobziel: c.grobziel || null,
+          isLk: c.isLk, isReferat: c.isReferat, isKomplexeArbeit: c.isKomplexeArbeit,
+          isKlassenarbeit: c.isKlassenarbeit, weitereNotenart: c.weitereNotenart || null,
+          date: c.date || null,
+        };
+        if (c.id == null) {
+          const created = await API.post("/sequenz-stunden", body);
+          c.id = created.id;
+          const btn = document.querySelector(`[data-seq-shift="${i}"]`);
+          if (btn) btn.disabled = false;
+        } else {
+          await API.put(`/sequenz-stunden/${c.id}`, body);
+        }
+      }
+      const orderedIds = seqCards.filter((c) => c.id != null).map((c) => c.id);
+      if (orderedIds.length) await API.post("/sequenz-stunden/reorder", { blockId, orderedIds });
+      seqDirty = false;
+      seqSetStatus("Automatisch gespeichert.");
+    } catch (e) { seqSetStatus("Automatisches Speichern fehlgeschlagen."); }
+  }
+
+  // Vor Aktionen aufrufen, die serverseitigen Zustand voraussetzen (Shift, Block-/Ansichts-
+  // wechsel) – wartet einen ausstehenden Autosave ab statt ihn zu verwerfen.
+  async function flushSeqAutosave() {
+    if (seqAutosaveTimer) { clearTimeout(seqAutosaveTimer); seqAutosaveTimer = null; }
+    if (seqDirty) await silentSaveSequenzplan();
+  }
 
   function seqNotenartenToFlags(notenarten) {
     const set = new Set(notenarten || []);
@@ -49,7 +121,10 @@ export function createSequenzplanModule(ctx) {
   }
 
   async function loadSeqCardsFromServer() {
+    await flushSeqAutosave();   // ausstehende Edits am bisherigen Block noch sichern
     const blockId = Number($("seqBlock").value);
+    seqActiveBlockId = blockId || null;
+    seqSetStatus("");
     seqCards = [];
     if (!blockId) { renderSeqCards(); return; }
     try {
@@ -58,7 +133,7 @@ export function createSequenzplanModule(ctx) {
         id: r.id, title: r.title, grobziel: r.grobziel || "",
         isLk: r.isLk, isReferat: r.isReferat, isKomplexeArbeit: r.isKomplexeArbeit,
         isKlassenarbeit: r.isKlassenarbeit, weitereNotenart: r.weitereNotenart || "",
-        date: r.date || "",
+        date: r.date || "", movedToId: r.movedToId ?? null,
       }));
     } catch (e) { toast(e.message, false); }
     renderSeqCards();
@@ -67,7 +142,15 @@ export function createSequenzplanModule(ctx) {
   function seqCardHtml(card, idx) {
     const chk = (field, label) =>
       `<label class="small"><input type="checkbox" data-seq-f="${field}" data-seq-i="${idx}" ${card[field] ? "checked" : ""}> ${label}</label>`;
+    // "Stunde verschieben" (Planungskalender) legt eine neue, verknüpfte Karte am Zielort an und
+    // lässt diese Karte als Hinweis stehen – Zieldatum kommt aus der jeweils anderen Karte, da
+    // das eigene date-Feld (nur ein "voraussichtliches Datum") dabei bewusst unangetastet bleibt.
+    const movedTarget = card.movedToId != null ? seqCards.find((c) => c.id === card.movedToId) : null;
+    const movedHint = movedTarget
+      ? `<div class="note-box" style="margin-bottom:8px;">↷ Verschoben${movedTarget.date ? " nach " + esc(deDate(movedTarget.date)) : ""} (siehe unten).</div>`
+      : "";
     return `<div class="seq-card" data-seq-card="${idx}" data-local-undo-block="seq-${idx}">
+      ${movedHint}
       <div class="seq-card-head">
         <span class="seq-card-num">${idx + 1}.</span>
         <input type="text" class="seq-card-title" data-seq-f="title" data-seq-i="${idx}" value="${esc(card.title)}" placeholder="Titel der Stunde" />
@@ -112,14 +195,17 @@ export function createSequenzplanModule(ctx) {
         const i = Number(el.dataset.seqI), f = el.dataset.seqF;
         seqCards[i][f] = el.type === "checkbox" ? el.checked : el.value;
         if (summary) summary.textContent = `${seqCards.length} Stunden`;   // Karten-Zahl unverändert, nur Refresh vermeiden
+        markSeqDirty();
       });
     });
     wrap.querySelectorAll("[data-seq-del]").forEach((b) => b.onclick = () => {
       seqCards.splice(Number(b.dataset.seqDel), 1);
+      markSeqDirty();
       renderSeqCards();
     });
     wrap.querySelectorAll("[data-seq-clear-date]").forEach((b) => b.onclick = () => {
       seqCards[Number(b.dataset.seqClearDate)].date = "";
+      markSeqDirty();
       renderSeqCards();
     });
     wrap.querySelectorAll("[data-seq-up]").forEach((b) => b.onclick = () => seqMoveCard(Number(b.dataset.seqUp), -1));
@@ -131,12 +217,15 @@ export function createSequenzplanModule(ctx) {
     const other = idx + dir;
     if (other < 0 || other >= seqCards.length) return;
     [seqCards[idx], seqCards[other]] = [seqCards[other], seqCards[idx]];
+    markSeqDirty();
     renderSeqCards();
   }
 
   async function seqShiftCard(idx) {
     const card = seqCards[idx];
     if (!card || card.id == null) return;
+    await flushSeqAutosave();   // erst noch ausstehende lokale Edits (z.B. Datum) sichern –
+                                 // sonst würde der anschließende Server-Reload sie verwerfen
     const withCalendar = window.confirm(
       "Auch bereits terminierte, verknüpfte Kalendertermine dieser und nachfolgender Stunden automatisch nachrücken?"
     );
@@ -218,6 +307,7 @@ export function createSequenzplanModule(ctx) {
   }
 
   async function saveSequenzplan() {
+    if (seqAutosaveTimer) { clearTimeout(seqAutosaveTimer); seqAutosaveTimer = null; }
     const blockId = Number($("seqBlock").value);
     if (!blockId) { toast("Bitte Klasse und Block wählen.", false); return; }
     if (seqCards.some((c) => !c.title.trim())) { toast("Jede Stunde braucht einen Titel.", false); return; }
@@ -243,6 +333,7 @@ export function createSequenzplanModule(ctx) {
         }
       }
       await API.post("/sequenz-stunden/reorder", { blockId, orderedIds: seqCards.map((c) => c.id) });
+      seqDirty = false;
       toast("Sequenzplan gespeichert.");
       await loadSeqCardsFromServer();
       setUndo("Sequenzplan gespeichert.", async () => {
@@ -258,6 +349,6 @@ export function createSequenzplanModule(ctx) {
 
   return {
     renderSeqClassSelect, renderSeqBlockSelect, loadSeqCardsFromServer,
-    seqAddCard, aiSequenzplan, saveSequenzplan,
+    seqAddCard, aiSequenzplan, saveSequenzplan, flushSeqAutosave,
   };
 }

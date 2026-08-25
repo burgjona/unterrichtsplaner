@@ -44,6 +44,7 @@ def _out(row) -> SequenzStundeOut:
         is_lk=bool(d["is_lk"]), is_referat=bool(d["is_referat"]),
         is_komplexe_arbeit=bool(d["is_komplexe_arbeit"]), is_klassenarbeit=bool(d["is_klassenarbeit"]),
         weitere_notenart=d["weitere_notenart"], date=d["date"], lesson_id=d["lesson_id"],
+        moved_to_id=d["moved_to_id"],
         created_at=d["created_at"], updated_at=d["updated_at"],
     )
 
@@ -345,6 +346,95 @@ def _next_class_slot(conn, user_id: int, class_id: int, after_date_iso: str, max
     return None
 
 
+def _cascade_shift(conn, user_id, block_id, threshold, count, with_calendar) -> None:
+    """Erhöht sort_order aller Sequenzstunden des Blocks mit sort_order >= threshold um +count
+    (macht bei count>1 Platz für neu einzufügende Karten; count=1 ab der eigenen Position
+    entspricht dem reinen "Nicht gereicht"-Verschieben). Wenn with_calendar gesetzt ist, werden
+    zusätzlich alle verknüpften, noch nicht vergangenen lessons-Termine der betroffenen Karten
+    auf den jeweils nächsten realen Unterrichtstermin der Klasse nachgezogen. Von shift() und
+    von lessons.py::move_to_slot() (dortiger "Stunde verschieben"-Endpunkt, lokal importiert
+    gegen einen Modul-Zirkelbezug) gemeinsam genutzt."""
+    today = date.today().isoformat()
+    shifted = conn.execute(
+        "SELECT id, lesson_id FROM sequenz_stunden "
+        "WHERE block_id = ? AND user_id = ? AND sort_order >= ? ORDER BY sort_order",
+        (block_id, user_id, threshold),
+    ).fetchall()
+    conn.execute(
+        "UPDATE sequenz_stunden SET sort_order = sort_order + ?, updated_at = strftime('%Y-%m-%d %H:%M:%f','now') "
+        "WHERE block_id = ? AND user_id = ? AND sort_order >= ?",
+        (count, block_id, user_id, threshold),
+    )
+    if with_calendar:
+        for s in shifted:
+            if s["lesson_id"] is None:
+                continue
+            lesson = conn.execute(
+                "SELECT id, class_id, date FROM lessons WHERE id = ? AND user_id = ?",
+                (s["lesson_id"], user_id),
+            ).fetchone()
+            if lesson is None or not lesson["date"] or lesson["date"] < today or lesson["class_id"] is None:
+                continue
+            nxt = _next_class_slot(conn, user_id, lesson["class_id"], lesson["date"])
+            if nxt is None:
+                continue
+            conn.execute(
+                "UPDATE lessons SET date = ?, time = ?, updated_at = strftime('%Y-%m-%d %H:%M:%f','now') WHERE id = ?",
+                (nxt["date"], nxt["time"], lesson["id"]),
+            )
+            _sync_calendar_entry(conn, user_id, lesson["id"])
+
+
+def _planned_count_and_budget(conn, user_id, block_id):
+    planned_count = conn.execute(
+        "SELECT COUNT(*) AS n FROM sequenz_stunden WHERE block_id = ? AND user_id = ?",
+        (block_id, user_id),
+    ).fetchone()["n"]
+    block_row = _load_block(conn, user_id, block_id)
+    richtwert = _budget_for_block(conn, user_id, block_row)
+    over_budget = richtwert is not None and planned_count > richtwert
+    return over_budget, planned_count, richtwert
+
+
+def move_sequenz_for_lesson(conn, user_id, lesson_id, new_date, with_calendar):
+    """Wird von lessons.py::move_to_slot() aufgerufen ("Stunde verschieben" im Planungskalender),
+    sobald eine Stunde ein neues Datum bekommen hat. Verschiebt alle mit dieser Stunde
+    verknüpften Sequenzstunden (i.d.R. 1, bei einer Doppelstunde 2) auf neue, an das Ende ihrer
+    bisherigen Position angehängte Zeilen; die Ursprungszeilen bleiben stehen (moved_to_id
+    verweist auf die neue Zeile) statt gelöscht zu werden – so erscheint die Stunde wie
+    gewünscht zweimal im Sequenzplan. Gibt (erste neue id, over_budget, planned_count,
+    richtwert_ustd) zurück, oder None, wenn die Stunde mit keiner Sequenzstunde verknüpft war."""
+    originals = conn.execute(
+        "SELECT * FROM sequenz_stunden WHERE lesson_id = ? AND user_id = ? ORDER BY sort_order",
+        (lesson_id, user_id),
+    ).fetchall()
+    if not originals:
+        return None
+    block_id = originals[0]["block_id"]
+    insert_after = max(o["sort_order"] for o in originals)
+    count = len(originals)
+    _cascade_shift(conn, user_id, block_id, insert_after + 1, count, with_calendar)
+    new_ids = []
+    for i, o in enumerate(originals):
+        cur = conn.execute(
+            "INSERT INTO sequenz_stunden(user_id, block_id, sort_order, title, grobziel, notes, "
+            "is_lk, is_referat, is_komplexe_arbeit, is_klassenarbeit, weitere_notenart, date, lesson_id) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (user_id, block_id, insert_after + 1 + i, o["title"], o["grobziel"], o["notes"],
+             o["is_lk"], o["is_referat"], o["is_komplexe_arbeit"], o["is_klassenarbeit"],
+             o["weitere_notenart"], new_date, lesson_id),
+        )
+        new_id = cur.lastrowid
+        new_ids.append(new_id)
+        conn.execute(
+            "UPDATE sequenz_stunden SET lesson_id = NULL, moved_to_id = ?, "
+            "updated_at = strftime('%Y-%m-%d %H:%M:%f','now') WHERE id = ?",
+            (new_id, o["id"]),
+        )
+    over_budget, planned_count, richtwert = _planned_count_and_budget(conn, user_id, block_id)
+    return new_ids[0], over_budget, planned_count, richtwert
+
+
 @router.post("/{sid}/shift", response_model=SequenzStundeShiftOut)
 def shift(sid: int, body: SequenzStundeShiftIn, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
     """"Nach hinten verschieben": erhöht sort_order dieser und aller nachfolgenden Stunden im
@@ -354,41 +444,7 @@ def shift(sid: int, body: SequenzStundeShiftIn, conn=Depends(get_db), user_id: i
     der Klasse verschoben."""
     row = row_or_404(_fetch(conn, user_id, sid), "Sequenzstunde")
     block_id = row["block_id"]
-    today = date.today().isoformat()
     with conn:
-        shifted = conn.execute(
-            "SELECT id, lesson_id FROM sequenz_stunden "
-            "WHERE block_id = ? AND user_id = ? AND sort_order >= ? ORDER BY sort_order",
-            (block_id, user_id, row["sort_order"]),
-        ).fetchall()
-        conn.execute(
-            "UPDATE sequenz_stunden SET sort_order = sort_order + 1, updated_at = strftime('%Y-%m-%d %H:%M:%f','now') "
-            "WHERE block_id = ? AND user_id = ? AND sort_order >= ?",
-            (block_id, user_id, row["sort_order"]),
-        )
-        if body.with_calendar:
-            for s in shifted:
-                if s["lesson_id"] is None:
-                    continue
-                lesson = conn.execute(
-                    "SELECT id, class_id, date FROM lessons WHERE id = ? AND user_id = ?",
-                    (s["lesson_id"], user_id),
-                ).fetchone()
-                if lesson is None or not lesson["date"] or lesson["date"] < today or lesson["class_id"] is None:
-                    continue
-                nxt = _next_class_slot(conn, user_id, lesson["class_id"], lesson["date"])
-                if nxt is None:
-                    continue
-                conn.execute(
-                    "UPDATE lessons SET date = ?, time = ?, updated_at = strftime('%Y-%m-%d %H:%M:%f','now') WHERE id = ?",
-                    (nxt["date"], nxt["time"], lesson["id"]),
-                )
-                _sync_calendar_entry(conn, user_id, lesson["id"])
-    planned_count = conn.execute(
-        "SELECT COUNT(*) AS n FROM sequenz_stunden WHERE block_id = ? AND user_id = ?",
-        (block_id, user_id),
-    ).fetchone()["n"]
-    block_row = _load_block(conn, user_id, block_id)
-    richtwert = _budget_for_block(conn, user_id, block_row)
-    over_budget = richtwert is not None and planned_count > richtwert
+        _cascade_shift(conn, user_id, block_id, row["sort_order"], 1, body.with_calendar)
+    over_budget, planned_count, richtwert = _planned_count_and_budget(conn, user_id, block_id)
     return SequenzStundeShiftOut(over_budget=over_budget, planned_count=planned_count, richtwert_ustd=richtwert)

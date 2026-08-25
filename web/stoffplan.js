@@ -23,6 +23,11 @@ export function createStoffplanModule(ctx) {
   } = ctx;
 
   let editingStoffPlanId = null;   // gerade im Inline-Editor geöffneter Plan
+  // Kein durchgängiges Tastendruck-Autosave für den Block-Editor: ein Block-Bulk-Save vergibt
+  // serverseitig neue Block-ids und würde daran hängende Sequenzstunden kaskadierend löschen
+  // (s. Kommentar bei toggleKumulierteAnsicht unten) – das bei jedem Tastendruck zu wiederholen
+  // wäre riskanter als der Status quo. Stattdessen nur "Speichern beim Verlassen" der Ansicht.
+  let stoffEditDirty = false;
   let kumuliertPlanId = null;
   let kumuliertBlocks = [];
   let planNotesTimer = null;
@@ -312,13 +317,18 @@ export function createStoffplanModule(ctx) {
         </div>
       </div>`;
     box.dataset.nextIdx = String((p.blocks || []).length);
+    stoffEditDirty = false;
+    box.addEventListener("input", () => { stoffEditDirty = true; });
+    box.addEventListener("change", () => { stoffEditDirty = true; });
     box.querySelector(`[data-sp-save="${id}"]`).onclick = () => saveStoffPlanEdits(id);
-    box.querySelector(`[data-sp-cancel="${id}"]`).onclick = () => { editingStoffPlanId = null; renderStoffPlans(); };
-    box.querySelector("[data-sp-block-add]").onclick = () => addStoffEditorBlock(box);
+    box.querySelector(`[data-sp-cancel="${id}"]`).onclick = () => { editingStoffPlanId = null; stoffEditDirty = false; renderStoffPlans(); };
+    box.querySelector("[data-sp-block-add]").onclick = () => { stoffEditDirty = true; addStoffEditorBlock(box); };
     box.querySelectorAll("tbody").forEach((tb) => { if (tb.querySelector("tr[data-i]")) wireStoffEditorRow(tb, box); });
   }
 
-  async function saveStoffPlanEdits(id) {
+  // silent=true (Autosave beim Verlassen der Ansicht): kein Erfolgs-Toast, Fehler wird trotzdem
+  // gemeldet (der Nutzer verlässt die Seite sonst im Glauben, es sei alles gesichert).
+  async function saveStoffPlanEdits(id, silent) {
     const box = document.querySelector(`[data-editor="${id}"]`);
     if (!box) return;
     const title = box.querySelector("[data-edit-title]").value;
@@ -337,7 +347,8 @@ export function createStoffplanModule(ctx) {
     const before = state.stoffPlans.find((x) => String(x.id) === String(id)) || null;
     try {
       await SyncEngine.update("stoff_plans", id, { title, blocks });
-      toast("Plan aktualisiert.");
+      stoffEditDirty = false;
+      if (!silent) toast("Plan aktualisiert.");
       editingStoffPlanId = null;
       await loadStoffPlans();
       if (before) {
@@ -353,6 +364,12 @@ export function createStoffplanModule(ctx) {
         });
       }
     } catch (e) { toast(e.message, false); }
+  }
+
+  // Vor View-Wechsel aufrufen: sichert einen offenen, bearbeiteten Block-Editor still ab.
+  async function flushStoffplanAutosave() {
+    if (editingStoffPlanId == null || !stoffEditDirty) return;
+    await saveStoffPlanEdits(editingStoffPlanId, true);
   }
 
   async function toggleStoffPlanStatus(id) {
@@ -686,6 +703,6 @@ export function createStoffplanModule(ctx) {
 
   return {
     loadPlanNotes, savePlanNotes, schedulePlanNotesSave, stoffUpload,
-    saveStoffPlan, loadStoffPlans, aiStoffplan, onClassChanged,
+    saveStoffPlan, loadStoffPlans, aiStoffplan, onClassChanged, flushStoffplanAutosave,
   };
 }
