@@ -26,13 +26,27 @@ class _Resp:
         self.usage = _Usage()
 
 
+class _Stream:
+    def __init__(self, resp):
+        self._resp = resp
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def get_final_message(self):
+        return self._resp
+
+
 class _FakeClient:
     def __init__(self, payload):
         self._payload = payload
         self.messages = self
 
-    def create(self, **kwargs):
-        return _Resp(self._payload)
+    def stream(self, **kwargs):
+        return _Stream(_Resp(self._payload))
 
 
 def _class(client, name="7a", subject="Deutsch", grade=7, hours=2):

@@ -130,7 +130,11 @@ def run(conn, user_id, function, system, user_text, schema=None, max_tokens=2000
     )
     if schema:
         kwargs["output_config"] = {"format": {"type": "json_schema", "schema": schema}}
-    resp = client.messages.create(**kwargs)
+    # Streaming statt create(): das SDK verweigert bei großem max_tokens (z. B. Sequenzplan mit
+    # 32000) synchrone Calls, da diese theoretisch >10 Min. laufen könnten (Anthropic-SDK-Limit,
+    # unabhängig davon, dass wir hier ohnehin schon im Background-Job laufen).
+    with client.messages.stream(**kwargs) as stream:
+        resp = stream.get_final_message()
 
     text = next((b.text for b in resp.content if getattr(b, "type", None) == "text"), "")
     usage = resp.usage

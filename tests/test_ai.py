@@ -24,6 +24,23 @@ class _Resp:
     def __init__(self, text):
         self.content = [_Block(text)]
         self.usage = _Usage()
+        self.stop_reason = "end_turn"
+
+
+class _Stream:
+    """Fake für client.messages.stream(...) – ai.run() nutzt nur get_final_message()."""
+
+    def __init__(self, resp):
+        self._resp = resp
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def get_final_message(self):
+        return self._resp
 
 
 class _FakeClient:
@@ -32,9 +49,9 @@ class _FakeClient:
         self.messages = self
         self._calls = calls if calls is not None else []
 
-    def create(self, **kwargs):  # client.messages.create(...)
+    def stream(self, **kwargs):  # client.messages.stream(...)
         self._calls.append(kwargs)
-        return _Resp(self._payload)
+        return _Stream(_Resp(self._payload))
 
 
 @pytest.fixture(autouse=True)
@@ -265,9 +282,9 @@ def test_sequenzplan_retries_once_and_recovers(client, auth, monkeypatch):
         def __init__(self):
             self.messages = self
 
-        def create(self, **kwargs):
+        def stream(self, **kwargs):
             calls.append(kwargs)
-            return _Resp(next(responses))
+            return _Stream(_Resp(next(responses)))
 
     monkeypatch.setattr(ai, "_make_client", lambda api_key: _FlakyClient())
     _set_key(client)
