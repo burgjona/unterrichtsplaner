@@ -460,6 +460,7 @@ function updateSozialformMonotonyHint() {
 
 /* ---------- Lernziele-Editor (M11) ---------- */
 let lessonZiele = [];   // [{kind:'grob'|'fein', text, bloomStufe, phaseSortOrder}]
+let lessonTafelbild = { titel: "", bloecke: [] };   // KI-Tafelbild-Vorschlag (U31)
 
 function renderLernziele() {
   const wrap = $("lernzieleList");
@@ -525,7 +526,10 @@ let pendingLessonMaterialSubject = "";
 
 function clearLessonForm() {
   ["lessonIdeas", "lessonTitle", "lessonDate", "klafki1", "klafki2", "klafki3", "klafki4", "klafki5",
-   "biboxWerk", "biboxSeite", "biboxNotiz", "lessonMatSubject"].forEach((id) => ($(id).value = ""));
+   "biboxWerk", "biboxSeite", "biboxNotiz", "lessonMatSubject",
+   "tafelbildEingabe", "tafelbildNotiz"].forEach((id) => ($(id).value = ""));
+  lessonTafelbild = { titel: "", bloecke: [] };
+  renderTafelbild();
   if ($("lessonMatFile")) $("lessonMatFile").value = "";
   if (lessonAutosaveTimer) { clearTimeout(lessonAutosaveTimer); lessonAutosaveTimer = null; }
   lessonPendingLinksApplied = false;
@@ -630,6 +634,8 @@ function buildLessonBody() {
     meyerPlan: meyer.some((v) => v) ? meyer : null,
     diff: $("diff").value, selbstLernen: $("lernen").value,
     bibox: { werk: $("biboxWerk").value, seite: $("biboxSeite").value, notiz: $("biboxNotiz").value },
+    tafelbildEingabe: $("tafelbildEingabe").value, tafelbild: lessonTafelbild,
+    tafelbildNotiz: $("tafelbildNotiz").value,
     phases,
     lernziele: readLernziele(phaseIndexMap),
   };
@@ -747,6 +753,10 @@ function loadLessonIntoForm(l) {
   if (l.selbstLernen) $("lernen").value = l.selbstLernen;
   const b = l.bibox || {};
   $("biboxWerk").value = b.werk || ""; $("biboxSeite").value = b.seite || ""; $("biboxNotiz").value = b.notiz || "";
+  $("tafelbildEingabe").value = l.tafelbildEingabe || "";
+  lessonTafelbild = l.tafelbild || { titel: "", bloecke: [] };
+  renderTafelbild();
+  $("tafelbildNotiz").value = l.tafelbildNotiz || "";
   setPhasesFromLesson(l.phases);
   $("editHintTitle").textContent = l.title || "";
   $("editHint").classList.remove("hidden");
@@ -4505,7 +4515,7 @@ function applyAiGating(active) {
   // fehlschlagenden Request auslöst.
   const offline = navigator.onLine === false;
   const effectiveActive = active && !offline;
-  ["aiPlanBtn", "stoffAiBtn", "seqAiBtn", "asuvAiBtn", "aiLernzieleBtn", "asuvEinordnungBtn", "stundeEinordnungBtn", "spAiBtn"].forEach((id) => {
+  ["aiPlanBtn", "stoffAiBtn", "seqAiBtn", "asuvAiBtn", "aiLernzieleBtn", "asuvEinordnungBtn", "stundeEinordnungBtn", "spAiBtn", "tafelbildBtn"].forEach((id) => {
     const b = $(id);
     if (b) {
       b.disabled = !effectiveActive;
@@ -4560,6 +4570,42 @@ async function aiLessonSuggest() {
     if (Array.isArray(s.meyerPlan)) setMeyerGrid("meyerPlanGrid", s.meyerPlan);
     if (Array.isArray(s.phases) && s.phases.length) setPhasesFromLesson(s.phases);
     toast(res.cached ? "KI-Vorschlag (aus Cache) eingefügt." : "KI-Vorschlag eingefügt – bitte prüfen.");
+  } catch (e) { toast(e.message, false); }
+  finally { btn.disabled = false; btn.textContent = label; }
+}
+
+// Tafelbild (U31): rendert das KI-Ergebnis als Kacheln (flex-wrap – die KI entscheidet frei,
+// wie viele Blöcke sinnvoll sind, kein fester Spaltenzwang), hervorgehobene Blöcke als Merksatz-Kasten.
+function renderTafelbild() {
+  const board = $("tafelbildBoard");
+  if (!board) return;
+  const tb = lessonTafelbild || { titel: "", bloecke: [] };
+  const hasContent = !!(tb.titel || (tb.bloecke && tb.bloecke.length));
+  board.classList.toggle("hidden", !hasContent);
+  if (!hasContent) { board.innerHTML = ""; return; }
+  const title = tb.titel ? `<div class="tafelbild-title">${esc(tb.titel)}</div>` : "";
+  const blocks = (tb.bloecke || []).map((b) => {
+    const head = b.ueberschrift ? `<div class="tafelbild-block-head">${esc(b.ueberschrift)}</div>` : "";
+    const pts = (b.punkte || []).map((p) => `<li>${esc(p)}</li>`).join("");
+    return `<div class="tafelbild-block${b.hervorgehoben ? " hervorgehoben" : ""}">${head}<ul>${pts}</ul></div>`;
+  }).join("");
+  board.innerHTML = `${title}<div class="tafelbild-blocks">${blocks}</div>`;
+}
+
+async function aiTafelbildSuggest() {
+  const eingabe = $("tafelbildEingabe").value.trim();
+  if (!eingabe) { toast("Bitte eintragen, was an die Tafel soll.", false); return; }
+  const btn = $("tafelbildBtn"), label = btn.textContent;
+  btn.disabled = true; btn.textContent = "✨ generiere …";
+  try {
+    const res = await API.post("/ai/tafelbild", {
+      eingabe, subject: $("lessonSubject").value, grade: Number($("lessonGrade").value) || null,
+      title: $("lessonTitle").value.trim() || null,
+    });
+    lessonTafelbild = res.suggestion || { titel: "", bloecke: [] };
+    renderTafelbild();
+    scheduleLessonAutosave();
+    toast(res.cached ? "Tafelbild (aus Cache) eingefügt." : "Tafelbild eingefügt – bitte prüfen.");
   } catch (e) { toast(e.message, false); }
   finally { btn.disabled = false; btn.textContent = label; }
 }
@@ -5984,6 +6030,7 @@ function wireEvents() {
 
   // KI (M7)
   $("aiPlanBtn").onclick = aiLessonSuggest;
+  $("tafelbildBtn").onclick = aiTafelbildSuggest;
   $("stoffAiBtn").onclick = () => getStoffplanModule().then((m) => m.aiStoffplan());
   $("seqAiBtn").onclick = () => getSequenzplanModule().then((m) => m.aiSequenzplan());
   $("seqAddBtn").onclick = () => getSequenzplanModule().then((m) => m.seqAddCard());

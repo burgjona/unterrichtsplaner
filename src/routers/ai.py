@@ -10,7 +10,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from ..db import connect
 from ..deps import get_db, get_user_id, row_or_404
 from ..lib import ai
-from ..schemas import AsuvSuggestIn, LessonSuggestIn, SequenzplanIn, StoffplanIn
+from ..schemas import AsuvSuggestIn, LessonSuggestIn, SequenzplanIn, StoffplanIn, TafelbildSuggestIn
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
@@ -207,6 +207,59 @@ def lesson_suggestion(body: LessonSuggestIn, conn: sqlite3.Connection = Depends(
     lines.append(f"Ideen/Impulse der Lehrkraft:\n{body.ideas.strip()[:_FREE_TEXT_CAP] or '-'}")
     user_text = "\n".join(lines) + f"\n\n{_ctx_block(ctx)}"
     data, cached = _run_json(conn, user_id, "lesson_suggestion", _LESSON_SYSTEM, user_text, _LESSON_SCHEMA, max_tokens=4000)
+    return {"suggestion": data, "cached": cached}
+
+
+# ---------- 1b) Tafelbild-Vorschlag aus Freitext ----------
+_TAFELBILD_SYSTEM = (
+    "Du bist didaktische Assistenz für eine Referendarin an einer sächsischen Oberschule "
+    "(Fächer Deutsch und WTH). Die Lehrkraft gibt Stichworte oder Text ein, der während der "
+    "Stunde an die Tafel geschrieben werden soll. Erstelle daraus ein durchdachtes, "
+    "tafeltaugliches Tafelbild: kurze Stichpunkte statt ganzer Sätze, klare Gliederung. "
+    "Du entscheidest frei, in wie viele Blöcke der Inhalt sinnvoll gegliedert wird und wie sie "
+    "betitelt sind – es gibt keine feste Block- oder Spaltenzahl. Zentrale Regeln/Merksätze "
+    "als hervorgehoben markieren. Erfinde keine fachlichen Inhalte, die nicht aus der Eingabe "
+    "hervorgehen oder unmittelbar daraus ableitbar sind. Umlaute korrekt. Nur Vorschlag – die "
+    "Lehrkraft prüft und ändert."
+)
+_TAFELBILD_SCHEMA = {
+    "type": "object", "additionalProperties": False,
+    "required": ["titel", "bloecke"],
+    "properties": {
+        "titel": _STR,
+        "bloecke": {
+            "type": "array",
+            "items": {
+                "type": "object", "additionalProperties": False,
+                "required": ["ueberschrift", "punkte", "hervorgehoben"],
+                "properties": {
+                    "ueberschrift": _STR,
+                    "punkte": {"type": "array", "items": _STR},
+                    "hervorgehoben": {"type": "boolean"},
+                },
+            },
+        },
+    },
+}
+
+
+@router.post("/tafelbild")
+def tafelbild_suggestion(body: TafelbildSuggestIn, conn: sqlite3.Connection = Depends(get_db),
+                         user_id: int = Depends(get_user_id)):
+    if not body.eingabe.strip():
+        raise HTTPException(status_code=400,
+                            detail="Bitte einen Text eingeben, was an die Tafel soll.")
+    lines = []
+    if body.subject:
+        lines.append(f"Fach: {body.subject}")
+    if body.grade:
+        lines.append(f"Klassenstufe: {body.grade}")
+    if body.title:
+        lines.append(f"Thema/Titel der Stunde: {body.title}")
+    lines.append(f"Vorgabe der Lehrkraft (was an die Tafel soll):\n{body.eingabe.strip()[:_FREE_TEXT_CAP]}")
+    user_text = "\n".join(lines)
+    data, cached = _run_json(conn, user_id, "tafelbild", _TAFELBILD_SYSTEM, user_text,
+                             _TAFELBILD_SCHEMA, max_tokens=2000)
     return {"suggestion": data, "cached": cached}
 
 

@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from ..deps import get_db, get_user_id, row_or_404
 from ..schemas import (
     Bibox, Klafki, LernzielIn, LernzielOut, LessonCreate, LessonMoveSlotIn, LessonMoveSlotOut,
-    LessonOut, LessonUpcomingSlotOut, LessonUpdate, MaterialOut, PhaseIn, PhaseOut,
+    LessonOut, LessonUpcomingSlotOut, LessonUpdate, MaterialOut, PhaseIn, PhaseOut, Tafelbild,
 )
 from .calendar import _set_entry_classes
 
@@ -26,6 +26,7 @@ _LESSON_COLS = (
     "klafki_gegenwart", "klafki_zukunft", "klafki_exemplarisch", "klafki_zugang",
     "klafki_struktur", "meyer_plan_json", "diff", "selbst_lernen",
     "bibox_werk", "bibox_seite", "bibox_notiz",
+    "tafelbild_eingabe", "tafelbild_json", "tafelbild_notiz",
 )
 
 
@@ -94,7 +95,7 @@ def _sync_calendar_entry(conn, user_id: int, lesson_id: int) -> None:
             )
 
 
-def _lesson_values(body, klafki: Klafki, bibox: Bibox, meyer_plan) -> dict:
+def _lesson_values(body, klafki: Klafki, bibox: Bibox, meyer_plan, tafelbild: Tafelbild) -> dict:
     return {
         "class_id": body.class_id,
         "lernbereich_id": body.lernbereich_id,
@@ -116,6 +117,9 @@ def _lesson_values(body, klafki: Klafki, bibox: Bibox, meyer_plan) -> dict:
         "bibox_werk": bibox.werk,
         "bibox_seite": bibox.seite,
         "bibox_notiz": bibox.notiz,
+        "tafelbild_eingabe": body.tafelbild_eingabe,
+        "tafelbild_json": json.dumps(tafelbild.model_dump()) if tafelbild is not None else None,
+        "tafelbild_notiz": body.tafelbild_notiz,
     }
 
 
@@ -164,6 +168,9 @@ def _row_to_out(conn, row) -> LessonOut:
         meyer_plan=json.loads(d["meyer_plan_json"]) if d["meyer_plan_json"] else None,
         diff=d["diff"], selbst_lernen=d["selbst_lernen"],
         bibox=Bibox(werk=d["bibox_werk"] or "", seite=d["bibox_seite"] or "", notiz=d["bibox_notiz"] or ""),
+        tafelbild_eingabe=d["tafelbild_eingabe"],
+        tafelbild=Tafelbild(**json.loads(d["tafelbild_json"])) if d["tafelbild_json"] else Tafelbild(),
+        tafelbild_notiz=d["tafelbild_notiz"],
         phases=[PhaseOut(**dict(p)) for p in phases],
         lernziele=[LernzielOut(
             id=z["id"], kind=z["kind"], text=z["text"], bloom_stufe=z["bloom_stufe"],
@@ -180,7 +187,7 @@ def _fetch(conn, user_id, lid):
 
 
 def _apply_create_lesson(conn, user_id: int, body: LessonCreate) -> LessonOut:
-    vals = _lesson_values(body, body.klafki, body.bibox, body.meyer_plan)
+    vals = _lesson_values(body, body.klafki, body.bibox, body.meyer_plan, body.tafelbild)
     vals["user_id"] = user_id
     cols = ", ".join(["user_id", *_LESSON_COLS])
     placeholders = ", ".join(f":{c}" for c in ["user_id", *_LESSON_COLS])
@@ -241,7 +248,8 @@ def _apply_update_lesson(conn, user_id: int, lid: int, body: LessonUpdate) -> Le
     data = body.model_dump(exclude_unset=True)
     sets = {}
     for key in ("class_id", "lernbereich_id", "title", "subject", "grade",
-                "lesson_type", "duration_minutes", "time", "date", "diff", "selbst_lernen"):
+                "lesson_type", "duration_minutes", "time", "date", "diff", "selbst_lernen",
+                "tafelbild_eingabe", "tafelbild_notiz"):
         if key in data:
             sets[key] = data[key]
     if "klafki" in data and body.klafki is not None:
@@ -252,6 +260,8 @@ def _apply_update_lesson(conn, user_id: int, lid: int, body: LessonUpdate) -> Le
     if "bibox" in data and body.bibox is not None:
         b = body.bibox
         sets.update(bibox_werk=b.werk, bibox_seite=b.seite, bibox_notiz=b.notiz)
+    if "tafelbild" in data and body.tafelbild is not None:
+        sets["tafelbild_json"] = json.dumps(body.tafelbild.model_dump())
     if "meyer_plan" in data:
         sets["meyer_plan_json"] = json.dumps(body.meyer_plan) if body.meyer_plan is not None else None
     if "reflection_skipped" in data and body.reflection_skipped is not None:

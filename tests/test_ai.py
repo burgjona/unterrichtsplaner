@@ -135,6 +135,35 @@ def test_lesson_suggestion_full_fields_in_prompt(client, auth, monkeypatch):
     assert "Datum der Stunde: 2026-09-14" in prompt
 
 
+def test_tafelbild_suggestion(client, auth, monkeypatch):
+    payload = json.dumps({
+        "titel": "Die Ballade",
+        "bloecke": [
+            {"ueberschrift": "Merkmale", "punkte": ["erzählend", "dramatisch", "lyrisch"], "hervorgehoben": False},
+            {"ueberschrift": "", "punkte": ["Ballade = Mischform aus Epik, Lyrik, Dramatik"], "hervorgehoben": True},
+        ],
+    })
+    state = _install(monkeypatch, payload)
+    _set_key(client)
+
+    r = client.post("/api/ai/tafelbild", json={"eingabe": "Merkmale der Ballade", "subject": "Deutsch", "grade": 8})
+    assert r.status_code == 200, r.text
+    body = r.json()["suggestion"]
+    assert body["titel"] == "Die Ballade"
+    assert body["bloecke"][1]["hervorgehoben"] is True
+    prompt = state["calls"][0]["messages"][0]["content"]
+    assert "Fach: Deutsch" in prompt and "Klassenstufe: 8" in prompt
+    assert "Merkmale der Ballade" in prompt
+
+
+def test_tafelbild_suggestion_requires_eingabe(client, auth, monkeypatch):
+    _install(monkeypatch, "{}")
+    _set_key(client)
+    r = client.post("/api/ai/tafelbild", json={"eingabe": "  "})
+    assert r.status_code == 400
+    assert "Tafel" in r.json()["detail"]
+
+
 def test_lesson_suggestion_requires_ideas_or_title(client, auth, monkeypatch):
     _install(monkeypatch, "{}")
     _set_key(client)

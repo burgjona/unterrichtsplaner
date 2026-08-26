@@ -619,6 +619,21 @@
       </div>
 
       <div class="card" style="margin-top:14px;">
+        <h3>Tafelbild</h3>
+        <p class="muted small">Trage ein, was während der Stunde an die Tafel soll – die KI schlägt daraus ein gegliedertes Tafelbild vor.</p>
+        <label>Was soll an die Tafel? (Freitext)</label>
+        <textarea id="tafelbildEingabe" placeholder="z. B. Merkmale der Ballade: erzählend, dramatisch, lyrisch ..."></textarea>
+        <div style="margin-top:10px;">
+          <button class="btn ai" id="tafelbildBtn">✨ Tafelbild vorschlagen</button>
+        </div>
+        <div id="tafelbildBoard" class="tafelbild-board hidden"></div>
+        <div style="margin-top:12px;">
+          <label>Notizen (z. B. Foto-Hinweis, eigene Ergänzungen)</label>
+          <textarea id="tafelbildNotiz" placeholder="Eigene Ergänzungen zum Tafelbild ..."></textarea>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
         <h3>Abschließende didaktisch-methodische Reflexion (Klafki &amp; Meyer)</h3>
         <p class="muted small">Bewusst am Ende: Erst die Stunde konkret planen, dann prüfen, ob sie didaktisch und methodisch trägt.</p>
         <div class="phase" data-local-undo-block="klafki">

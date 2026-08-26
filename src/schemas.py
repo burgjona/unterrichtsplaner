@@ -186,6 +186,17 @@ class Bibox(Base):
     notiz: str = ""
 
 
+class TafelbildBlock(Base):
+    ueberschrift: str = ""
+    punkte: List[str] = Field(default_factory=list)
+    hervorgehoben: bool = False
+
+
+class Tafelbild(Base):
+    titel: str = ""
+    bloecke: List[TafelbildBlock] = Field(default_factory=list)
+
+
 class PhaseIn(Base):
     phase_name: str
     minutes: Optional[int] = None
@@ -217,6 +228,9 @@ class LessonCreate(Base):
     diff: Optional[str] = None
     selbst_lernen: Optional[str] = None
     bibox: Bibox = Field(default_factory=Bibox)
+    tafelbild_eingabe: Optional[str] = None
+    tafelbild: Tafelbild = Field(default_factory=Tafelbild)
+    tafelbild_notiz: Optional[str] = None
     phases: List[PhaseIn] = Field(default_factory=list)
     lernziele: List["LernzielIn"] = Field(default_factory=list)
 
@@ -243,6 +257,9 @@ class LessonUpdate(Base):
     diff: Optional[str] = None
     selbst_lernen: Optional[str] = None
     bibox: Optional[Bibox] = None
+    tafelbild_eingabe: Optional[str] = None
+    tafelbild: Optional[Tafelbild] = None
+    tafelbild_notiz: Optional[str] = None
     phases: Optional[List[PhaseIn]] = None
     lernziele: Optional[List["LernzielIn"]] = None
     reflection_skipped: Optional[bool] = None
@@ -271,6 +288,9 @@ class LessonOut(Base):
     diff: Optional[str] = None
     selbst_lernen: Optional[str] = None
     bibox: Bibox
+    tafelbild_eingabe: Optional[str] = None
+    tafelbild: Tafelbild = Field(default_factory=Tafelbild)
+    tafelbild_notiz: Optional[str] = None
     phases: List[PhaseOut] = Field(default_factory=list)
     lernziele: List["LernzielOut"] = Field(default_factory=list)
     created_at: str
@@ -520,6 +540,13 @@ class LessonSuggestIn(Base):
     class_id: Optional[int] = None
     date: Optional[str] = None
     duration_minutes: Optional[int] = None
+
+
+class TafelbildSuggestIn(Base):
+    eingabe: str = ""
+    subject: Optional[str] = None
+    grade: Optional[int] = None
+    title: Optional[str] = None
 
 
 class StoffplanIn(Base):

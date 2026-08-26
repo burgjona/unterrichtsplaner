@@ -184,6 +184,16 @@ input.input-error { border-color: var(--bad); background: color-mix(in srgb, var
 .ampel-btn.g { background:var(--ok); } .ampel-btn.y { background:var(--yellow); } .ampel-btn.r { background:var(--bad); }
 .ampel-btn.selected { opacity:1; border-color:#14261a; transform: scale(1.08); }
 .note-box { background:var(--note-bg, #fff7ed); border:1px solid var(--note-border, #fed7aa); color:var(--note-text, #9a3412); border-radius:12px; padding:11px 13px; font-size:13px; margin-top:10px; }
+/* U31: Tafelbild-Vorschlag - KI liefert Struktur (Titel + frei viele Blöcke), hier als
+   Kreide-auf-Tafel-Optik gerendert; kein echtes Bild, aber visuell wie an einer Tafel. */
+.tafelbild-board { margin-top:12px; background:var(--primary-dark); color:#fdfdfd; border-radius:14px; padding:16px 18px; }
+.tafelbild-title { font-size:18px; font-weight:var(--fw-heavy, 700); margin-bottom:10px; text-align:center; }
+.tafelbild-blocks { display:flex; flex-wrap:wrap; gap:12px; }
+.tafelbild-block { flex:1 1 220px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.25); border-radius:10px; padding:10px 12px; }
+.tafelbild-block.hervorgehoben { background:rgba(250,204,21,.16); border-color:#facc15; }
+.tafelbild-block-head { font-weight:var(--fw-bold); margin-bottom:6px; }
+.tafelbild-block ul { margin:0; padding-left:18px; }
+.tafelbild-block ul li { margin-bottom:3px; }
 .ai-box { background: #fefce8; border:1px solid #fde68a; border-radius:14px; padding:14px; margin-bottom:14px; display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
 .ai-box .txt { font-size:13px; color:#713f12; max-width:520px; }
 .file-drop { border:2px dashed #86efac; border-radius:12px; padding:16px; text-align:center; color:var(--primary-dark); font-size:13px; background:#f0faf0; cursor:pointer; }

@@ -35,6 +35,10 @@ def test_full_flow_and_camelcase(client, auth):
                                "klafki": {"gegenwart": "Alltagsbezug", "struktur": "Wendepunkt"},
                                "meyerPlan": ["gruen"] * 10,
                                "bibox": {"werk": "Deutschbuch 8", "seite": "S. 140"},
+                               "tafelbildEingabe": "Merkmale der Ballade",
+                               "tafelbild": {"titel": "Die Ballade", "bloecke": [
+                                   {"ueberschrift": "Merkmale", "punkte": ["erzählend", "dramatisch"],
+                                    "hervorgehoben": False}]},
                                "phases": [
                                    {"phaseName": "Einstieg", "minutes": 10, "socialForm": "Plenum",
                                     "method": "Hörimpuls", "teacherActivity": "spielt vor"},
@@ -46,6 +50,14 @@ def test_full_flow_and_camelcase(client, auth):
     assert lj["meyerPlan"] == ["gruen"] * 10                 # JSON-Vektor rund
     assert lj["phases"][0]["phaseName"] == "Einstieg"        # camelCase + normalisiert
     assert lj["phases"][1]["socialForm"] == "GA"
+    assert lj["tafelbild"]["titel"] == "Die Ballade"          # Tafelbild rund (KI-Struktur + Umlaute)
+    assert lj["tafelbild"]["bloecke"][0]["punkte"] == ["erzählend", "dramatisch"]
+
+    # Notizfeld separat nachtragbar (eigene Ergänzung der Lehrkraft, kein KI-Inhalt)
+    upd = client.put(f"/api/lessons/{lj['id']}", json={"tafelbildNotiz": "Tafelbild-Foto: siehe Ordner"},
+                     headers=auth).json()
+    assert upd["tafelbildNotiz"] == "Tafelbild-Foto: siehe Ordner"
+    assert upd["tafelbild"]["titel"] == "Die Ballade"         # bleibt beim reinen Notiz-Update erhalten
 
     # Kalendereintrag
     cal = client.post("/api/calendar",

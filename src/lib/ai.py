@@ -33,6 +33,7 @@ ROUTING = {
     "sitzplan": "sonnet",            # KI-Sitzplan-Anordnung nach Freitext-Beschreibung (U18)
     "jahresplan_import": "sonnet",   # Termin-Erkennung aus dem Schul-Jahresplan (PDF) — U20
     "sequenzplan": "sonnet",         # Sequenzstunden-Generierung aus einem Stoffplan-Block
+    "tafelbild": "sonnet",           # Tafelbild-Vorschlag aus Freitext (U31)
 }
 
 _prompt_cache = {}  # sha256(prompt) -> Antworttext (lokal, prozessweit)
