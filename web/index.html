@@ -738,8 +738,11 @@
       <div class="card" style="margin-top:14px;">
         <h3>1. Bedingungsanalyse</h3>
         <label>1.1 Organisatorische und technische Rahmenbedingungen</label><textarea id="asuv_bedingung_org"></textarea>
+        <div class="note-box asuv-wth-hint hidden">WTH (Leitfaden Fischer): Rahmenbedingungen (Raumwechsel, Lage der Stunde, Wochenende, Schulbus, Ausfall/Vertretung, Arbeitsmittel) und Technik (Tafel, Beamer, Lichteinfall, Projektionswand, Medien) je mit ihrer positiven oder negativen Wirkung auf diese Stunde.</div>
         <label>1.2 Lernvoraussetzungen der Schüler:innen</label><textarea id="asuv_bedingung_lern"></textarea>
+        <div class="note-box asuv-wth-hint hidden">WTH: Sozial- und Arbeitsverhalten + Leistungsvermögen (gern als Tabelle, ca. 2 SuS je Gruppe), Umgang mit Medien und Arbeitsmaterialien; fachliche Vorkenntnisse/Methoden/Kompetenzen &rarr; angestrebter Kompetenzzuwachs; Besonderheiten (LRS, ADHS, Verhaltensauffälligkeiten, DaZ, Inklusion, Feinmotorik). Zusammenhang Rahmenbedingungen &harr; didaktische Analyse als Fließtext.</div>
         <label>1.3 Einordnung in den Lernbereich</label><textarea id="asuv_bedingung_einordnung"></textarea>
+        <div class="note-box asuv-wth-hint hidden">WTH: die LP-Inhalte der zwei vorangegangenen und der zwei nachfolgenden Stunden konkret benennen.</div>
         <div id="asuvEinordnungBox" class="hidden" style="margin-top:6px;">
           <button class="btn ai small" id="asuvEinordnungBtn">✨ Einordnung vorschlagen</button>
           <span class="hint">Frei geplante Stunde ohne Lernbereich – die KI schlägt Lernbereich und Lernziel vor (füllt nur das leere Feld).</span>
@@ -747,19 +750,26 @@
         </div>
         <div class="hint">Nur Bedingungen aufführen, die in Kapitel 4 wieder aufgegriffen werden.</div>
       </div>
-      <div class="card" style="margin-top:14px;"><h3>2. Lehr- und Lernziele</h3><textarea id="asuv_ziele" rows="4"></textarea></div>
+      <div class="card" style="margin-top:14px;"><h3>2. Lehr- und Lernziele</h3><textarea id="asuv_ziele" rows="4"></textarea>
+        <div class="note-box asuv-wth-hint hidden">WTH: SMART + Doppelverbformulierung (zu entwickelnde Kompetenz + &bdquo;indem&ldquo; + prüfbare Aktion), max. 3&ndash;4 Ziele, fachliche und überfachliche Ziele, Bloom-Taxonomie / w-k-w-Modell.</div>
+      </div>
       <div class="card" style="margin-top:14px;">
         <h3>3. Sachanalyse</h3><textarea id="asuv_sachanalyse" rows="5"></textarea>
+        <div class="note-box asuv-wth-hint hidden">WTH: mindestens zwei fachwissenschaftliche Literaturhinweise; ggf. Erklärvideo/Internetquellen, Schaubilder, Fallbeispiele, Modelle, Maschinen/Werkzeuge.</div>
         <label>Quellen / Fachliteratur</label><textarea id="asuv_quellen"></textarea>
+        <div class="note-box asuv-wth-hint hidden">WTH: Deutsche Zitierweise, Harvard-Zitierweise oder APA-Zitierstil &ndash; einheitlich.</div>
       </div>
       <div class="card" style="margin-top:14px;">
         <h3>4. Didaktische Analyse und methodische Entscheidungen</h3>
         <label>Didaktische Analyse</label><textarea id="asuv_didaktisch" rows="4"></textarea>
+        <div class="note-box asuv-wth-hint hidden">WTH (4.1): Legitimation des Themas über den Lehrplan, fachliche Ziele der Klassenstufe, Verankerung im Lernbereich aufzeigen.</div>
         <label>Didaktische Reduktion</label><textarea id="asuv_reduktion"></textarea>
+        <div class="note-box asuv-wth-hint hidden">WTH (4.2): quantitative und qualitative Reduktion begründen; Medienauswahl begründen; Lebensweltbezug (wo die SuS abgeholt werden); realitätsbezogene Aufgaben/Problemstellungen, Handlungsorientierung, Mehrperspektivität; kooperatives und partnerschaftliches Lernen; didaktische Prinzipien lt. LP; überfachliche Kompetenzen (Lesekompetenz, Sozialkompetenz, Demokratieerziehung, BNE); fachübergreifende Aspekte (TC 5/6, Physik, Mathematik, Biologie, Informatik).</div>
         <label>Methodische Entscheidungen (getrennt von der didaktischen Analyse)</label><textarea id="asuv_methodisch" rows="4"></textarea>
+        <div class="note-box asuv-wth-hint hidden">WTH (4.3): Begrüßung, Einstieg und Schluss ausdrücklich benennen; roter Faden / Phrasierung; begründeter Einsatz von Lehrmaterial, digitalen Medien, Tafelbild, Sozialform, Schüler-/Lehrer-Aktivität, Hausaufgaben; Rituale zu Stundenbeginn und Stundenende; Differenzierungsangebote (Länge der Arbeitsphasen, Wechsel der Sozialform, Anschauungsebenen, Gruppenbildung bei GA, EA/PA, Präsentationsformen, Feedback); Handlungsalternativen.</div>
       </div>
       <div class="card" style="margin-top:14px;"><h3>5. Verlaufsplanung</h3><div id="asuvPhases"></div><div class="hint">Automatisch aus der Phasentabelle der Stunde übernommen.</div></div>
-      <div class="card" style="margin-top:14px;"><h3>6. Anhang</h3><div id="asuvBibox" class="small muted" style="margin-bottom:8px;"></div><label>Weitere Materialhinweise</label><textarea id="asuv_anhang"></textarea></div>
+      <div class="card" style="margin-top:14px;"><h3>6. Anhang</h3><div id="asuvBibox" class="small muted" style="margin-bottom:8px;"></div><label>Weitere Materialhinweise</label><textarea id="asuv_anhang"></textarea><div class="note-box asuv-wth-hint hidden">WTH: alle Tafelbilder, alle AB mit Erwartungsbild, LK mit Erwartungsbild, Bilder, LB-Texte, Sitzplan, komplette Lernbereichsplanung.</div></div>
       <div class="card soft" style="margin-top:14px;"><h3>Formalien-Checkliste (Selbstkontrolle vor Abgabe)</h3><div id="asuvChecklist"></div></div>
 
       <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap;">

@@ -225,6 +225,27 @@ def test_asuv_job_error_state(client, auth, monkeypatch):
     assert "JSON" in body["error"]
 
 
+def test_asuv_wth_guidance_only_for_wth(client, auth, monkeypatch):
+    """Fach WTH -> Leitfaden-Fischer-Strukturvorgaben im Prompt; Deutsch -> nicht."""
+    payload = json.dumps({f: "Text" for f in
+                          ["bedingungOrg", "bedingungLern", "bedingungEinordnung", "ziele", "sachanalyse",
+                           "quellen", "didaktisch", "reduktion", "methodisch"]})
+    state = _install(monkeypatch, payload)
+    _set_key(client)
+
+    wth = client.post("/api/lessons", json={"title": "Kunststoffe", "subject": "WTH", "grade": 8}).json()
+    client.post(f"/api/ai/asuv/{wth['id']}")
+    wth_prompt = state["calls"][-1]["messages"][0]["content"]
+    assert "Fachspezifische Strukturvorgaben WTH (Seminar Fischer)" in wth_prompt
+    assert "zwei vorangegangenen und der zwei nachfolgenden Stunden" in wth_prompt
+    assert "Begrüßung, Einstieg und Schluss" in wth_prompt
+
+    de = _make_lesson(client)
+    client.post(f"/api/ai/asuv/{de['id']}")
+    de_prompt = state["calls"][-1]["messages"][0]["content"]
+    assert "Seminar Fischer" not in de_prompt
+
+
 def test_ai_job_foreign_user_404(client, auth, app):
     """Job eines fremden Nutzers ist nicht abrufbar (user_id-Scoping)."""
     import sqlite3

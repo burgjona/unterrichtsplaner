@@ -4447,6 +4447,9 @@ async function loadAsuv(lessonId) {
     asuvSaved = !!fromLocal || !!a.saved;
     ASUV_FIELDS.forEach(([id, key]) => { $(`asuv_${id}`).value = a[key] || ""; });
     $("asuvBiboxHint").style.display = a.biboxEmpty ? "block" : "none";
+    // WTH: fachspezifische Struktur-Hinweise (Leitfaden Fischer) nur bei WTH-Stunden einblenden.
+    const isWth = (lesson && lesson.subject || "").toUpperCase() === "WTH";
+    document.querySelectorAll(".asuv-wth-hint").forEach((el) => el.classList.toggle("hidden", !isWth));
     const cl = $("asuvChecklist");
     cl.innerHTML = "";
     ASUV_CHECKS.forEach((item, i) => {

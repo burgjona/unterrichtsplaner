@@ -465,6 +465,44 @@ _ASUV_SCHEMA = {
     "properties": {f: _STR for f in _ASUV_FIELDS},
 }
 
+# Fachspezifische Strukturvorgaben des WTH-Seminars (Leitfaden Fischer,
+# reference/asuv_leitfaden_wth.md). Nur bei subject == "WTH" an den Prompt gehängt –
+# die generische LASUB-Struktur bleibt für Deutsch unverändert.
+_ASUV_WTH_GUIDANCE = (
+    "Fachspezifische Strukturvorgaben WTH (Seminar Fischer) – verbindlich einhalten:\n"
+    "- bedingungOrg: Rahmenbedingungen (Raumwechsel, Lage der Stunde im Stundenplan, "
+    "Wochenende, Schulbus, Ausfall/Vertretung, Arbeitsmittel) und technische Voraussetzungen "
+    "(Tafel, Beamer, Lichteinfall, Projektionswand, Medien) jeweils mit ihrer positiven oder "
+    "negativen Wirkung auf DIESE Stunde beschreiben.\n"
+    "- bedingungLern: Sozial- und Arbeitsverhalten sowie Leistungsvermögen der SuS "
+    "(Verhalten/Leistung in den Sozialformen und Arbeitstechniken, Umgang mit Medien und "
+    "Arbeitsmaterialien); fachliche Voraussetzungen (Vorkenntnisse, Methoden, Kompetenzen) und "
+    "der angestrebte Kompetenzzuwachs; Besonderheiten (LRS, ADHS, Verhaltensauffälligkeiten, "
+    "DaZ, Inklusion, Feinmotorik). Als Fließtext; Zusammenhang zwischen den "
+    "organisatorisch-technischen Rahmenbedingungen und der didaktischen Analyse herstellen.\n"
+    "- bedingungEinordnung: die LP-Inhalte der zwei vorangegangenen und der zwei nachfolgenden "
+    "Stunden konkret benennen.\n"
+    "- ziele: SMART; Doppelverbformulierung (zu entwickelnde Kompetenz + 'indem' + prüfbare "
+    "Aktion); max. 3-4 Ziele; fachliche und überfachliche Ziele; Bloom-Taxonomie / w-k-w-Modell.\n"
+    "- sachanalyse: mindestens zwei fachwissenschaftliche Literaturhinweise nennen; ggf. "
+    "Erklärvideo/Internetquellen, Schaubilder, Fallbeispiele, Modelle, Maschinen/Werkzeuge.\n"
+    "- quellen: Zitierweise Deutsche Zitierweise, Harvard oder APA – einheitlich.\n"
+    "- didaktisch: Legitimation des Themas über den Lehrplan, fachliche Ziele der Klassenstufe, "
+    "Verankerung im Lernbereich aufzeigen.\n"
+    "- reduktion: quantitative und qualitative Reduktion begründen (fasslich und fachlich "
+    "korrekt); Medienauswahl begründen; Lebensweltbezug (wo die SuS abgeholt werden); "
+    "realitätsbezogene Aufgaben/Problemstellungen, Handlungsorientierung, Mehrperspektivität; "
+    "kooperatives und partnerschaftliches Lernen; didaktische Prinzipien lt. LP; überfachliche "
+    "Kompetenzen (Lesekompetenz, Sozialkompetenz, Demokratieerziehung, BNE); fachübergreifende "
+    "Aspekte (TC 5/6, Physik, Mathematik, Biologie, Informatik).\n"
+    "- methodisch: Begrüßung, Einstieg und Schluss ausdrücklich benennen; roter Faden / "
+    "Phrasierung; begründeter Einsatz von Lehrmaterial, digitalen Medien, Tafelbild, Sozialform, "
+    "Schüler-/Lehrer-Aktivität, Hausaufgaben; Rituale zu Stundenbeginn und Stundenende; "
+    "Differenzierungsangebote (Länge der Arbeitsphasen, Wechsel der Sozialform, "
+    "Anschauungsebenen, Gruppenbildung bei GA, EA/PA, Präsentationsformen, Feedback); "
+    "Handlungsalternativen."
+)
+
 
 @router.post("/asuv/{lesson_id}")
 def asuv_suggestion(lesson_id: int, background_tasks: BackgroundTasks, request: Request,
@@ -494,11 +532,13 @@ def asuv_suggestion(lesson_id: int, background_tasks: BackgroundTasks, request: 
                "die Phasen-Verortung je Feinziel im Verlaufsplan nachweisen):\n" + "\n".join(lz_lines)
                ) if lz_lines else "Keine Lernziele erfasst – aus Klafki/Phasen ableiten."
     ctx = ai.fts_context(conn, user_id, f"{l['title']} {l['subject']}", l["subject"], l["grade"])
+    fach_block = f"\n\n{_ASUV_WTH_GUIDANCE}" if (l["subject"] or "").upper() == "WTH" else ""
     user_text = (f"Stunde: {l['title']} · Fach {l['subject']} · Klasse {l['grade']} · Typ {l['lesson_type']}\n"
                  f"Klafki: {' | '.join(x for x in klafki if x) or '-'}\n"
                  f"Phasen: {phase_text}\n"
                  f"{lz_text}\n"
-                 f"Lehrwerk: {l['bibox_werk'] or '-'} {l['bibox_seite'] or ''}\n\n{_ctx_block(ctx)}")
+                 f"Lehrwerk: {l['bibox_werk'] or '-'} {l['bibox_seite'] or ''}"
+                 f"{fach_block}\n\n{_ctx_block(ctx)}")
     return _start_ai_job(conn, user_id, background_tasks, request, "asuv", "asuv",
                          _ASUV_SYSTEM, user_text, _ASUV_SCHEMA, max_tokens=4000)
 
