@@ -461,6 +461,7 @@ function updateSozialformMonotonyHint() {
 /* ---------- Lernziele-Editor (M11) ---------- */
 let lessonZiele = [];   // [{kind:'grob'|'fein', text, bloomStufe, phaseSortOrder}]
 let lessonTafelbild = { titel: "", bloecke: [] };   // KI-Tafelbild-Vorschlag (U31)
+let lessonTafelbildBildId = null;   // Material-id eines eigenen Tafelbild-Fotos (U31b), sonst null
 
 function renderLernziele() {
   const wrap = $("lernzieleList");
@@ -529,7 +530,9 @@ function clearLessonForm() {
    "biboxWerk", "biboxSeite", "biboxNotiz", "lessonMatSubject",
    "tafelbildEingabe", "tafelbildNotiz"].forEach((id) => ($(id).value = ""));
   lessonTafelbild = { titel: "", bloecke: [] };
+  lessonTafelbildBildId = null;
   renderTafelbild();
+  if ($("tafelbildBildFile")) $("tafelbildBildFile").value = "";
   if ($("lessonMatFile")) $("lessonMatFile").value = "";
   if (lessonAutosaveTimer) { clearTimeout(lessonAutosaveTimer); lessonAutosaveTimer = null; }
   lessonPendingLinksApplied = false;
@@ -636,6 +639,7 @@ function buildLessonBody() {
     bibox: { werk: $("biboxWerk").value, seite: $("biboxSeite").value, notiz: $("biboxNotiz").value },
     tafelbildEingabe: $("tafelbildEingabe").value, tafelbild: lessonTafelbild,
     tafelbildNotiz: $("tafelbildNotiz").value,
+    tafelbildBildMaterialId: lessonTafelbildBildId,
     phases,
     lernziele: readLernziele(phaseIndexMap),
   };
@@ -755,6 +759,7 @@ function loadLessonIntoForm(l) {
   $("biboxWerk").value = b.werk || ""; $("biboxSeite").value = b.seite || ""; $("biboxNotiz").value = b.notiz || "";
   $("tafelbildEingabe").value = l.tafelbildEingabe || "";
   lessonTafelbild = l.tafelbild || { titel: "", bloecke: [] };
+  lessonTafelbildBildId = l.tafelbildBildMaterialId != null ? l.tafelbildBildMaterialId : null;
   renderTafelbild();
   $("tafelbildNotiz").value = l.tafelbildNotiz || "";
   setPhasesFromLesson(l.phases);
@@ -3887,6 +3892,12 @@ function openLessonModal(l) {
   const moveBtn = l.classId != null
     ? '<button class="btn small secondary" id="modalMoveBtn" style="float:right; margin-right:10px;">Stunde verschieben</button>'
     : "";
+  const tbBoard = tafelbildBoardHtml(l.tafelbild);
+  const tbImg = l.tafelbildBildMaterialId != null
+    ? `<img src="/api/materials/${l.tafelbildBildMaterialId}/download" alt="Tafelbild" style="max-width:100%;border-radius:8px;display:block;margin-bottom:8px;">
+       <button class="btn small danger" id="modalTbImgRemove" style="margin-bottom:10px;">Bild entfernen</button>`
+    : "";
+  const tbEmpty = (!tbBoard && !tbImg) ? '<p class="muted small">Kein Tafelbild geplant.</p>' : "";
   $("modalRoot").innerHTML =
     `<div class="modal-overlay" id="modalOverlay"><div class="modal-box">
       <button class="modal-close" id="modalCloseBtn">Schließen</button>
@@ -3898,6 +3909,17 @@ function openLessonModal(l) {
       <h2>${esc(l.title)}</h2>
       <p class="muted small">${esc(l.subject)} – Klasse ${esc(l.grade || "?")} – ${esc(l.lessonType || "")} – ${esc(l.durationMinutes || 45)} Min. ${l.time ? "– " + esc(l.time) + " Uhr" : ""}</p>
       <div id="modalMoveSlots"></div>
+      <div class="modal-section"><h3>Tafelbild</h3>
+        ${tbImg}
+        ${tbBoard ? `<div class="tafelbild-board">${tbBoard}</div>` : ""}
+        ${tbEmpty}
+        <label class="small" style="display:block; margin-top:10px;">Notizen</label>
+        <textarea id="modalTbNotiz" style="width:100%; min-height:60px;" placeholder="Eigene Ergänzungen zum Tafelbild ...">${esc(l.tafelbildNotiz || "")}</textarea>
+        <div style="margin-top:8px;">
+          <input type="file" id="modalTbImgFile" accept="image/*" />
+          <button class="btn small" id="modalTbImgUpload" style="margin-top:6px;">Eigenes Bild hochladen</button>
+        </div>
+      </div>
       <div class="modal-section"><h3>Lernziele</h3>${zieleHtml}</div>
       <div class="modal-section"><h3>Phasentabelle</h3>${phases}</div>
       <div class="modal-section"><h3>Lehrbuch-Referenz</h3>${bibox}</div>
@@ -3926,6 +3948,7 @@ function openLessonModal(l) {
     } catch (e) { toast(e.message, false); }
   };
   loadModalMaterials(l);
+  wireModalTafelbild(l);
   $("modalMatUpload").onclick = async () => {
     const f = $("modalMatFile").files[0];
     if (!f) { toast("Bitte eine Datei wählen.", false); return; }
@@ -3938,6 +3961,55 @@ function openLessonModal(l) {
     catch (e) { toast(e.message, false); }
   };
 }
+// Tafelbild-Sektion im Stunden-Detail-Modal: Notizen direkt editierbar (debounced Autosave),
+// eigenes Bild hochladen/entfernen. Änderungen laufen über den Offline-Sync wie im Formular;
+// ist dieselbe Stunde gerade im Bearbeiten-Formular offen, wird dessen Vorschau mitgezogen.
+let _modalTbNotizTimer = null;
+function wireModalTafelbild(l) {
+  const ta = $("modalTbNotiz");
+  if (ta) {
+    ta.addEventListener("input", () => {
+      if (_modalTbNotizTimer) clearTimeout(_modalTbNotizTimer);
+      _modalTbNotizTimer = setTimeout(async () => {
+        try {
+          await SyncEngine.update("lessons", l.id, { tafelbildNotiz: ta.value });
+          l.tafelbildNotiz = ta.value;
+          if (editingLessonId === l.id && $("tafelbildNotiz")) $("tafelbildNotiz").value = ta.value;
+        } catch (e) { toast(e.message, false); }
+      }, 900);
+    });
+  }
+  const up = $("modalTbImgUpload");
+  if (up) up.onclick = async () => {
+    const f = $("modalTbImgFile").files[0];
+    if (!f) { toast("Bitte ein Bild wählen.", false); return; }
+    const fd = new FormData();
+    fd.append("file", f);
+    fd.append("subject", l.subject);
+    if (l.grade) fd.append("grade", l.grade);
+    fd.append("lessonId", l.id);
+    up.disabled = true;
+    try {
+      const m = await API.upload("/materials/upload", fd);
+      await SyncEngine.update("lessons", l.id, { tafelbildBildMaterialId: m.id });
+      l.tafelbildBildMaterialId = m.id;
+      if (editingLessonId === l.id) { lessonTafelbildBildId = m.id; renderTafelbildBild(); }
+      toast("Bild hinzugefügt.");
+      openLessonModal(l);
+    } catch (e) { up.disabled = false; toast(e.message, false); }
+  };
+  const rm = $("modalTbImgRemove");
+  if (rm) rm.onclick = async () => {
+    try {
+      await SyncEngine.update("lessons", l.id, { tafelbildBildMaterialId: null });
+      l.tafelbildBildMaterialId = null;
+      if (editingLessonId === l.id) { lessonTafelbildBildId = null; renderTafelbildBild(); }
+      toast("Bild entfernt.");
+      openLessonModal(l);
+    } catch (e) { toast(e.message, false); }
+  };
+}
+
 async function loadModalMaterials(l) {
   const wrap = document.getElementById("modalMaterials");
   if (!wrap) return;
@@ -4579,20 +4651,37 @@ async function aiLessonSuggest() {
 
 // Tafelbild (U31): rendert das KI-Ergebnis als Kacheln (flex-wrap – die KI entscheidet frei,
 // wie viele Blöcke sinnvoll sind, kein fester Spaltenzwang), hervorgehobene Blöcke als Merksatz-Kasten.
-function renderTafelbild() {
-  const board = $("tafelbildBoard");
-  if (!board) return;
-  const tb = lessonTafelbild || { titel: "", bloecke: [] };
-  const hasContent = !!(tb.titel || (tb.bloecke && tb.bloecke.length));
-  board.classList.toggle("hidden", !hasContent);
-  if (!hasContent) { board.innerHTML = ""; return; }
+// Reines Rendering des KI-Tafelbilds als HTML-String (ohne DOM-Seiteneffekte) – auch vom
+// Stunden-Detail-Modal genutzt. Leerer String, wenn kein Inhalt.
+function tafelbildBoardHtml(tb) {
+  tb = tb || { titel: "", bloecke: [] };
+  if (!(tb.titel || (tb.bloecke && tb.bloecke.length))) return "";
   const title = tb.titel ? `<div class="tafelbild-title">${esc(tb.titel)}</div>` : "";
   const blocks = (tb.bloecke || []).map((b) => {
     const head = b.ueberschrift ? `<div class="tafelbild-block-head">${esc(b.ueberschrift)}</div>` : "";
     const pts = (b.punkte || []).map((p) => `<li>${esc(p)}</li>`).join("");
     return `<div class="tafelbild-block${b.hervorgehoben ? " hervorgehoben" : ""}">${head}<ul>${pts}</ul></div>`;
   }).join("");
-  board.innerHTML = `${title}<div class="tafelbild-blocks">${blocks}</div>`;
+  return `${title}<div class="tafelbild-blocks">${blocks}</div>`;
+}
+
+function renderTafelbild() {
+  const board = $("tafelbildBoard");
+  if (board) {
+    const html = tafelbildBoardHtml(lessonTafelbild);
+    board.classList.toggle("hidden", !html);
+    board.innerHTML = html;
+  }
+  renderTafelbildBild();
+}
+
+// Eigenes Tafelbild-Foto im Bearbeiten-Formular (Vorschau + „entfernen").
+function renderTafelbildBild() {
+  const wrap = $("tafelbildBildWrap");
+  if (!wrap) return;
+  const has = lessonTafelbildBildId != null;
+  wrap.classList.toggle("hidden", !has);
+  if (has) $("tafelbildBildImg").src = `/api/materials/${lessonTafelbildBildId}/download`;
 }
 
 async function aiTafelbildSuggest() {
@@ -4611,6 +4700,42 @@ async function aiTafelbildSuggest() {
     toast(res.cached ? "Tafelbild (aus Cache) eingefügt." : "Tafelbild eingefügt – bitte prüfen.");
   } catch (e) { toast(e.message, false); }
   finally { btn.disabled = false; btn.textContent = label; }
+}
+
+// Eigenes Tafelbild-Foto: als normales Material hochladen (mit lessonId verknüpft) und die
+// Material-id in der Stunde hinterlegen. Braucht eine bereits gespeicherte Stunde.
+async function uploadTafelbildBild() {
+  const f = $("tafelbildBildFile").files[0];
+  if (!f) { toast("Bitte ein Bild wählen.", false); return; }
+  if (!editingLessonId) {
+    toast("Bitte die Stunde zuerst speichern – danach lässt sich ein Bild hochladen.", false);
+    return;
+  }
+  const fd = new FormData();
+  fd.append("file", f);
+  fd.append("subject", $("lessonSubject").value);
+  const grade = Number($("lessonGrade").value);
+  if (grade) fd.append("grade", grade);
+  fd.append("lessonId", editingLessonId);
+  const btn = $("tafelbildBildUpload"); btn.disabled = true;
+  try {
+    const m = await API.upload("/materials/upload", fd);
+    lessonTafelbildBildId = m.id;
+    await SyncEngine.update("lessons", editingLessonId, { tafelbildBildMaterialId: m.id });
+    renderTafelbildBild();
+    $("tafelbildBildFile").value = "";
+    toast("Bild hochgeladen.");
+  } catch (e) { toast(e.message, false); }
+  finally { btn.disabled = false; }
+}
+
+async function removeTafelbildBild() {
+  lessonTafelbildBildId = null;
+  renderTafelbildBild();
+  if (editingLessonId) {
+    try { await SyncEngine.update("lessons", editingLessonId, { tafelbildBildMaterialId: null }); }
+    catch (e) { toast(e.message, false); }
+  }
 }
 
 async function aiLernzieleSuggest() {
@@ -6034,6 +6159,8 @@ function wireEvents() {
   // KI (M7)
   $("aiPlanBtn").onclick = aiLessonSuggest;
   $("tafelbildBtn").onclick = aiTafelbildSuggest;
+  $("tafelbildBildUpload").onclick = uploadTafelbildBild;
+  $("tafelbildBildRemove").onclick = removeTafelbildBild;
   $("stoffAiBtn").onclick = () => getStoffplanModule().then((m) => m.aiStoffplan());
   $("seqAiBtn").onclick = () => getSequenzplanModule().then((m) => m.aiSequenzplan());
   $("seqAddBtn").onclick = () => getSequenzplanModule().then((m) => m.seqAddCard());

@@ -627,6 +627,15 @@
           <button class="btn ai" id="tafelbildBtn">✨ Tafelbild vorschlagen</button>
         </div>
         <div id="tafelbildBoard" class="tafelbild-board hidden"></div>
+        <div id="tafelbildBildWrap" class="hidden" style="margin-top:12px;">
+          <img id="tafelbildBildImg" alt="Eigenes Tafelbild" style="max-width:100%;border-radius:8px;display:block;" />
+          <button class="btn small danger" id="tafelbildBildRemove" style="margin-top:6px;">Bild entfernen</button>
+        </div>
+        <div style="margin-top:12px;">
+          <label>Eigenes Bild (z. B. Foto eines Tafelbilds)</label>
+          <input type="file" id="tafelbildBildFile" accept="image/*" />
+          <button class="btn small" id="tafelbildBildUpload" style="margin-top:6px;">Bild hochladen</button>
+        </div>
         <div style="margin-top:12px;">
           <label>Notizen (z. B. Foto-Hinweis, eigene Ergänzungen)</label>
           <textarea id="tafelbildNotiz" placeholder="Eigene Ergänzungen zum Tafelbild ..."></textarea>

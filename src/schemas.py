@@ -231,6 +231,7 @@ class LessonCreate(Base):
     tafelbild_eingabe: Optional[str] = None
     tafelbild: Tafelbild = Field(default_factory=Tafelbild)
     tafelbild_notiz: Optional[str] = None
+    tafelbild_bild_material_id: Optional[int] = None
     phases: List[PhaseIn] = Field(default_factory=list)
     lernziele: List["LernzielIn"] = Field(default_factory=list)
 
@@ -260,6 +261,7 @@ class LessonUpdate(Base):
     tafelbild_eingabe: Optional[str] = None
     tafelbild: Optional[Tafelbild] = None
     tafelbild_notiz: Optional[str] = None
+    tafelbild_bild_material_id: Optional[int] = None
     phases: Optional[List[PhaseIn]] = None
     lernziele: Optional[List["LernzielIn"]] = None
     reflection_skipped: Optional[bool] = None
@@ -291,6 +293,7 @@ class LessonOut(Base):
     tafelbild_eingabe: Optional[str] = None
     tafelbild: Tafelbild = Field(default_factory=Tafelbild)
     tafelbild_notiz: Optional[str] = None
+    tafelbild_bild_material_id: Optional[int] = None
     phases: List[PhaseOut] = Field(default_factory=list)
     lernziele: List["LernzielOut"] = Field(default_factory=list)
     created_at: str

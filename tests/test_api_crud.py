@@ -59,6 +59,14 @@ def test_full_flow_and_camelcase(client, auth):
     assert upd["tafelbildNotiz"] == "Tafelbild-Foto: siehe Ordner"
     assert upd["tafelbild"]["titel"] == "Die Ballade"         # bleibt beim reinen Notiz-Update erhalten
 
+    # Eigenes Tafelbild-Foto: Referenz auf ein Material, per Partial-Update setzbar/löschbar
+    assert lj["tafelbildBildMaterialId"] is None
+    upd = client.put(f"/api/lessons/{lj['id']}", json={"tafelbildBildMaterialId": 42}, headers=auth).json()
+    assert upd["tafelbildBildMaterialId"] == 42
+    assert upd["tafelbildNotiz"] == "Tafelbild-Foto: siehe Ordner"   # unangetastet
+    upd = client.put(f"/api/lessons/{lj['id']}", json={"tafelbildBildMaterialId": None}, headers=auth).json()
+    assert upd["tafelbildBildMaterialId"] is None
+
     # Kalendereintrag
     cal = client.post("/api/calendar",
                       json={"title": "LUE Rechtschreibung", "entryDate": "2025-09-15",
