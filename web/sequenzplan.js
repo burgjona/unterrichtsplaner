@@ -156,7 +156,7 @@ export function createSequenzplanModule(ctx) {
         <input type="text" class="seq-card-title" data-seq-f="title" data-seq-i="${idx}" value="${esc(card.title)}" placeholder="Titel der Stunde" />
         <button class="btn tiny secondary" data-seq-up="${idx}" ${idx === 0 ? "disabled" : ""} title="Nach vorn">↑</button>
         <button class="btn tiny secondary" data-seq-down="${idx}" ${idx === seqCards.length - 1 ? "disabled" : ""} title="Nach hinten (Position)">↓</button>
-        <button class="btn tiny secondary" data-seq-shift="${idx}" ${card.id == null ? "disabled" : ""} title="Diese Stunde hat nicht gereicht – ganze Sequenz ab hier eine Position nach hinten schieben">Nicht gereicht</button>
+        <button class="btn tiny secondary" data-seq-shift="${idx}" ${card.id == null ? "disabled" : ""} title="Diese Stunde hat nicht gereicht – Fortsetzungs-Stunde dahinter einfügen, folgende Karten + Daten rücken nach">Nicht gereicht</button>
         <button class="btn tiny secondary" data-local-undo-btn disabled title="Letzte ungespeicherte Änderung an dieser Karte rückgängig machen">Rückgängig</button>
         <button class="btn tiny danger" data-seq-del="${idx}" title="Stunde entfernen">✕</button>
       </div>
@@ -190,9 +190,15 @@ export function createSequenzplanModule(ctx) {
     if (summary) summary.textContent = seqCards.length ? `${seqCards.length} Stunden` : "";
 
     wrap.querySelectorAll("[data-seq-f]").forEach((el) => {
+      const f = el.dataset.seqF;
+      if (f === "date") {
+        // Datum: erst beim change-Event (fertige Auswahl) einsortieren + Folgedaten nachziehen.
+        el.addEventListener("change", () => onSeqDateChanged(Number(el.dataset.seqI), el.value));
+        return;
+      }
       const evt = el.tagName === "INPUT" && el.type === "checkbox" ? "change" : "input";
       el.addEventListener(evt, () => {
-        const i = Number(el.dataset.seqI), f = el.dataset.seqF;
+        const i = Number(el.dataset.seqI);
         seqCards[i][f] = el.type === "checkbox" ? el.checked : el.value;
         if (summary) summary.textContent = `${seqCards.length} Stunden`;   // Karten-Zahl unverändert, nur Refresh vermeiden
         markSeqDirty();
@@ -221,23 +227,84 @@ export function createSequenzplanModule(ctx) {
     renderSeqCards();
   }
 
+  // Zieht ab startIdx alle Folgekarten durch und ersetzt nur leere ODER kollidierende
+  // (<= Datum des jeweiligen Vorgängers) Datumsangaben durch den nächsten realen
+  // Stundenplan-Termin (suggest-date?after=). Manuell gesetzte, plausibel späte Daten
+  // bleiben stehen. movedToId-Hinweiskarten werden übersprungen. Doppelstunden-Rhythmus
+  // (spanSlots > 1) wie in fillSeqDatesFromSuggestions: Folgekarte erbt dann dasselbe Datum.
+  async function reflowSeqDatesFrom(blockId, startIdx, afterDate) {
+    let after = afterDate;
+    let i = startIdx;
+    while (i < seqCards.length) {
+      const c = seqCards[i];
+      if (c.movedToId != null) { i++; continue; }
+      if (c.date && c.date > after) { after = c.date; i++; continue; }
+      let res;
+      try {
+        res = await API.get(`/sequenz-stunden/suggest-date?blockId=${blockId}&after=${after}`);
+      } catch (e) { break; }
+      if (!res || !res.date) break;
+      c.date = res.date;
+      after = res.date;
+      i++;
+      if (res.spanSlots > 1 && i < seqCards.length && seqCards[i].movedToId == null
+          && (!seqCards[i].date || seqCards[i].date <= res.date)) {
+        seqCards[i].date = res.date;
+        i++;
+      }
+    }
+  }
+
+  // Datum an einer Karte gesetzt/geändert → Karte nach Datum aufsteigend einsortieren und
+  // die Folgekarten neu aus dem Stundenplan durchdatieren (nur leere/kollidierende).
+  async function onSeqDateChanged(idx, value) {
+    const card = seqCards[idx];
+    if (!card) return;
+    if (seqAutosaveTimer) { clearTimeout(seqAutosaveTimer); seqAutosaveTimer = null; }
+    card.date = value || "";
+    if (!value) { markSeqDirty(); renderSeqCards(); return; }
+    const blockId = seqActiveBlockId || Number($("seqBlock").value);
+    // Minimale Verschiebung: nur so weit umsortieren, dass die Reihenfolge der bereits
+    // DATIERTEN Karten wieder aufsteigend ist. Undatierte Karten behalten ihren Platz –
+    // die Sequenz-Reihenfolge bleibt die führende Struktur.
+    seqCards.splice(idx, 1);
+    let pos = idx > seqCards.length ? seqCards.length : idx;
+    while (pos > 0) {
+      const p = seqCards[pos - 1];
+      if (p.date && p.date > value) pos--; else break;
+    }
+    while (pos < seqCards.length) {
+      const n = seqCards[pos];
+      if (n.date && n.date < value) pos++; else break;
+    }
+    seqCards.splice(pos, 0, card);
+    if (blockId) await reflowSeqDatesFrom(blockId, pos + 1, value);
+    markSeqDirty();
+    renderSeqCards();
+  }
+
+  // "Nicht gereicht": diese Stunde hat nicht ausgereicht → direkt dahinter eine
+  // Fortsetzungs-Karte einfügen; alle folgenden Karten rücken eine Position nach hinten,
+  // ihre Daten werden ab dem Termin dieser Stunde neu aus dem Stundenplan gezogen.
   async function seqShiftCard(idx) {
     const card = seqCards[idx];
     if (!card || card.id == null) return;
-    await flushSeqAutosave();   // erst noch ausstehende lokale Edits (z.B. Datum) sichern –
-                                 // sonst würde der anschließende Server-Reload sie verwerfen
-    const withCalendar = window.confirm(
-      "Auch bereits terminierte, verknüpfte Kalendertermine dieser und nachfolgender Stunden automatisch nachrücken?"
-    );
-    try {
-      const res = await API.post(`/sequenz-stunden/${card.id}/shift`, { withCalendar });
-      if (res.overBudget) {
-        toast(`Achtung: ${res.plannedCount} Stunden geplant, Richtwert ${res.richtwertUstd ?? "?"} Ustd. – hier oder in einem anderen Lernbereich kürzen.`, false);
-      } else {
-        toast("Verschoben.");
-      }
-      await loadSeqCardsFromServer();
-    } catch (e) { toast(e.message, false); }
+    await flushSeqAutosave();   // ausstehende lokale Edits (z.B. Datum) zuerst sichern
+    const blockId = seqActiveBlockId || Number($("seqBlock").value);
+    const cont = {
+      id: null, title: `${card.title} (Fortsetzung)`, grobziel: card.grobziel || "",
+      isLk: false, isReferat: false, isKomplexeArbeit: false, isKlassenarbeit: false,
+      weitereNotenart: "", date: "", movedToId: null,
+    };
+    seqCards.splice(idx + 1, 0, cont);
+    let after = card.date;
+    if (!after) {
+      for (let j = idx; j >= 0; j--) { if (seqCards[j].date) { after = seqCards[j].date; break; } }
+    }
+    if (after && blockId) await reflowSeqDatesFrom(blockId, idx + 1, after);
+    markSeqDirty();
+    renderSeqCards();
+    toast("Fortsetzungs-Stunde eingefügt.");
   }
 
   async function seqAddCard() {
