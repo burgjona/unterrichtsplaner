@@ -27,7 +27,7 @@ _LESSON_COLS = (
     "klafki_struktur", "meyer_plan_json", "diff", "selbst_lernen",
     "bibox_werk", "bibox_seite", "bibox_notiz",
     "tafelbild_eingabe", "tafelbild_json", "tafelbild_notiz",
-    "tafelbild_bild_material_id",
+    "tafelbild_bild_material_id", "hefteintrag",
 )
 
 
@@ -122,6 +122,7 @@ def _lesson_values(body, klafki: Klafki, bibox: Bibox, meyer_plan, tafelbild: Ta
         "tafelbild_json": json.dumps(tafelbild.model_dump()) if tafelbild is not None else None,
         "tafelbild_notiz": body.tafelbild_notiz,
         "tafelbild_bild_material_id": body.tafelbild_bild_material_id,
+        "hefteintrag": body.hefteintrag,
     }
 
 
@@ -174,6 +175,7 @@ def _row_to_out(conn, row) -> LessonOut:
         tafelbild=Tafelbild(**json.loads(d["tafelbild_json"])) if d["tafelbild_json"] else Tafelbild(),
         tafelbild_notiz=d["tafelbild_notiz"],
         tafelbild_bild_material_id=d["tafelbild_bild_material_id"],
+        hefteintrag=d["hefteintrag"],
         phases=[PhaseOut(**dict(p)) for p in phases],
         lernziele=[LernzielOut(
             id=z["id"], kind=z["kind"], text=z["text"], bloom_stufe=z["bloom_stufe"],
@@ -252,7 +254,8 @@ def _apply_update_lesson(conn, user_id: int, lid: int, body: LessonUpdate) -> Le
     sets = {}
     for key in ("class_id", "lernbereich_id", "title", "subject", "grade",
                 "lesson_type", "duration_minutes", "time", "date", "diff", "selbst_lernen",
-                "tafelbild_eingabe", "tafelbild_notiz", "tafelbild_bild_material_id"):
+                "tafelbild_eingabe", "tafelbild_notiz", "tafelbild_bild_material_id",
+                "hefteintrag"):
         if key in data:
             sets[key] = data[key]
     if "klafki" in data and body.klafki is not None:

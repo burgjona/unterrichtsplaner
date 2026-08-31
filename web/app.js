@@ -528,7 +528,7 @@ let pendingLessonMaterialSubject = "";
 function clearLessonForm() {
   ["lessonIdeas", "lessonTitle", "lessonDate", "klafki1", "klafki2", "klafki3", "klafki4", "klafki5",
    "biboxWerk", "biboxSeite", "biboxNotiz", "lessonMatSubject",
-   "tafelbildEingabe", "tafelbildNotiz"].forEach((id) => ($(id).value = ""));
+   "tafelbildEingabe", "tafelbildNotiz", "hefteintrag"].forEach((id) => ($(id).value = ""));
   lessonTafelbild = { titel: "", bloecke: [] };
   lessonTafelbildBildId = null;
   renderTafelbild();
@@ -639,6 +639,7 @@ function buildLessonBody() {
     bibox: { werk: $("biboxWerk").value, seite: $("biboxSeite").value, notiz: $("biboxNotiz").value },
     tafelbildEingabe: $("tafelbildEingabe").value, tafelbild: lessonTafelbild,
     tafelbildNotiz: $("tafelbildNotiz").value,
+    hefteintrag: $("hefteintrag").value,
     tafelbildBildMaterialId: lessonTafelbildBildId,
     phases,
     lernziele: readLernziele(phaseIndexMap),
@@ -762,6 +763,7 @@ function loadLessonIntoForm(l) {
   lessonTafelbildBildId = l.tafelbildBildMaterialId != null ? l.tafelbildBildMaterialId : null;
   renderTafelbild();
   $("tafelbildNotiz").value = l.tafelbildNotiz || "";
+  $("hefteintrag").value = l.hefteintrag || "";
   setPhasesFromLesson(l.phases);
   $("editHintTitle").textContent = l.title || "";
   $("editHint").classList.remove("hidden");
@@ -1085,11 +1087,13 @@ function renderAll() {
   renderLessonFilterOptions();
   renderLessonTable();
   renderTodayList();
+  renderHefterReminders();
   renderWeekOverview();
   renderReflectSelect();
   renderReflectTable();
   renderOpenReflections();
   renderTodos();
+  reconcileHefterTodos();
   renderClassSelects();
   renderLessonSubjectOptions();
   renderClassToggles();
@@ -1206,8 +1210,77 @@ function renderClassDetail() {
   renderClassStudents();
   renderClassDupControl();
   getSeatPlanModule().then((m) => m.initSeatPlan());
+  renderClassDetailHefter();
   renderClassDetailStoffPlans();
   renderClassDetailNotes();
+}
+
+/* ---------- Hefter der SuS: chronologische Übersicht der Heftereinträge dieser Klasse ----------
+   Der Hefter folgt 1:1 der Stundenchronologie – kein eigenes Datenmodell, nur lessons.hefteintrag.
+   Jede Zeile ist direkt editierbar (debounced Autosave über den Offline-Sync, wie modalTbNotiz). */
+let cdHefterOnlyFilled = false;
+let _cdHefterTimers = {};
+
+function renderClassDetailHefter() {
+  const wrap = $("cdHefter");
+  const filterBox = $("cdHefterFilter");
+  if (!wrap) return;
+  const all = state.lessons
+    .filter((l) => String(l.classId) === String(detailClassId))
+    .sort((a, b) => (a.date || "9999").localeCompare(b.date || "9999") || (a.time || "").localeCompare(b.time || ""));
+  const withEntry = all.filter((l) => (l.hefteintrag || "").trim()).length;
+
+  if (filterBox) {
+    filterBox.innerHTML =
+      `<button class="btn small ${cdHefterOnlyFilled ? "" : "secondary"}" id="cdHefterToggle">` +
+      `${cdHefterOnlyFilled ? "Alle Stunden zeigen" : "Nur mit Eintrag"}</button>`;
+    $("cdHefterToggle").onclick = () => { cdHefterOnlyFilled = !cdHefterOnlyFilled; renderClassDetailHefter(); };
+  }
+
+  const lessons = cdHefterOnlyFilled ? all.filter((l) => (l.hefteintrag || "").trim()) : all;
+  if (!all.length) {
+    wrap.innerHTML = '<p class="muted small">Noch keine Stunden für diese Klasse geplant.</p>';
+    return;
+  }
+  wrap.innerHTML =
+    `<p class="muted small" style="margin-top:0;">${withEntry} von ${all.length} Stunden mit Heftereintrag.</p>` +
+    '<div class="table-scroll"><table class="hefter-table"><thead><tr>' +
+    "<th>Datum</th><th>Stunde / Thema</th><th>Heftereintrag der SuS</th>" +
+    "</tr></thead><tbody></tbody></table></div>";
+  const tb = wrap.querySelector("tbody");
+  lessons.forEach((l) => {
+    const tr = document.createElement("tr");
+    const dateCell = l.date
+      ? `${esc(deDate(l.date))}${l.time ? `<small>${esc(l.time)}</small>` : ""}`
+      : '<span class="muted">ohne Datum</span>';
+    tr.innerHTML =
+      `<td class="hefter-date">${dateCell}</td>` +
+      `<td class="hefter-thema"><a href="#" data-open-lesson="${l.id}">${esc(l.title || "Stunde")}</a>` +
+      `<span class="muted small">${esc(l.lessonType || "")}</span></td>` +
+      `<td class="hefter-entry"></td>`;
+    const ta = document.createElement("textarea");
+    ta.className = "hefter-input";
+    ta.rows = 2;
+    ta.placeholder = "— noch kein Eintrag —";
+    ta.value = l.hefteintrag || "";
+    ta.addEventListener("input", () => {
+      if (_cdHefterTimers[l.id]) clearTimeout(_cdHefterTimers[l.id]);
+      _cdHefterTimers[l.id] = setTimeout(async () => {
+        try {
+          await SyncEngine.update("lessons", l.id, { hefteintrag: ta.value });
+          l.hefteintrag = ta.value;
+          if (editingLessonId === l.id && $("hefteintrag")) $("hefteintrag").value = ta.value;
+        } catch (e) { toast(e.message, false); }
+      }, 900);
+    });
+    tr.querySelector(".hefter-entry").appendChild(ta);
+    tr.querySelector("[data-open-lesson]").onclick = (e) => {
+      e.preventDefault();
+      const les = state.lessons.find((x) => x.id === l.id);
+      if (les) openLessonModal(les);
+    };
+    tb.appendChild(tr);
+  });
 }
 
 /* ---------- U17-Anbindung: Notizen zu dieser Klasse in der Klassen-Detailansicht ----------
@@ -1816,6 +1889,93 @@ async function renderTodayList() {
   todayFallbackList(list, todayStr);
 }
 
+// Erinnerung im "Guten Tag!"-Panel, den Heftereintrag (was die SuS ins Heft geschrieben
+// haben) nachzupflegen. Vor Stundenende: dezenter Hinweis "noch offen". Nach Stundenende
+// bzw. für zurückliegende Tage: To-do "nachpflegen". Rein berechnet aus state.lessons –
+// verschwindet automatisch, sobald das Feld gefüllt ist. Die persistente Spiegelung in
+// "Aufgaben & To-dos" übernimmt reconcileHefterTodos().
+function hefterLessonEnd(l) {
+  if (!l.time || !/^\d{2}:\d{2}$/.test(l.time)) return null;
+  const [h, m] = l.time.split(":").map(Number);
+  const t = h * 60 + m + (l.durationMinutes || 45);
+  if (t >= 24 * 60) return "23:59";   // Stunde reicht über Mitternacht: heute gilt sie als "noch nicht vorbei"
+  return String(Math.floor(t / 60)).padStart(2, "0") + ":" + String(t % 60).padStart(2, "0");
+}
+// Status einer Stunde bzgl. Heftereintrag: null = nichts zu tun, "hinweis" = Stunde heute
+// noch nicht vorbei, "todo" = Stunde vorbei / liegt zurück und Feld leer.
+function hefterReminderStatus(l, todayStr, now) {
+  if ((l.hefteintrag || "").trim()) return null;
+  if (!l.date || l.date > todayStr) return null;
+  if (l.date < todayStr) return "todo";
+  const end = hefterLessonEnd(l);
+  if (end && now >= end) return "todo";
+  return "hinweis";
+}
+function renderHefterReminders() {
+  const block = $("hefterReminderBlock");
+  const list = $("hefterReminderList");
+  if (!block || !list) return;
+  const todayStr = isoDate(new Date());
+  const now = String(new Date().getHours()).padStart(2, "0") + ":" + String(new Date().getMinutes()).padStart(2, "0");
+  const items = state.lessons
+    .map((l) => ({ l, status: hefterReminderStatus(l, todayStr, now) }))
+    .filter((x) => x.status)
+    .sort((a, b) => (a.l.date + (a.l.time || "")).localeCompare(b.l.date + (b.l.time || "")));
+  list.innerHTML = "";
+  if (!items.length) { block.classList.add("hidden"); return; }
+  block.classList.remove("hidden");
+  items.forEach(({ l, status }) => {
+    const div = document.createElement("div");
+    div.className = "mini-item";
+    const when = l.date === todayStr ? (l.time || "heute") : deDate(l.date);
+    const badge = status === "todo"
+      ? '<span class="badge warn">nachpflegen</span>'
+      : '<span class="badge">noch offen</span>';
+    div.innerHTML =
+      `<span class="time">${esc(when)}</span>` +
+      `<span>Heftereintrag: ${esc(l.title || "Stunde")}</span>${badge}`;
+    div.onclick = () => openLessonModal(l);
+    list.appendChild(div);
+  });
+}
+
+// Spiegelt den "nachpflegen"-Zustand (Stunde vorbei, Heftereintrag leer) in echte, abhakbare
+// To-dos in "Aufgaben & To-dos". Ein Hefter-To-do = system-To-do mit hefterLessonId. Anlegen
+// nur bei Status "todo"; automatisch archivieren, sobald das Feld gefüllt ist (Status ≠ "todo").
+// Dedup gegen ALLE To-dos inkl. archivierte: ein einmal weggeklickter Hefter-To-do kommt nicht
+// wieder. Läuft aus renderAll heraus (fire-and-forget), schreibt nur bei echter Differenz.
+let _hefterReconcileBusy = false;
+async function reconcileHefterTodos() {
+  if (_hefterReconcileBusy || !state.lessons) return;
+  _hefterReconcileBusy = true;
+  try {
+    const todayStr = isoDate(new Date());
+    const now = String(new Date().getHours()).padStart(2, "0") + ":" + String(new Date().getMinutes()).padStart(2, "0");
+    const allTodos = await SyncEngine.materialize("todos");
+    const todoByLesson = new Map();
+    allTodos.forEach((t) => { if (t.hefterLessonId != null) todoByLesson.set(t.hefterLessonId, t); });
+    let changed = false;
+    for (const l of state.lessons) {
+      if (hefterReminderStatus(l, todayStr, now) !== "todo" || todoByLesson.has(l.id)) continue;
+      await SyncEngine.create("todos", {
+        text: `Heftereintrag nachpflegen: ${l.title || "Stunde"} (${deDate(l.date)})`,
+        source: "system",
+        hefterLessonId: l.id,
+      });
+      changed = true;
+    }
+    for (const t of allTodos) {
+      if (t.hefterLessonId == null || t.archivedAt != null) continue;
+      const l = state.lessons.find((x) => x.id === t.hefterLessonId);
+      if (!l || hefterReminderStatus(l, todayStr, now) !== "todo") {
+        try { await API.post("/todos/" + t.id + "/archive"); changed = true; } catch (e) { /* offline */ }
+      }
+    }
+    if (changed) await refresh();
+  } catch (e) { /* offline / Sync noch nicht bereit — beim nächsten renderAll erneut */ }
+  finally { _hefterReconcileBusy = false; }
+}
+
 const WEEKDAY_SHORT = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 const WEEKDAY_LONG = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"];
 function weekdayOf(dateStr) { return (new Date(dateStr + "T00:00:00").getDay() + 6) % 7; }
@@ -2099,10 +2259,16 @@ function renderTodos() {
   state.todos.forEach((t) => {
     const div = document.createElement("div");
     div.className = "todo-item" + (t.done ? " done" : "");
+    const isHefter = t.hefterLessonId != null;
+    const srcClass = isHefter ? "hefter" : t.source;
+    const srcLabel = isHefter ? "Hefter" : t.source;
+    const textCell = isHefter
+      ? `<a href="#" class="todo-hefter-link" data-hefter-lesson="${t.hefterLessonId}" style="flex:1">${esc(t.text)}</a>`
+      : `<span style="flex:1">${esc(t.text)}</span>`;
     div.innerHTML =
       `<input type="checkbox" ${t.done ? "checked" : ""} data-todo="${t.id}"/>` +
-      `<span class="todo-src ${t.source}">${esc(t.source)}</span>` +
-      `<span style="flex:1">${esc(t.text)}</span>` +
+      `<span class="todo-src ${srcClass}">${esc(srcLabel)}</span>` +
+      textCell +
       `<button class="btn small danger" data-del-todo="${t.id}">✕</button>`;
     list.appendChild(div);
   });
@@ -2116,6 +2282,13 @@ function renderTodos() {
     btn.onclick = async () => {
       try { await API.post("/todos/" + btn.dataset.delTodo + "/archive"); await refresh(); toast("To-Do archiviert."); }
       catch (e) { toast(e.message, false); }
+    };
+  });
+  list.querySelectorAll("[data-hefter-lesson]").forEach((a) => {
+    a.onclick = (e) => {
+      e.preventDefault();
+      const l = state.lessons.find((x) => x.id === Number(a.dataset.hefterLesson));
+      if (l) openLessonModal(l);
     };
   });
 }

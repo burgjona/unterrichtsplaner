@@ -154,6 +154,10 @@
           <div class="mini-list" id="todayLessonList"></div>
           <div class="sec-h">Termine heute</div>
           <div class="mini-list" id="todayAppointmentsList"></div>
+          <div id="hefterReminderBlock" class="hidden">
+            <div class="sec-h">Heftereinträge</div>
+            <div class="mini-list" id="hefterReminderList"></div>
+          </div>
         </div>
         <div class="card dark">
           <h3>Woche im Blick</h3>
@@ -228,6 +232,15 @@
       <div class="card" style="margin-top:14px;">
         <h3>Stunden dieser Klasse</h3>
         <div id="cdLessons"></div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <div class="cd-head">
+          <h3>Hefter der SuS</h3>
+          <div id="cdHefterFilter" class="cd-actions"></div>
+        </div>
+        <p class="muted small">Was die Schüler:innen laut Soll im Hefter stehen haben – chronologisch nach Stunden. Direkt hier bearbeitbar, wird beim Tippen automatisch gespeichert.</p>
+        <div id="cdHefter"></div>
       </div>
 
       <div class="card" style="margin-top:14px;">
@@ -640,6 +653,12 @@
           <label>Notizen (z. B. Foto-Hinweis, eigene Ergänzungen)</label>
           <textarea id="tafelbildNotiz" placeholder="Eigene Ergänzungen zum Tafelbild ..."></textarea>
         </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <h3>Heftereintrag der SuS</h3>
+        <p class="muted small">Was die Schüler:innen tatsächlich in ihren Hefter geschrieben haben – bewusst getrennt vom Tafelbild. Übergreifend sichtbar in der Klassen-Detailansicht unter „Hefter der SuS".</p>
+        <textarea id="hefteintrag" placeholder="z. B. Merkmale der Kurzgeschichte, Hausaufgabe S. 44 Nr. 3, AB „Erste Eindrücke" eingeklebt ..."></textarea>
       </div>
 
       <div class="card" style="margin-top:14px;">

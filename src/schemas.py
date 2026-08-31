@@ -232,6 +232,7 @@ class LessonCreate(Base):
     tafelbild: Tafelbild = Field(default_factory=Tafelbild)
     tafelbild_notiz: Optional[str] = None
     tafelbild_bild_material_id: Optional[int] = None
+    hefteintrag: Optional[str] = None
     phases: List[PhaseIn] = Field(default_factory=list)
     lernziele: List["LernzielIn"] = Field(default_factory=list)
 
@@ -262,6 +263,7 @@ class LessonUpdate(Base):
     tafelbild: Optional[Tafelbild] = None
     tafelbild_notiz: Optional[str] = None
     tafelbild_bild_material_id: Optional[int] = None
+    hefteintrag: Optional[str] = None
     phases: Optional[List[PhaseIn]] = None
     lernziele: Optional[List["LernzielIn"]] = None
     reflection_skipped: Optional[bool] = None
@@ -294,6 +296,7 @@ class LessonOut(Base):
     tafelbild: Tafelbild = Field(default_factory=Tafelbild)
     tafelbild_notiz: Optional[str] = None
     tafelbild_bild_material_id: Optional[int] = None
+    hefteintrag: Optional[str] = None
     phases: List[PhaseOut] = Field(default_factory=list)
     lernziele: List["LernzielOut"] = Field(default_factory=list)
     created_at: str
@@ -594,6 +597,7 @@ class SkipReflectionIn(Base):
 class TodoCreate(Base):
     text: str
     source: str = "manuell"
+    hefter_lesson_id: Optional[int] = None
 
 
 class TodoUpdate(Base):
@@ -606,6 +610,7 @@ class TodoOut(Base):
     text: str
     source: str
     done: bool
+    hefter_lesson_id: Optional[int] = None
     archived_at: Optional[str] = None
     created_at: str
     updated_at: str

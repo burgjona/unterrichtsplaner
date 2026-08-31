@@ -21,3 +21,13 @@ def test_todo_rejects_bad_source(client, auth):
 
 def test_todos_require_login(client):
     assert client.get("/api/todos").status_code == 401
+
+
+def test_hefter_todo_dedup_by_lesson(client, auth):
+    les = client.post("/api/lessons", json={"title": "Ballade", "subject": "Deutsch", "grade": 8}).json()
+    payload = {"text": "Heftereintrag nachpflegen: Ballade", "source": "system", "hefterLessonId": les["id"]}
+    a = client.post("/api/todos", json=payload)
+    assert a.status_code == 201 and a.json()["hefterLessonId"] == les["id"]
+    # zweite Anlage für dieselbe Stunde ist idempotent, kein 500
+    b = client.post("/api/todos", json=payload)
+    assert b.status_code == 201 and b.json()["id"] == a.json()["id"]

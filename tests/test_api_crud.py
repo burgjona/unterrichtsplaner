@@ -67,6 +67,13 @@ def test_full_flow_and_camelcase(client, auth):
     upd = client.put(f"/api/lessons/{lj['id']}", json={"tafelbildBildMaterialId": None}, headers=auth).json()
     assert upd["tafelbildBildMaterialId"] is None
 
+    # Heftereintrag der SuS: eigenes Feld, getrennt vom Tafelbild, per Partial-Update rund
+    assert lj["hefteintrag"] is None
+    upd = client.put(f"/api/lessons/{lj['id']}", json={"hefteintrag": "Merkmale der Ballade, HA S. 44"},
+                     headers=auth).json()
+    assert upd["hefteintrag"] == "Merkmale der Ballade, HA S. 44"
+    assert upd["tafelbildNotiz"] == "Tafelbild-Foto: siehe Ordner"   # unangetastet
+
     # Kalendereintrag
     cal = client.post("/api/calendar",
                       json={"title": "LUE Rechtschreibung", "entryDate": "2025-09-15",

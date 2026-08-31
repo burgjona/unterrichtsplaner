@@ -31,11 +31,23 @@ def _get(conn, user_id, tid):
 def _apply_create(conn, user_id, body: TodoCreate) -> TodoOut:
     if body.source not in ("system", "manuell"):
         raise HTTPException(status_code=400, detail="source muss 'system' oder 'manuell' sein.")
-    cur = conn.execute(
-        "INSERT INTO todos(user_id, text, source, updated_at) "
-        "VALUES (?,?,?, strftime('%Y-%m-%d %H:%M:%f','now'))",
-        (user_id, body.text, body.source),
-    )
+    try:
+        cur = conn.execute(
+            "INSERT INTO todos(user_id, text, source, hefter_lesson_id, updated_at) "
+            "VALUES (?,?,?,?, strftime('%Y-%m-%d %H:%M:%f','now'))",
+            (user_id, body.text, body.source, body.hefter_lesson_id),
+        )
+    except sqlite3.IntegrityError:
+        # Hefter-To-do für diese Stunde existiert schon (Doppelanlage bei Sync-Race) —
+        # idempotent den vorhandenen zurückgeben statt 500.
+        if body.hefter_lesson_id is not None:
+            row = conn.execute(
+                "SELECT * FROM todos WHERE user_id = ? AND hefter_lesson_id = ?",
+                (user_id, body.hefter_lesson_id),
+            ).fetchone()
+            if row is not None:
+                return TodoOut(**dict(row))
+        raise
     return _get(conn, user_id, cur.lastrowid)
 
 
