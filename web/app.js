@@ -1200,6 +1200,59 @@ function openClassDetail(cid) {
   renderClassDetail();
 }
 
+/* Status-Kacheln der Klassendetailseite. Werte, die synchron feststehen (Stunden, Hefter,
+   ggf. Schülerzahl), werden sofort gesetzt; asynchron nachgeladene (Lehrplan, Stoffpläne,
+   Sitzpläne, Schüler) rufen cdSetTile(), sobald ihre Render-Funktion fertig ist. */
+function _cdTileEl(key, label, valueHtml, o) {
+  o = o || {};
+  return (
+    `<a class="cd-tile${o.attn ? " attn" : ""}" role="button" tabindex="0" data-cd-tile="${key}" data-cd-scroll="${o.scroll || ""}">` +
+    `<span class="cd-tile-l">${esc(label)}</span>` +
+    `<span class="cd-tile-v" data-cd-tileval>${valueHtml}</span>` +
+    `<span class="cd-tile-bar"${o.bar != null ? "" : " hidden"}><i style="width:${o.bar != null ? Math.max(0, Math.min(100, o.bar)) : 0}%"></i></span>` +
+    (o.go ? `<span class="cd-tile-go">${esc(o.go)}</span>` : "") +
+    `</a>`
+  );
+}
+function cdSetTile(key, valueHtml, o) {
+  o = o || {};
+  const el = document.querySelector(`#cdTiles [data-cd-tile="${key}"]`);
+  if (!el) return;
+  const v = el.querySelector("[data-cd-tileval]");
+  if (v && valueHtml != null) v.innerHTML = valueHtml;
+  if (o.bar != null) {
+    const bar = el.querySelector(".cd-tile-bar");
+    if (bar) { bar.hidden = false; bar.querySelector("i").style.width = Math.max(0, Math.min(100, o.bar)) + "%"; }
+  }
+  if (o.attn != null) el.classList.toggle("attn", !!o.attn);
+}
+function cdRenderTiles(lessons) {
+  const box = $("cdTiles");
+  if (!box) return;
+  const hefterAll = lessons.length;
+  const hefterDone = lessons.filter((l) => (l.hefteintrag || "").trim()).length;
+  box.innerHTML =
+    _cdTileEl("lehrplan", "Lehrplan", "…", { scroll: "cdLehrplan", go: "Abhaken ↓" }) +
+    _cdTileEl("stunden", "Stunden geplant", String(lessons.length), { scroll: "cdLessons", go: "Öffnen ↓" }) +
+    _cdTileEl("hefter", "Hefter gepflegt", `${hefterDone}<small> / ${hefterAll}</small>`, {
+      scroll: "cdHefter", go: "Pflegen ↓",
+      bar: hefterAll ? (hefterDone / hefterAll) * 100 : 0,
+      attn: hefterAll > 0 && hefterDone / hefterAll < 0.5,
+    }) +
+    _cdTileEl("stoff", "Stoffpläne", "…", { scroll: "cdStoffPlans", go: "Öffnen ↓" }) +
+    _cdTileEl("schueler", "Schüler:innen", "…", { scroll: "cdStudentList", go: "Liste ↓" }) +
+    _cdTileEl("sitzplan", "Sitzpläne", "…", { scroll: "spList", go: "Sitzplan ↓" });
+  box.querySelectorAll("[data-cd-tile]").forEach((el) => {
+    const jump = () => {
+      const t = $(el.getAttribute("data-cd-scroll"));
+      const target = (t && t.closest(".card")) || t;
+      if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+    el.onclick = jump;
+    el.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); jump(); } };
+  });
+}
+
 function renderClassDetail() {
   const c = state.classes.find((x) => String(x.id) === String(detailClassId));
   if (!c) { toast("Klasse nicht gefunden.", false); showView("klassen"); return; }
@@ -1231,6 +1284,7 @@ function renderClassDetail() {
       wrap.appendChild(div);
     });
   }
+  cdRenderTiles(lessons);
   renderClassStudents();
   renderClassDupControl();
   getSeatPlanModule().then((m) => m.initSeatPlan());
@@ -1300,6 +1354,8 @@ function _renderCdLehrplan() {
   if (progBox) {
     const c = _cdLehrplanCounts();
     progBox.innerHTML = `<span class="lp-progress">${c.done}/${c.total} abgehakt</span>`;
+    cdSetTile("lehrplan", c.total ? `${c.done}<small> / ${c.total}</small>` : "–",
+      { bar: c.total ? (c.done / c.total) * 100 : 0 });
   }
 
   const trackNames = { RS: "Realschulbildungsgang", HS: "Hauptschulbildungsgang", gemischt: "gemischt" };
@@ -1437,6 +1493,10 @@ function renderClassDetailHefter() {
     .filter((l) => String(l.classId) === String(detailClassId))
     .sort((a, b) => (a.date || "9999").localeCompare(b.date || "9999") || (a.time || "").localeCompare(b.time || ""));
   const withEntry = all.filter((l) => (l.hefteintrag || "").trim()).length;
+  cdSetTile("hefter", `${withEntry}<small> / ${all.length}</small>`, {
+    bar: all.length ? (withEntry / all.length) * 100 : 0,
+    attn: all.length > 0 && withEntry / all.length < 0.5,
+  });
 
   if (filterBox) {
     filterBox.innerHTML =
@@ -1709,6 +1769,7 @@ async function renderClassDetailStoffPlans() {
     const all = await SyncEngine.materialize("stoff_plans");
     detailStoffPlans = all.filter((p) => String(p.classId) === String(detailClassId));
   } catch (e) { detailStoffPlans = []; }
+  cdSetTile("stoff", String(detailStoffPlans.length));
   if (!detailStoffPlans.length) {
     wrap.innerHTML = '<p class="muted small">Noch keine gespeicherten Stoffverteilungspläne für diese Klasse.</p>';
     return;
@@ -1893,6 +1954,7 @@ async function renderClassStudents() {
   try {
     detailStudents = await materializeStudentsForClass(detailClassId);
   } catch (e) { toast(e.message, false); return; }
+  cdSetTile("schueler", String(detailStudents.length));
   // U18: Sitzplan-Dropdowns hängen an der Schülerliste – nach (Neu-)Laden aktualisieren.
   // Nur re-rendern, wenn das Sitzplan-Modul bereits geladen ist (kein Nachladen erzwingen).
   if (_seatPlanModuleInstance && _seatPlanModuleInstance.hasGrid()) _seatPlanModuleInstance.renderSeatGrid();
@@ -1990,6 +2052,7 @@ function getSeatPlanModule() {
         $, esc, API, toast, SyncEngine,
         getDetailClassId: () => detailClassId,
         getDetailStudents: () => detailStudents,
+        cdSetTile,
       });
       return _seatPlanModuleInstance;
     });
