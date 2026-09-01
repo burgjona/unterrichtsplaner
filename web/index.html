@@ -784,18 +784,14 @@
       </div>
     </section>
 
-    <!-- ASUV -->
+    <!-- ASUV — Desktop: die 6 Kapitel (Deckblatt, 1–6) links, Stunde-Auswahl + Vorgaben +
+         Formalien-Checkliste rechts. Aktionsleiste voll breit unten. Mobile (<=1080px):
+         Original-Reihenfolge (.ord-*). Alle IDs unverändert. -->
     <section id="asuv" class="view hidden">
-      <div class="card dark">
-        <h3 id="asuvHeadline">ASUV-Entwurf</h3>
-        <p class="small" style="color:#dcfce7;">Automatisch vorbefüllt aus Klafki, Phasen und Lehrbuch-Referenz der gewählten Stunde – bitte prüfen und ergänzen.</p>
-        <label style="color:#dcfce7;" for="asuvLesson">Stunde</label>
-        <select id="asuvLesson"></select>
-      </div>
-      <div class="note-box" id="asuvBiboxHint" style="margin-top:14px; display:none;">Erinnerung: Für diese Stunde ist noch keine Lehrbuch-Referenz (BiBox) hinterlegt.</div>
-      <div class="note-box" style="margin-top:14px;"><strong>Formale Vorgaben (bindend):</strong> Arial 11, Zeilenabstand 1,5, Blocksatz, Deckblatt, Inhaltsverzeichnis, normgerechte Quellen, Selbständigkeitserklärung.</div>
+      <div class="v2col">
+      <div class="vcol">
 
-      <div class="card" style="margin-top:14px;">
+      <div class="card ord-4">
         <h3>Deckblatt</h3>
         <div class="row-3">
           <div><label for="asuv_schule">Schule</label><input id="asuv_schule" placeholder="z. B. Oberschule Stolpen" /></div>
@@ -803,7 +799,7 @@
           <div><label for="asuv_deckblatt_datum">Datum</label><input id="asuv_deckblatt_datum" type="date" /></div>
         </div>
       </div>
-      <div class="card" style="margin-top:14px;">
+      <div class="card ord-5">
         <h3>1. Bedingungsanalyse</h3>
         <label for="asuv_bedingung_org">1.1 Organisatorische und technische Rahmenbedingungen</label><textarea id="asuv_bedingung_org"></textarea>
         <div class="note-box asuv-wth-hint hidden">WTH (Leitfaden Fischer): Rahmenbedingungen (Raumwechsel, Lage der Stunde, Wochenende, Schulbus, Ausfall/Vertretung, Arbeitsmittel) und Technik (Tafel, Beamer, Lichteinfall, Projektionswand, Medien) je mit ihrer positiven oder negativen Wirkung auf diese Stunde.</div>
@@ -818,16 +814,16 @@
         </div>
         <div class="hint">Nur Bedingungen aufführen, die in Kapitel 4 wieder aufgegriffen werden.</div>
       </div>
-      <div class="card" style="margin-top:14px;"><h3>2. Lehr- und Lernziele</h3><textarea id="asuv_ziele" rows="4"></textarea>
+      <div class="card ord-6"><h3>2. Lehr- und Lernziele</h3><textarea id="asuv_ziele" rows="4"></textarea>
         <div class="note-box asuv-wth-hint hidden">WTH: SMART + Doppelverbformulierung (zu entwickelnde Kompetenz + &bdquo;indem&ldquo; + prüfbare Aktion), max. 3&ndash;4 Ziele, fachliche und überfachliche Ziele, Bloom-Taxonomie / w-k-w-Modell.</div>
       </div>
-      <div class="card" style="margin-top:14px;">
+      <div class="card ord-7">
         <h3>3. Sachanalyse</h3><textarea id="asuv_sachanalyse" rows="5"></textarea>
         <div class="note-box asuv-wth-hint hidden">WTH: mindestens zwei fachwissenschaftliche Literaturhinweise; ggf. Erklärvideo/Internetquellen, Schaubilder, Fallbeispiele, Modelle, Maschinen/Werkzeuge.</div>
         <label for="asuv_quellen">Quellen / Fachliteratur</label><textarea id="asuv_quellen"></textarea>
         <div class="note-box asuv-wth-hint hidden">WTH: Deutsche Zitierweise, Harvard-Zitierweise oder APA-Zitierstil &ndash; einheitlich.</div>
       </div>
-      <div class="card" style="margin-top:14px;">
+      <div class="card ord-8">
         <h3>4. Didaktische Analyse und methodische Entscheidungen</h3>
         <label for="asuv_didaktisch">Didaktische Analyse</label><textarea id="asuv_didaktisch" rows="4"></textarea>
         <div class="note-box asuv-wth-hint hidden">WTH (4.1): Legitimation des Themas über den Lehrplan, fachliche Ziele der Klassenstufe, Verankerung im Lernbereich aufzeigen.</div>
@@ -836,9 +832,22 @@
         <label for="asuv_methodisch">Methodische Entscheidungen (getrennt von der didaktischen Analyse)</label><textarea id="asuv_methodisch" rows="4"></textarea>
         <div class="note-box asuv-wth-hint hidden">WTH (4.3): Begrüßung, Einstieg und Schluss ausdrücklich benennen; roter Faden / Phrasierung; begründeter Einsatz von Lehrmaterial, digitalen Medien, Tafelbild, Sozialform, Schüler-/Lehrer-Aktivität, Hausaufgaben; Rituale zu Stundenbeginn und Stundenende; Differenzierungsangebote (Länge der Arbeitsphasen, Wechsel der Sozialform, Anschauungsebenen, Gruppenbildung bei GA, EA/PA, Präsentationsformen, Feedback); Handlungsalternativen.</div>
       </div>
-      <div class="card" style="margin-top:14px;"><h3>5. Verlaufsplanung</h3><div id="asuvPhases"></div><div class="hint">Automatisch aus der Phasentabelle der Stunde übernommen.</div></div>
-      <div class="card" style="margin-top:14px;"><h3>6. Anhang</h3><div id="asuvBibox" class="small muted" style="margin-bottom:8px;"></div><label for="asuv_anhang">Weitere Materialhinweise</label><textarea id="asuv_anhang"></textarea><div class="note-box asuv-wth-hint hidden">WTH: alle Tafelbilder, alle AB mit Erwartungsbild, LK mit Erwartungsbild, Bilder, LB-Texte, Sitzplan, komplette Lernbereichsplanung.</div></div>
-      <div class="card soft" style="margin-top:14px;"><h3>Formalien-Checkliste (Selbstkontrolle vor Abgabe)</h3><div id="asuvChecklist"></div></div>
+      <div class="card ord-9"><h3>5. Verlaufsplanung</h3><div id="asuvPhases"></div><div class="hint">Automatisch aus der Phasentabelle der Stunde übernommen.</div></div>
+      <div class="card ord-10"><h3>6. Anhang</h3><div id="asuvBibox" class="small muted" style="margin-bottom:8px;"></div><label for="asuv_anhang">Weitere Materialhinweise</label><textarea id="asuv_anhang"></textarea><div class="note-box asuv-wth-hint hidden">WTH: alle Tafelbilder, alle AB mit Erwartungsbild, LK mit Erwartungsbild, Bilder, LB-Texte, Sitzplan, komplette Lernbereichsplanung.</div></div>
+
+      </div>
+      <div class="vcol">
+      <div class="card dark ord-1">
+        <h3 id="asuvHeadline">ASUV-Entwurf</h3>
+        <p class="small" style="color:#dcfce7;">Automatisch vorbefüllt aus Klafki, Phasen und Lehrbuch-Referenz der gewählten Stunde – bitte prüfen und ergänzen.</p>
+        <label style="color:#dcfce7;" for="asuvLesson">Stunde</label>
+        <select id="asuvLesson"></select>
+      </div>
+      <div class="note-box ord-2" id="asuvBiboxHint" style="display:none;">Erinnerung: Für diese Stunde ist noch keine Lehrbuch-Referenz (BiBox) hinterlegt.</div>
+      <div class="note-box ord-3"><strong>Formale Vorgaben (bindend):</strong> Arial 11, Zeilenabstand 1,5, Blocksatz, Deckblatt, Inhaltsverzeichnis, normgerechte Quellen, Selbständigkeitserklärung.</div>
+      <div class="card soft ord-11"><h3>Formalien-Checkliste (Selbstkontrolle vor Abgabe)</h3><div id="asuvChecklist"></div></div>
+      </div>
+      </div>
 
       <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap;">
         <button class="btn ai" id="asuvAiBtn">✨ ASUV ausformulieren</button>

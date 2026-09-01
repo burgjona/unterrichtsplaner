@@ -596,6 +596,7 @@ a.todo-hefter-link:hover { text-decoration:underline; }
 .v2col > * { min-width:0; }
 .v2col .vcol { display:grid; gap:14px; align-content:start; min-width:0; }
 .v2col .vcol > * { min-width:0; }
+.v2col .vcol > .note-box { margin-top:0; }
 @media (max-width: 1080px) {
   .v2col { display:flex; flex-direction:column; gap:14px; }
   .v2col .vcol { display:contents; }
