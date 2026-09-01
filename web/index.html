@@ -555,27 +555,18 @@
     </section>
 
     <!-- STUNDE -->
+    <!-- UNTERRICHTSPLANUNG — Desktop: links Planungs-Fluss (Stammdaten, Lernziele, Phasen,
+         Reflexion + Speichern), rechts Kontext (Ideenfeld, Zusatzmaterial, BiBox, Tafelbild,
+         Heftereintrag). Ideenfeld-Hinweis oben, „Gespeicherte Stunden" voll breit unten.
+         Mobile (<=1080px): eine Spalte in Original-Reihenfolge (.ord-*). Alle IDs unverändert. -->
     <section id="stunde" class="view hidden">
       <div class="ai-box">
         <div class="txt"><strong>Ideenfeld:</strong> Trage lose Gedanken oder Impulse zur Stunde ein. Die KI erzeugt daraus einen Vorschlag (Titel, Klafki, Meyer-Ampel, Phasen) – prüfen und anpassen.</div>
       </div>
-      <div class="card">
-        <h3>Ideenfeld</h3>
-        <textarea id="lessonIdeas" rows="3" placeholder="z. B. Balladen szenisch erschließen, Hörbeispiel als Einstieg, Gruppenarbeit mit Standbild ..."></textarea>
-      </div>
 
-      <div class="card" style="margin-top:14px;">
-        <h3>Zusätzliches Material</h3>
-        <p class="muted small">Für Vertretungsstunden oder Einzelfälle: Lehrplan-Ausschnitte oder Materialien anderer Fächer (z. B. Mathe, Physik) hochladen, die als Grundlage für diese Stunde dienen sollen. Wird beim Speichern der Stunde verknüpft.</p>
-        <div id="lessonMaterials" class="file-list" style="margin-bottom:8px;"></div>
-        <div class="row">
-          <div><label for="lessonMatFile">Datei</label><input type="file" id="lessonMatFile" /></div>
-          <div><label for="lessonMatSubject">Fach des Materials (optional)</label><input id="lessonMatSubject" placeholder="leer = Fach der Stunde" /></div>
-        </div>
-        <button class="btn small" id="lessonMatUpload" style="margin-top:6px;">Hochladen &amp; verknüpfen</button>
-      </div>
-
-      <div class="card" style="margin-top:14px;">
+      <div class="v2col">
+      <div class="vcol">
+      <div class="card ord-4">
         <h3>Unterrichtsplanung</h3>
         <div id="editHint" class="note-box hidden" style="margin-bottom:10px;">
           Bearbeite: <strong id="editHintTitle"></strong>
@@ -629,7 +620,7 @@
         </div>
       </div>
 
-      <div class="card" style="margin-top:14px;">
+      <div class="card ord-5">
         <h3>Lernziele (SMART, Bloom-Taxonomie)</h3>
         <p class="muted small">Grobziel(e) und Feinziele der Stunde. Feinziele lassen sich einer Phase zuordnen – so ist nachweisbar, an welcher Stelle der Stunde welches Ziel erreicht wird (ASUV-Nachweis). Faustregel: pro 45 Min. 1 Grobziel + mind. 2 Feinziele.</p>
         <div id="lernzieleList"></div>
@@ -639,7 +630,7 @@
         </div>
       </div>
 
-      <div class="card" style="margin-top:14px;">
+      <div class="card ord-6">
         <h3>Phasentabelle</h3>
         <p class="muted small">Die angegebene Stundendauer (45 oder 90 Min.) wird exakt verplant. Phasen lassen sich ergänzen und benennen – nach einer Sicherung darf eine weitere Erarbeitung folgen (Erarbeitung II, Sicherung II …). Die römische Nummerierung erscheint automatisch, sobald eine Bezeichnung mehrfach vorkommt.</p>
         <div id="phases"></div>
@@ -649,47 +640,7 @@
         </div>
       </div>
 
-      <div class="card" style="margin-top:14px;">
-        <h3>Lehrbuch-Referenz (BiBox)</h3>
-        <p class="muted small">Reine Referenz, kein Upload von Verlagsmaterial (aus Lizenzgründen).</p>
-        <div class="row-3">
-          <div><label for="biboxWerk">Lehrwerk</label><input id="biboxWerk" placeholder="z. B. Deutschbuch 8" /></div>
-          <div><label for="biboxSeite">Kapitel/Seite</label><input id="biboxSeite" placeholder="z. B. Kapitel 4, S. 88-91" /></div>
-          <div><label for="biboxNotiz">Notiz</label><input id="biboxNotiz" placeholder="z. B. Aufgabe 3 als Einstieg nutzen" /></div>
-        </div>
-      </div>
-
-      <div class="card" style="margin-top:14px;">
-        <h3>Tafelbild</h3>
-        <p class="muted small">Trage ein, was während der Stunde an die Tafel soll – die KI schlägt daraus ein gegliedertes Tafelbild vor.</p>
-        <label for="tafelbildEingabe">Was soll an die Tafel? (Freitext)</label>
-        <textarea id="tafelbildEingabe" placeholder="z. B. Merkmale der Ballade: erzählend, dramatisch, lyrisch ..."></textarea>
-        <div style="margin-top:10px;">
-          <button class="btn ai" id="tafelbildBtn">✨ Tafelbild vorschlagen</button>
-        </div>
-        <div id="tafelbildBoard" class="tafelbild-board hidden"></div>
-        <div id="tafelbildBildWrap" class="hidden" style="margin-top:12px;">
-          <img id="tafelbildBildImg" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==" alt="Eigenes Tafelbild" style="max-width:100%;border-radius:8px;display:block;" />
-          <button class="btn small danger" id="tafelbildBildRemove" style="margin-top:6px;">Bild entfernen</button>
-        </div>
-        <div style="margin-top:12px;">
-          <label for="tafelbildBildFile">Eigenes Bild (z. B. Foto eines Tafelbilds)</label>
-          <input type="file" id="tafelbildBildFile" accept="image/*" />
-          <button class="btn small" id="tafelbildBildUpload" style="margin-top:6px;">Bild hochladen</button>
-        </div>
-        <div style="margin-top:12px;">
-          <label for="tafelbildNotiz">Notizen (z. B. Foto-Hinweis, eigene Ergänzungen)</label>
-          <textarea id="tafelbildNotiz" placeholder="Eigene Ergänzungen zum Tafelbild ..."></textarea>
-        </div>
-      </div>
-
-      <div class="card" style="margin-top:14px;">
-        <h3>Heftereintrag der SuS</h3>
-        <p class="muted small">Was die Schüler:innen tatsächlich in ihren Hefter geschrieben haben – bewusst getrennt vom Tafelbild. Übergreifend sichtbar in der Klassen-Detailansicht unter „Hefter der SuS".</p>
-        <textarea id="hefteintrag" placeholder="z. B. Merkmale der Kurzgeschichte, Hausaufgabe S. 44 Nr. 3, AB „Erste Eindrücke" eingeklebt ..."></textarea>
-      </div>
-
-      <div class="card" style="margin-top:14px;">
+      <div class="card ord-10">
         <h3>Abschließende didaktisch-methodische Reflexion (Klafki &amp; Meyer)</h3>
         <p class="muted small">Bewusst am Ende: Erst die Stunde konkret planen, dann prüfen, ob sie didaktisch und methodisch trägt.</p>
         <div class="phase" data-local-undo-block="klafki">
@@ -720,6 +671,62 @@
           <button class="btn ai" id="aiPlanBtn">✨ Stundenvorschlag generieren (aus Ideen + Planungsfeldern)</button>
           <span id="lessonSaveStatus" class="small muted" style="margin-left:8px;"></span>
         </div>
+      </div>
+      </div>
+
+      <div class="vcol">
+      <div class="card ord-2">
+        <h3>Ideenfeld</h3>
+        <textarea id="lessonIdeas" rows="3" placeholder="z. B. Balladen szenisch erschließen, Hörbeispiel als Einstieg, Gruppenarbeit mit Standbild ..."></textarea>
+      </div>
+      <div class="card ord-3">
+        <h3>Zusätzliches Material</h3>
+        <p class="muted small">Für Vertretungsstunden oder Einzelfälle: Lehrplan-Ausschnitte oder Materialien anderer Fächer (z. B. Mathe, Physik) hochladen, die als Grundlage für diese Stunde dienen sollen. Wird beim Speichern der Stunde verknüpft.</p>
+        <div id="lessonMaterials" class="file-list" style="margin-bottom:8px;"></div>
+        <div class="row">
+          <div><label for="lessonMatFile">Datei</label><input type="file" id="lessonMatFile" /></div>
+          <div><label for="lessonMatSubject">Fach des Materials (optional)</label><input id="lessonMatSubject" placeholder="leer = Fach der Stunde" /></div>
+        </div>
+        <button class="btn small" id="lessonMatUpload" style="margin-top:6px;">Hochladen &amp; verknüpfen</button>
+      </div>
+      <div class="card ord-7">
+        <h3>Lehrbuch-Referenz (BiBox)</h3>
+        <p class="muted small">Reine Referenz, kein Upload von Verlagsmaterial (aus Lizenzgründen).</p>
+        <div class="row-3">
+          <div><label for="biboxWerk">Lehrwerk</label><input id="biboxWerk" placeholder="z. B. Deutschbuch 8" /></div>
+          <div><label for="biboxSeite">Kapitel/Seite</label><input id="biboxSeite" placeholder="z. B. Kapitel 4, S. 88-91" /></div>
+          <div><label for="biboxNotiz">Notiz</label><input id="biboxNotiz" placeholder="z. B. Aufgabe 3 als Einstieg nutzen" /></div>
+        </div>
+      </div>
+      <div class="card ord-8">
+        <h3>Tafelbild</h3>
+        <p class="muted small">Trage ein, was während der Stunde an die Tafel soll – die KI schlägt daraus ein gegliedertes Tafelbild vor.</p>
+        <label for="tafelbildEingabe">Was soll an die Tafel? (Freitext)</label>
+        <textarea id="tafelbildEingabe" placeholder="z. B. Merkmale der Ballade: erzählend, dramatisch, lyrisch ..."></textarea>
+        <div style="margin-top:10px;">
+          <button class="btn ai" id="tafelbildBtn">✨ Tafelbild vorschlagen</button>
+        </div>
+        <div id="tafelbildBoard" class="tafelbild-board hidden"></div>
+        <div id="tafelbildBildWrap" class="hidden" style="margin-top:12px;">
+          <img id="tafelbildBildImg" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==" alt="Eigenes Tafelbild" style="max-width:100%;border-radius:8px;display:block;" />
+          <button class="btn small danger" id="tafelbildBildRemove" style="margin-top:6px;">Bild entfernen</button>
+        </div>
+        <div style="margin-top:12px;">
+          <label for="tafelbildBildFile">Eigenes Bild (z. B. Foto eines Tafelbilds)</label>
+          <input type="file" id="tafelbildBildFile" accept="image/*" />
+          <button class="btn small" id="tafelbildBildUpload" style="margin-top:6px;">Bild hochladen</button>
+        </div>
+        <div style="margin-top:12px;">
+          <label for="tafelbildNotiz">Notizen (z. B. Foto-Hinweis, eigene Ergänzungen)</label>
+          <textarea id="tafelbildNotiz" placeholder="Eigene Ergänzungen zum Tafelbild ..."></textarea>
+        </div>
+      </div>
+      <div class="card ord-9">
+        <h3>Heftereintrag der SuS</h3>
+        <p class="muted small">Was die Schüler:innen tatsächlich in ihren Hefter geschrieben haben – bewusst getrennt vom Tafelbild. Übergreifend sichtbar in der Klassen-Detailansicht unter „Hefter der SuS".</p>
+        <textarea id="hefteintrag" placeholder="z. B. Merkmale der Kurzgeschichte, Hausaufgabe S. 44 Nr. 3, AB „Erste Eindrücke" eingeklebt ..."></textarea>
+      </div>
+      </div>
       </div>
 
       <div class="card" style="margin-top:14px;">
