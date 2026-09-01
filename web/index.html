@@ -217,9 +217,11 @@
       </div>
     </section>
 
-    <!-- KLASSEN-DETAIL (U14) -->
+    <!-- KLASSEN-DETAIL (U14) — Desktop: zweispaltiges Raster (cd-layout); Mobile (<=1080px)
+         fällt auf eine Spalte zurück, siehe @media in styles.css. Alle Container-IDs
+         unverändert, damit app.js weiter dieselben Elemente füllt. -->
     <section id="klasse-detail" class="view hidden">
-      <div class="card">
+      <div class="card cd-band">
         <div class="cd-head">
           <h3 id="cdTitle" style="margin:0;">Klasse</h3>
           <div class="cd-actions">
@@ -231,97 +233,103 @@
         <div id="cdMeta" class="cd-meta"></div>
       </div>
 
-      <div class="card" style="margin-top:14px;">
-        <h3>Stunden dieser Klasse</h3>
-        <div id="cdLessons"></div>
-      </div>
+      <div class="cd-layout">
+        <div class="cd-col-main">
+          <div class="card">
+            <div class="cd-head">
+              <h3>Lehrplan – Abhaken</h3>
+              <div id="cdLehrplanProgress" class="cd-actions"></div>
+            </div>
+            <p class="muted small">Ziele der Klassenstufe und Lernbereiche aus dem sächsischen Lehrplan – übers Schuljahr abhaken. Abgehakte bleiben sichtbar.</p>
+            <div id="cdLehrplan"></div>
+          </div>
 
-      <div class="card" style="margin-top:14px;">
-        <div class="cd-head">
-          <h3>Lehrplan – Abhaken</h3>
-          <div id="cdLehrplanProgress" class="cd-actions"></div>
-        </div>
-        <p class="muted small">Ziele der Klassenstufe und Lernbereiche aus dem sächsischen Lehrplan – übers Schuljahr abhaken. Abgehakte bleiben sichtbar.</p>
-        <div id="cdLehrplan"></div>
-      </div>
+          <div class="card">
+            <div class="cd-head">
+              <h3>Hefter der SuS</h3>
+              <div id="cdHefterFilter" class="cd-actions"></div>
+            </div>
+            <p class="muted small">Was die Schüler:innen laut Soll im Hefter stehen haben – chronologisch nach Stunden. Direkt hier bearbeitbar, wird beim Tippen automatisch gespeichert.</p>
+            <div id="cdHefter"></div>
+          </div>
 
-      <div class="card" style="margin-top:14px;">
-        <div class="cd-head">
-          <h3>Hefter der SuS</h3>
-          <div id="cdHefterFilter" class="cd-actions"></div>
-        </div>
-        <p class="muted small">Was die Schüler:innen laut Soll im Hefter stehen haben – chronologisch nach Stunden. Direkt hier bearbeitbar, wird beim Tippen automatisch gespeichert.</p>
-        <div id="cdHefter"></div>
-      </div>
+          <!-- ===== U18: Sitzplan ===== -->
+          <div class="card">
+            <h3>Sitzplan</h3>
+            <p class="muted small">Plätze anordnen, Namen aus der Schülerliste zuweisen, speichern und als PDF drucken.</p>
 
-      <div class="card" style="margin-top:14px;">
-        <h3>Gespeicherte Stoffverteilungspläne</h3>
-        <!-- U19: echte Liste der Stoffpläne dieser Klasse -->
-        <div id="cdStoffPlans"></div>
-      </div>
+            <div class="row" style="margin-top:10px;align-items:end;">
+              <div><label class="small muted" for="spName">Name des Sitzplans</label><input id="spName" placeholder="z. B. Standardplan" /></div>
+              <div><label class="small muted" for="spRows">Reihen</label><input id="spRows" type="number" min="1" max="12" value="4" /></div>
+              <div><label class="small muted" for="spCols">Spalten</label><input id="spCols" type="number" min="1" max="12" value="5" /></div>
+              <div><button class="btn small secondary" id="spBuildBtn">Raster aufbauen</button></div>
+            </div>
 
-      <!-- U16: Plan für Parallelklasse duplizieren -->
-      <div class="card u16-dup-card" style="margin-top:14px;">
-        <h3>Plan für Parallelklasse duplizieren</h3>
-        <p class="muted small">Einen Stoffplan dieser Klasse als Entwurf für eine andere Klasse übernehmen. Zeiträume lassen sich neu berechnen oder per KI anpassen.</p>
-        <div id="cdDupBody"></div>
-      </div>
+            <div class="sp-ai" style="margin-top:12px;">
+              <label class="small muted" for="spAiDesc">KI-Anordnung (Freitext, z. B. „Lisa nach vorn, Max nicht neben Paul“)</label>
+              <textarea id="spAiDesc" rows="2" placeholder="Wünsche zur Sitzordnung …"></textarea>
+              <div style="margin-top:8px;"><button class="btn small" id="spAiBtn">Per KI anordnen</button></div>
+            </div>
 
-      <div class="card" style="margin-top:14px;">
-        <h3>Schülerliste</h3>
-        <p class="muted small">Namen der Klasse pflegen – Grundlage für den späteren Sitzplan.</p>
-        <div id="cdStudentList"></div>
-        <div class="row" style="margin-top:10px;">
-          <div style="grid-column: span 2;"><input id="cdStudentName" placeholder="Name eingeben und Enter drücken …" /></div>
-        </div>
-        <div style="margin-top:12px;">
-          <label class="small muted" for="cdStudentBulk">Mehrere Namen einfügen (eine Zeile = ein Name)</label>
-          <textarea id="cdStudentBulk" rows="3" placeholder="Anna Muster&#10;Ben Beispiel&#10;…"></textarea>
-          <div style="margin-top:8px;"><button class="btn small secondary" id="cdStudentBulkBtn">Alle hinzufügen</button></div>
-        </div>
-      </div>
+            <div id="spGridWrap" class="sp-grid-wrap" style="margin-top:14px;"></div>
 
-      <!-- ===== U18: Sitzplan ===== -->
-      <div class="card" style="margin-top:14px;">
-        <h3>Sitzplan</h3>
-        <p class="muted small">Plätze anordnen, Namen aus der Schülerliste zuweisen, speichern und als PDF drucken.</p>
+            <div class="row" style="margin-top:12px;">
+              <div><button class="btn small" id="spSaveBtn">Sitzplan speichern</button></div>
+              <div><button class="btn small secondary" id="spExportBtn" disabled>Als PDF herunterladen</button></div>
+              <div><button class="btn small secondary" id="spNewBtn">Neu / Leeren</button></div>
+            </div>
 
-        <div class="row" style="margin-top:10px;align-items:end;">
-          <div><label class="small muted" for="spName">Name des Sitzplans</label><input id="spName" placeholder="z. B. Standardplan" /></div>
-          <div><label class="small muted" for="spRows">Reihen</label><input id="spRows" type="number" min="1" max="12" value="4" /></div>
-          <div><label class="small muted" for="spCols">Spalten</label><input id="spCols" type="number" min="1" max="12" value="5" /></div>
-          <div><button class="btn small secondary" id="spBuildBtn">Raster aufbauen</button></div>
+            <div style="margin-top:14px;">
+              <h4 style="margin:0 0 6px;">Gespeicherte Sitzpläne</h4>
+              <div id="spList"></div>
+            </div>
+          </div>
+          <!-- ===== /U18 ===== -->
         </div>
 
-        <div class="sp-ai" style="margin-top:12px;">
-          <label class="small muted" for="spAiDesc">KI-Anordnung (Freitext, z. B. „Lisa nach vorn, Max nicht neben Paul“)</label>
-          <textarea id="spAiDesc" rows="2" placeholder="Wünsche zur Sitzordnung …"></textarea>
-          <div style="margin-top:8px;"><button class="btn small" id="spAiBtn">Per KI anordnen</button></div>
-        </div>
+        <div class="cd-col-side">
+          <div class="card">
+            <h3>Stunden dieser Klasse</h3>
+            <div id="cdLessons"></div>
+          </div>
 
-        <div id="spGridWrap" class="sp-grid-wrap" style="margin-top:14px;"></div>
+          <div class="card">
+            <h3>Gespeicherte Stoffverteilungspläne</h3>
+            <!-- U19: echte Liste der Stoffpläne dieser Klasse -->
+            <div id="cdStoffPlans"></div>
+          </div>
 
-        <div class="row" style="margin-top:12px;">
-          <div><button class="btn small" id="spSaveBtn">Sitzplan speichern</button></div>
-          <div><button class="btn small secondary" id="spExportBtn" disabled>Als PDF herunterladen</button></div>
-          <div><button class="btn small secondary" id="spNewBtn">Neu / Leeren</button></div>
-        </div>
+          <div class="card">
+            <h3>Schülerliste</h3>
+            <p class="muted small">Namen der Klasse pflegen – Grundlage für den späteren Sitzplan.</p>
+            <div id="cdStudentList"></div>
+            <div class="row" style="margin-top:10px;">
+              <div style="grid-column: span 2;"><input id="cdStudentName" placeholder="Name eingeben und Enter drücken …" /></div>
+            </div>
+            <div style="margin-top:12px;">
+              <label class="small muted" for="cdStudentBulk">Mehrere Namen einfügen (eine Zeile = ein Name)</label>
+              <textarea id="cdStudentBulk" rows="3" placeholder="Anna Muster&#10;Ben Beispiel&#10;…"></textarea>
+              <div style="margin-top:8px;"><button class="btn small secondary" id="cdStudentBulkBtn">Alle hinzufügen</button></div>
+            </div>
+          </div>
 
-        <div style="margin-top:14px;">
-          <h4 style="margin:0 0 6px;">Gespeicherte Sitzpläne</h4>
-          <div id="spList"></div>
-        </div>
-      </div>
-      <!-- ===== /U18 ===== -->
+          <!-- Notizen zu dieser Klasse (U17-Anbindung) -->
+          <div class="card">
+            <div class="cd-head">
+              <h3>Notizen zu dieser Klasse</h3>
+              <button class="btn small secondary" id="cdNoteNewBtn">+ Neue Notiz</button>
+            </div>
+            <p class="muted small">Dieselben Notizen wie unter „Notizen" – hier auf diese Klasse gefiltert. Wird beim Tippen automatisch gespeichert.</p>
+            <div id="cdNotesPanel" class="notiz-ws-mini"></div>
+          </div>
 
-      <!-- Notizen zu dieser Klasse (U17-Anbindung) -->
-      <div class="card" style="margin-top:14px;">
-        <div class="cd-head">
-          <h3>Notizen zu dieser Klasse</h3>
-          <button class="btn small secondary" id="cdNoteNewBtn">+ Neue Notiz</button>
+          <!-- U16: Plan für Parallelklasse duplizieren -->
+          <div class="card u16-dup-card">
+            <h3>Plan für Parallelklasse duplizieren</h3>
+            <p class="muted small">Einen Stoffplan dieser Klasse als Entwurf für eine andere Klasse übernehmen. Zeiträume lassen sich neu berechnen oder per KI anpassen.</p>
+            <div id="cdDupBody"></div>
+          </div>
         </div>
-        <p class="muted small">Dieselben Notizen wie unter „Notizen" – hier auf diese Klasse gefiltert. Wird beim Tippen automatisch gespeichert.</p>
-        <div id="cdNotesPanel" class="notiz-ws-mini"></div>
       </div>
     </section>
 

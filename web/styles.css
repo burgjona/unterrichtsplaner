@@ -546,6 +546,22 @@ a.todo-hefter-link:hover { text-decoration:underline; }
 .cd-student-no { width:26px; text-align:right; color:var(--muted); font-size:13px; flex-shrink:0; }
 .cd-student-input { flex:1; }
 
+/* Klassen-Detail Redesign: zweispaltiges Raster auf Desktop, Karten so hoch wie ihr
+   Inhalt. Kopfband = erste Karte (.cd-band). Mobile (<=1080px) → eine Spalte. */
+.cd-band { margin-bottom:0; }
+.cd-layout {
+  display:grid;
+  grid-template-columns: minmax(0, 1.32fr) minmax(0, 1fr);
+  gap:14px;
+  align-items:start;
+  margin-top:14px;
+}
+.cd-col-main, .cd-col-side { display:grid; gap:14px; align-content:start; min-width:0; }
+
+@media (max-width: 1080px) {
+  .cd-layout { grid-template-columns:1fr; }
+}
+
 @media (max-width: 600px) {
   .cd-head { flex-direction:column; align-items:stretch; }
   .cd-actions .btn { flex:1; }
