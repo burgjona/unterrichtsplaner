@@ -147,9 +147,11 @@
       </div>
     </section>
 
-    <!-- HEUTE -->
+    <!-- HEUTE — Desktop: dreispaltiges Raster (Stundenplan | Woche im Blick | To-dos/Spruch).
+         Mobile (<=1080px) fällt auf eine Spalte in der bisherigen Reihenfolge zurück; der
+         Spruch bleibt <=920px ausgeblendet wie bisher. Alle IDs unverändert. -->
     <section id="heute" class="view">
-      <div class="hero-grid">
+      <div class="dash-grid">
         <div class="hero-panel">
           <h2>Guten Tag!</h2>
           <p style="margin:0 0 16px; color:#dcfce7;">Dein heutiger Stundenplan – die laufende Stunde ist markiert. Klicke auf eine geplante Stunde für die Detailansicht mit Klafki, Meyer-Ampel und Phasentabelle.</p>
@@ -161,35 +163,34 @@
             <div class="mini-list" id="hefterReminderList"></div>
           </div>
         </div>
-        <div class="card dark">
+        <div class="card dark dash-week">
           <h3>Woche im Blick</h3>
           <div class="sec-h">Ungeplante Stunden</div>
           <div class="mini-list" id="weekUnplannedList"></div>
           <div class="sec-h">Termine diese Woche</div>
           <div class="mini-list" id="weekAppointmentsList"></div>
         </div>
-      </div>
-
-      <div class="ql-row">
-        <div class="ql-cell"><button type="button" class="ql-pill" id="qlNoteBtn"><span class="ql-ic">✎</span>Notiz anlegen</button></div>
-        <div class="ql-cell"><button type="button" class="ql-pill" id="qlCalendarBtn"><span class="ql-ic">📅</span>Kalendereintrag</button></div>
-        <div class="ql-cell"><button type="button" class="ql-pill" id="qlUploadBtn"><span class="ql-ic">⇧</span>Datei hochladen</button></div>
-        <div class="ql-cell"><button type="button" class="ql-pill" id="qlVertretungBtn"><span class="ql-ic">🔁</span>Vertretung hinzufügen</button></div>
-      </div>
-
-      <div class="dash-bottom-row">
-        <div class="card soft">
-          <h3>Aufgaben &amp; To-dos</h3>
-          <div id="todoList"></div>
-          <div class="row" style="margin-top:9px;">
-            <div style="grid-column: span 2;"><input id="newTodoInput" placeholder="Neue Aufgabe eintragen und Enter drücken ..." /></div>
+        <div class="dash-side">
+          <div class="card soft">
+            <h3>Aufgaben &amp; To-dos</h3>
+            <div id="todoList"></div>
+            <div class="row" style="margin-top:9px;">
+              <div style="grid-column: span 2;"><input id="newTodoInput" placeholder="Neue Aufgabe eintragen und Enter drücken ..." /></div>
+            </div>
+          </div>
+          <div class="spruch-card" id="spruchCard" tabindex="0" role="button" aria-label="Spruch des Tages, Vollbild öffnen">
+            <div class="qmark">&quot;</div>
+            <div class="eyebrow">Spruch des Tages <span class="spruch-cat" id="spruchCat"></span></div>
+            <blockquote id="spruchText"></blockquote>
+            <div class="expand-hint">↗ Klicken zum Vergrößern</div>
           </div>
         </div>
-        <div class="spruch-card" id="spruchCard" tabindex="0" role="button" aria-label="Spruch des Tages, Vollbild öffnen">
-          <div class="qmark">&quot;</div>
-          <div class="eyebrow">Spruch des Tages <span class="spruch-cat" id="spruchCat"></span></div>
-          <blockquote id="spruchText"></blockquote>
-          <div class="expand-hint">↗ Klicken zum Vergrößern</div>
+
+        <div class="ql-row">
+          <div class="ql-cell"><button type="button" class="ql-pill" id="qlNoteBtn"><span class="ql-ic">✎</span>Notiz anlegen</button></div>
+          <div class="ql-cell"><button type="button" class="ql-pill" id="qlCalendarBtn"><span class="ql-ic">📅</span>Kalendereintrag</button></div>
+          <div class="ql-cell"><button type="button" class="ql-pill" id="qlUploadBtn"><span class="ql-ic">⇧</span>Datei hochladen</button></div>
+          <div class="ql-cell"><button type="button" class="ql-pill" id="qlVertretungBtn"><span class="ql-ic">🔁</span>Vertretung hinzufügen</button></div>
         </div>
       </div>
     </section>

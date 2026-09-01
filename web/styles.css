@@ -122,6 +122,25 @@ input.input-error { border-color: var(--bad); background: color-mix(in srgb, var
 .small { font-size:12px; } .muted { color:var(--muted); }
 .hero-grid { display:grid; grid-template-columns: 1.3fr .9fr; gap:16px; margin-bottom:16px; }
 .hero-panel { background: var(--primary); color:white; border-radius:20px; padding:22px; }
+
+/* HEUTE-Redesign: Desktop 3 Spalten (Stundenplan | Woche im Blick | To-dos/Spruch),
+   Schnellaktionen voller Breite darunter. Mobile (<=1080px) -> eine Spalte in der
+   bisherigen Reihenfolge (Stundenplan, Woche, Schnellaktionen, To-dos, Spruch);
+   Spruch bleibt <=920px ausgeblendet (Regel weiter unten). */
+.dash-grid { display:grid; grid-template-columns: 1.7fr 1fr 1fr; gap:16px; align-items:start; margin-bottom:0; }
+.dash-grid > * { min-width:0; }
+.dash-side { display:grid; gap:16px; align-content:start; }
+.dash-grid .ql-row { grid-column:1 / -1; margin-top:0; }
+
+@media (max-width: 1080px) {
+  .dash-grid { display:flex; flex-direction:column; gap:16px; }
+  .dash-side { display:contents; }
+  .dash-grid .hero-panel { order:1; }
+  .dash-grid .dash-week  { order:2; }
+  .dash-grid .ql-row     { order:3; }
+  .dash-grid .card.soft  { order:4; }
+  .dash-grid .spruch-card { order:5; }
+}
 .hero-panel h2 { margin:0 0 6px; font-size:22px; }
 .mini-list { display:grid; gap:8px; }
 .mini-item { padding:11px 13px; border-radius:14px; background:var(--mini-item-bg, rgba(255,255,255,0.16)); display:flex; justify-content:space-between; align-items:center; gap:10px; cursor:pointer; min-width:0; }
