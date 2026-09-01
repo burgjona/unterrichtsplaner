@@ -593,16 +593,21 @@ a.todo-hefter-link:hover { text-decoration:underline; }
    Karten so hoch wie ihr Inhalt. Mobile (<=1080px) -> eine Spalte in Original-Reihenfolge
    (die .vcol-Wrapper werden per display:contents aufgehoben, .ord-* stellt die Folge her). */
 .v2col { display:grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap:14px; align-items:start; }
-.v2col > * { min-width:0; }
-.v2col .vcol { display:grid; gap:14px; align-content:start; min-width:0; }
-.v2col .vcol > * { min-width:0; }
-.v2col .vcol > .note-box { margin-top:0; }
+.v3col { display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap:14px; align-items:start; }
+.v2col > *, .v3col > * { min-width:0; }
+.v2col .vcol, .v3col .vcol { display:grid; gap:14px; align-content:start; min-width:0; }
+.v2col .vcol > *, .v3col .vcol > * { min-width:0; }
+.v2col .vcol > .note-box, .v3col .vcol > .note-box { margin-top:0; }
 @media (max-width: 1080px) {
-  .v2col { display:flex; flex-direction:column; gap:14px; }
-  .v2col .vcol { display:contents; }
+  .v2col, .v3col { display:flex; flex-direction:column; gap:14px; }
+  .v2col .vcol, .v3col .vcol { display:contents; }
   .ord-1{order:1}.ord-2{order:2}.ord-3{order:3}.ord-4{order:4}.ord-5{order:5}
   .ord-6{order:6}.ord-7{order:7}.ord-8{order:8}.ord-9{order:9}
   .ord-10{order:10}.ord-11{order:11}.ord-12{order:12}
+}
+@media (min-width: 1081px) and (max-width: 1240px) {
+  /* auf mittelbreiten Desktops werden 3 Spalten zu eng -> 2 Spalten */
+  .v3col { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 600px) {

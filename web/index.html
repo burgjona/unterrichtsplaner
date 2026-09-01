@@ -940,40 +940,14 @@
       </div>
     </section>
 
-    <!-- EINSTELLUNGEN -->
+    <!-- EINSTELLUNGEN — Desktop: dreispaltiges Raster (Anzeige & Nutzung | Schnittstellen |
+         Konto & System). Mobile (<=1080px): eine Spalte in Original-Reihenfolge (.ord-*). -->
     <section id="settings" class="view hidden">
-      <div class="card">
-        <h3>App-Cache</h3>
-        <p class="muted small">Erzwingt den neuesten Stand, falls die App (z. B. als eingebettete/installierte Version) alte Inhalte zeigt. Lädt die Seite danach automatisch neu.</p>
-        <button class="btn secondary" id="clearCacheBtn">Cache leeren &amp; neu laden</button>
-        <p class="muted small" style="margin-top:12px;">Letztes NAS-Update: <strong id="deployTime">–</strong> · Commit <code id="deployCommit">–</code></p>
-      </div>
-      <div class="card" style="margin-top:14px;">
-        <h3>Kalender-Kategorien</h3>
-        <p class="muted small">Farbige Kennzeichnung der Termine im Kalender.</p>
-        <div id="calCategoryList"></div>
-        <div style="margin-top:10px;"><label for="newCatName">Neue Kategorie: Name</label><input id="newCatName" placeholder="z. B. Elternabend" /></div>
-        <div style="margin-top:8px;"><label for="newCatColor">Farbe</label><input id="newCatColor" type="color" value="#2563eb" /></div>
-        <div style="margin-top:10px;"><button class="btn secondary" id="addCatBtn">Kategorie anlegen</button></div>
-      </div>
-      <div class="card" style="margin-top:14px;">
-        <h3>KI-Kosten</h3>
-        <p class="muted small">Grobe Schätzung der Token-Nutzung pro Modell (Referenz: ca. 2–3 USD/Monat bei normaler Nutzung).</p>
-        <div id="aiUsage"><p class="muted small">Noch keine KI-Nutzung.</p></div>
-      </div>
-      <div class="card" style="margin-top:14px;">
-        <h3>Schuljahre</h3>
-        <p class="muted small">Beim Anlegen werden Ferien &amp; Feiertage (Sachsen) automatisch abgerufen und gespeichert.</p>
-        <div class="row-3">
-          <div><label for="syLabel">Bezeichnung</label><input id="syLabel" placeholder="z. B. 2025/2026" /></div>
-          <div><label for="syStart">Beginn</label><input id="syStart" type="date" /></div>
-          <div><label for="syEnd">Ende</label><input id="syEnd" type="date" /></div>
-        </div>
-        <div style="margin-top:10px;"><button class="btn" id="saveSchoolYear">Schuljahr anlegen</button></div>
-        <div id="schoolYearList" class="file-list" style="margin-top:12px;"></div>
-      </div>
+      <div class="v3col">
+
+      <div class="vcol">
       <!-- U9: Darstellung (Jahreszeit-Theme, Hell/Dunkel, Schriftart) -->
-      <div class="card" style="margin-top:14px;">
+      <div class="card ord-5">
         <h3>Darstellung</h3>
         <p class="muted small">Jahreszeit-Farbschema, Hell-/Dunkelmodus und Schriftart. Wird sofort übernommen und gespeichert.</p>
         <label>Jahreszeit</label>
@@ -995,22 +969,23 @@
           </div>
         </div>
       </div>
-      <div class="card" style="margin-top:14px;" id="logoCard">
-        <h3>Logo (Favicon &amp; App-Icon)</h3>
-        <p class="muted small">Wird als Browser-Favicon genutzt und – beim Speichern der Seite als Web-App auf dem Startbildschirm – als App-Icon. Quadratische PNG-Dateien wirken am besten (max. 5 MB).</p>
-        <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-top:6px;">
-          <img id="logoPreview" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==" alt="Logo-Vorschau" style="width:56px; height:56px; object-fit:contain; border-radius:12px; background:rgba(20,83,45,.08); border:1px solid var(--line);" />
-          <input type="file" id="logoFileInput" accept="image/*" hidden />
-          <button class="btn" id="logoUploadBtn">Logo hochladen</button>
-          <button class="btn danger" id="logoRemoveBtn">Entfernen</button>
-        </div>
+      <div class="card ord-2">
+        <h3>Kalender-Kategorien</h3>
+        <p class="muted small">Farbige Kennzeichnung der Termine im Kalender.</p>
+        <div id="calCategoryList"></div>
+        <div style="margin-top:10px;"><label for="newCatName">Neue Kategorie: Name</label><input id="newCatName" placeholder="z. B. Elternabend" /></div>
+        <div style="margin-top:8px;"><label for="newCatColor">Farbe</label><input id="newCatColor" type="color" value="#2563eb" /></div>
+        <div style="margin-top:10px;"><button class="btn secondary" id="addCatBtn">Kategorie anlegen</button></div>
       </div>
-      <div class="card" style="margin-top:14px;">
-        <h3>Konto</h3>
-        <p class="muted small">Angemeldet als <strong id="settingsUser">–</strong>.</p>
-        <button class="btn secondary" id="logoutBtn">Abmelden</button>
+      <div class="card ord-3">
+        <h3>KI-Kosten</h3>
+        <p class="muted small">Grobe Schätzung der Token-Nutzung pro Modell (Referenz: ca. 2–3 USD/Monat bei normaler Nutzung).</p>
+        <div id="aiUsage"><p class="muted small">Noch keine KI-Nutzung.</p></div>
       </div>
-      <div class="card" style="margin-top:14px;">
+      </div>
+
+      <div class="vcol">
+      <div class="card ord-8">
         <h3>Anthropic API-Key</h3>
         <p class="muted small">Wird verschlüsselt gespeichert. Solange kein Key hinterlegt ist, bleiben KI-Funktionen deaktiviert.</p>
         <div style="margin:8px 0 12px;"><span id="apiKeyStatus" class="badge bad">Kein API-Key hinterlegt</span> <span class="small muted" id="apiKeyMeta"></span></div>
@@ -1023,7 +998,7 @@
         </div>
       </div>
       <!-- U21: Google-Kalender-Sync einrichten (Service-Account) -->
-      <div class="card" style="margin-top:14px;" id="googleKeyCard">
+      <div class="card ord-9" id="googleKeyCard">
         <h3>Google-Kalender</h3>
         <p class="muted small">Synchronisiert deinen Planungskalender in beide Richtungen mit einem Google-Kalender. Der Zugang läuft über einen Google-<em>Service-Account</em> (kein Login-Fenster) – der JSON-Schlüssel wird verschlüsselt gespeichert.</p>
         <div style="margin:8px 0 12px;"><span id="googleKeyStatus" class="badge bad">Nicht verbunden</span> <span class="small muted" id="googleKeyMeta"></span></div>
@@ -1048,7 +1023,7 @@
         </div>
       </div>
       <!-- M1a: Schulmanager-Online-Abgleich (ICS-Stundenplan-Link, kein Login) -->
-      <div class="card" style="margin-top:14px;" id="schulmanagerCard">
+      <div class="card ord-10" id="schulmanagerCard">
         <h3>Schulmanager Online</h3>
         <p class="muted small">Liest deine Unterrichtsstunden, Vertretungen und Aufsichten aus dem persönlichen Schulmanager-Kalenderabo. Kein Passwort nötig – nur ein geheimer Link, der wie ein Kennwort verschlüsselt gespeichert wird.</p>
         <div style="margin:8px 0 12px;"><span id="schulmanagerStatus" class="badge bad">Nicht verbunden</span> <span class="small muted" id="schulmanagerMeta"></span></div>
@@ -1067,6 +1042,44 @@
           <button class="btn" id="saveSchulmanagerUrl">Verbinden</button>
           <button class="btn danger" id="removeSchulmanagerUrl">Entfernen</button>
         </div>
+      </div>
+      </div>
+
+      <div class="vcol">
+      <div class="card ord-7">
+        <h3>Konto</h3>
+        <p class="muted small">Angemeldet als <strong id="settingsUser">–</strong>.</p>
+        <button class="btn secondary" id="logoutBtn">Abmelden</button>
+      </div>
+      <div class="card ord-6" id="logoCard">
+        <h3>Logo (Favicon &amp; App-Icon)</h3>
+        <p class="muted small">Wird als Browser-Favicon genutzt und – beim Speichern der Seite als Web-App auf dem Startbildschirm – als App-Icon. Quadratische PNG-Dateien wirken am besten (max. 5 MB).</p>
+        <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-top:6px;">
+          <img id="logoPreview" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==" alt="Logo-Vorschau" style="width:56px; height:56px; object-fit:contain; border-radius:12px; background:rgba(20,83,45,.08); border:1px solid var(--line);" />
+          <input type="file" id="logoFileInput" accept="image/*" hidden />
+          <button class="btn" id="logoUploadBtn">Logo hochladen</button>
+          <button class="btn danger" id="logoRemoveBtn">Entfernen</button>
+        </div>
+      </div>
+      <div class="card ord-4">
+        <h3>Schuljahre</h3>
+        <p class="muted small">Beim Anlegen werden Ferien &amp; Feiertage (Sachsen) automatisch abgerufen und gespeichert.</p>
+        <div class="row-3">
+          <div><label for="syLabel">Bezeichnung</label><input id="syLabel" placeholder="z. B. 2025/2026" /></div>
+          <div><label for="syStart">Beginn</label><input id="syStart" type="date" /></div>
+          <div><label for="syEnd">Ende</label><input id="syEnd" type="date" /></div>
+        </div>
+        <div style="margin-top:10px;"><button class="btn" id="saveSchoolYear">Schuljahr anlegen</button></div>
+        <div id="schoolYearList" class="file-list" style="margin-top:12px;"></div>
+      </div>
+      <div class="card ord-1">
+        <h3>App-Cache</h3>
+        <p class="muted small">Erzwingt den neuesten Stand, falls die App (z. B. als eingebettete/installierte Version) alte Inhalte zeigt. Lädt die Seite danach automatisch neu.</p>
+        <button class="btn secondary" id="clearCacheBtn">Cache leeren &amp; neu laden</button>
+        <p class="muted small" style="margin-top:12px;">Letztes NAS-Update: <strong id="deployTime">–</strong> · Commit <code id="deployCommit">–</code></p>
+      </div>
+      </div>
+
       </div>
     </section>
   </main>
