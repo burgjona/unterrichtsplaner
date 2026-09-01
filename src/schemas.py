@@ -172,12 +172,20 @@ class LernbereichOut(Base):
 
 
 # ---------- Lehrplan-Abhakmodul ----------
+class LehrplanLernzielItem(Base):
+    id: int                       # lehrplan_lernziele.id
+    text: str                     # "grosses" Lernziel (linke Spalte im Lehrplan)
+    inhalte: Optional[str] = None  # zugehoerige Anstriche, "; "-getrennt
+    checked_at: Optional[str] = None
+
+
 class LehrplanChecklistItem(Base):
     id: int                       # lehrplan_ziele.id bzw. lernbereiche.id
     code: str
     text: str                     # Ziel-Text bzw. LB-Titel
     richtwert_ustd: Optional[int] = None  # nur bei Lernbereichen
     checked_at: Optional[str] = None      # gesetzt => abgehakt
+    lernziele: List[LehrplanLernzielItem] = []  # nur bei Lernbereichen befuellt
 
 
 class LehrplanChecklistOut(Base):
@@ -187,13 +195,14 @@ class LehrplanChecklistOut(Base):
     track: Optional[str] = None          # tatsaechlich angezeigter Bildungsgang
     class_track: Optional[str] = None    # Bildungsgang der Klasse (kann abweichen)
     track_fallback: bool = False         # True => class_track passt nicht, es wird ein Ersatz gezeigt
+    lernziele_missing: int = 0           # LB (im Scope) ohne extrahierte Feinziele
     ziele: List[LehrplanChecklistItem]
     lernbereiche: List[LehrplanChecklistItem]
 
 
 class LehrplanCheckIn(Base):
     class_id: int
-    item_type: str                # 'ziel' | 'lb'
+    item_type: str                # 'ziel' | 'lb' | 'lernziel'
     item_ref: int
     checked: bool
 

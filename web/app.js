@@ -1245,6 +1245,8 @@ function renderClassDetail() {
    gefiltert); der Abhak-Status hängt an DIESER Klasse (schuljahres-spezifisch). Reines
    Online-REST, kein Offline-Sync. Abgehakte Einträge bleiben sichtbar (durchgestrichen). */
 let _cdLehrplanData = null;
+const _cdLehrplanOpen = new Set();   // aufgeklappte Lernbereiche (id), sitzungsweit
+let _cdLehrplanExtracting = false;
 
 async function renderClassDetailLehrplan() {
   const wrap = $("cdLehrplan");
@@ -1264,10 +1266,29 @@ async function renderClassDetailLehrplan() {
   _renderCdLehrplan();
 }
 
+// Alle abhakbaren Einträge flach (Ziele + Lernbereiche + Feinziele) – für den Gesamtzähler.
 function _cdLehrplanCounts() {
   const d = _cdLehrplanData;
   const all = [...d.ziele, ...d.lernbereiche];
+  d.lernbereiche.forEach((lb) => all.push(...(lb.lernziele || [])));
   return { done: all.filter((i) => i.checkedAt).length, total: all.length };
+}
+
+function _lpRow(item, type, opts) {
+  const o = opts || {};
+  const badge = item.richtwertUstd != null
+    ? ` <span class="lp-check-ustd">${esc(item.richtwertUstd)} Ustd.</span>` : "";
+  const code = o.code ? `<span class="lp-check-code">${esc(o.code)}</span> ` : "";
+  const inhalte = item.inhalte
+    ? ` <span class="lp-check-inhalte">(${esc(item.inhalte)})</span>` : "";
+  const date = item.checkedAt ? `<span class="lp-check-date">${esc(deDate(item.checkedAt))}</span>` : "";
+  return (
+    `<label class="lp-check-item${item.checkedAt ? " done" : ""}${o.cls ? " " + o.cls : ""}">` +
+    `<input type="checkbox" data-lp-type="${type}" data-lp-ref="${item.id}"${item.checkedAt ? " checked" : ""}/>` +
+    `<span class="lp-check-text">${code}${esc(item.text)}${badge}${inhalte}</span>` +
+    date +
+    `</label>`
+  );
 }
 
 function _renderCdLehrplan() {
@@ -1281,46 +1302,74 @@ function _renderCdLehrplan() {
     progBox.innerHTML = `<span class="lp-progress">${c.done}/${c.total} abgehakt</span>`;
   }
 
-  const section = (titleText, items, type, countItems) => {
-    const done = countItems.filter((i) => i.checkedAt).length;
-    const rows = items.map((i) => {
-      const badge = i.richtwertUstd != null
-        ? `<span class="lp-check-ustd">${esc(i.richtwertUstd)} Ustd.</span>` : "";
-      const codePrefix = type === "lb" ? `<span class="lp-check-code">${esc(i.code)}</span> ` : "";
-      const dateTag = i.checkedAt
-        ? `<span class="lp-check-date">${esc(deDate(i.checkedAt))}</span>` : "";
-      return (
-        `<label class="lp-check-item${i.checkedAt ? " done" : ""}" data-lp-row="${type}:${i.id}">` +
-        `<input type="checkbox" data-lp-type="${type}" data-lp-ref="${i.id}"${i.checkedAt ? " checked" : ""}/>` +
-        `<span class="lp-check-text">${codePrefix}${esc(i.text)} ${badge}</span>` +
-        dateTag +
-        `</label>`
-      );
-    }).join("");
-    return (
-      `<div class="lp-check-group">` +
-      `<h4>${esc(titleText)} <span class="muted small">(${done}/${countItems.length})</span></h4>` +
-      (items.length ? rows : '<p class="muted small">Keine Einträge im Lehrplan.</p>') +
-      `</div>`
-    );
-  };
-
   const trackNames = { RS: "Realschulbildungsgang", HS: "Hauptschulbildungsgang", gemischt: "gemischt" };
-  let hint = "";
+  let head = "";
   if (d.trackFallback) {
     const shown = trackNames[d.track] || d.track;
-    hint =
+    head +=
       `<p class="lp-hint">Bildungsgang der Klasse ist „${esc(d.classTrack || "—")}", ` +
       `der Lehrplan trennt hier aber nach Bildungsgang. Angezeigt wird der <strong>${esc(shown)}</strong>. ` +
       `Für den anderen den Bildungsgang der Klasse über „Stammdaten bearbeiten" anpassen.</p>`;
   } else if (d.ziele.length === 0 && d.lernbereiche.length === 0) {
-    hint = `<p class="lp-hint">Für Fach „${esc(d.subject)}" / Klassenstufe ${esc(d.grade)} liegt kein Lehrplan in der App vor.</p>`;
+    head += `<p class="lp-hint">Für Fach „${esc(d.subject)}" / Klassenstufe ${esc(d.grade)} liegt kein Lehrplan in der App vor.</p>`;
+  }
+  if (d.lernbereiche.length && d.lernzieleMissing > 0) {
+    head +=
+      `<div class="lp-extract">` +
+      `<p class="muted small" style="margin:0;">Die einzelnen Lernziele aus dem Lehrplan (linke Spalte) ` +
+      `werden einmalig per KI aus dem Lehrplantext erzeugt – für ${esc(d.lernzieleMissing)} von ` +
+      `${esc(d.lernbereiche.length)} Lernbereichen dieser Klasse fehlen sie noch.</p>` +
+      `<button class="btn small" id="cdLehrplanExtractBtn"${_cdLehrplanExtracting ? " disabled" : ""}>` +
+      `${_cdLehrplanExtracting ? "Feinziele werden erzeugt …" : "Feinziele aus dem Lehrplan erzeugen"}</button>` +
+      `</div>`;
   }
 
-  wrap.innerHTML =
-    hint +
-    section("Ziele der Klassenstufe", d.ziele, "ziel", d.ziele) +
-    section("Lernbereiche", d.lernbereiche, "lb", d.lernbereiche);
+  // Ziele der Klassenstufe
+  const zieleDone = d.ziele.filter((i) => i.checkedAt).length;
+  let zieleHtml =
+    `<div class="lp-check-group"><h4>Ziele der Klassenstufe ` +
+    `<span class="muted small">(${zieleDone}/${d.ziele.length})</span></h4>` +
+    (d.ziele.length ? d.ziele.map((i) => _lpRow(i, "ziel", {})).join("")
+                    : '<p class="muted small">Keine Einträge im Lehrplan.</p>') +
+    `</div>`;
+
+  // Lernbereiche mit aufklappbaren Feinzielen
+  const lbHtml = d.lernbereiche.map((lb) => {
+    const kids = lb.lernziele || [];
+    const kidsDone = kids.filter((k) => k.checkedAt).length;
+    const open = _cdLehrplanOpen.has(lb.id);
+    const frac = kids.length ? `${kidsDone}/${kids.length}` : "—";
+    const toggle = kids.length
+      ? `<button type="button" class="lp-lb-toggle" data-lb-toggle="${lb.id}" aria-expanded="${open}">` +
+        `<span class="lp-lb-frac">${frac}</span><span class="lp-lb-caret">${open ? "▾" : "▸"}</span></button>`
+      : `<span class="lp-lb-frac muted">${frac}</span>`;
+    const kidRows = kids.map((k) => _lpRow(k, "lernziel", { cls: "lp-check-kid" })).join("");
+    return (
+      `<div class="lp-lb">` +
+      `<div class="lp-lb-head">${_lpRow(lb, "lb", { code: lb.code })}${toggle}</div>` +
+      (kids.length ? `<div class="lp-lb-kids"${open ? "" : " hidden"}>${kidRows}</div>` : "") +
+      `</div>`
+    );
+  }).join("");
+  const lbDone = d.lernbereiche.filter((i) => i.checkedAt).length;
+  const lbGroup =
+    `<div class="lp-check-group"><h4>Lernbereiche ` +
+    `<span class="muted small">(${lbDone}/${d.lernbereiche.length})</span></h4>` +
+    (d.lernbereiche.length ? lbHtml : '<p class="muted small">Keine Einträge im Lehrplan.</p>') +
+    `</div>`;
+
+  wrap.innerHTML = head + zieleHtml + lbGroup;
+
+  const btn = $("cdLehrplanExtractBtn");
+  if (btn) btn.onclick = () => _cdLehrplanRunExtract();
+
+  wrap.querySelectorAll("[data-lb-toggle]").forEach((t) => {
+    t.onclick = () => {
+      const id = Number(t.dataset.lbToggle);
+      if (_cdLehrplanOpen.has(id)) _cdLehrplanOpen.delete(id); else _cdLehrplanOpen.add(id);
+      _renderCdLehrplan();
+    };
+  });
 
   wrap.querySelectorAll('input[type="checkbox"][data-lp-type]').forEach((cb) => {
     cb.onchange = async () => {
@@ -1332,8 +1381,13 @@ function _renderCdLehrplan() {
         const res = await API.put("/lehrplan/checks", {
           classId: detailClassId, itemType: type, itemRef: ref, checked,
         });
-        const list = type === "ziel" ? _cdLehrplanData.ziele : _cdLehrplanData.lernbereiche;
-        const it = list.find((x) => x.id === ref);
+        let it = null;
+        if (type === "ziel") it = _cdLehrplanData.ziele.find((x) => x.id === ref);
+        else if (type === "lb") it = _cdLehrplanData.lernbereiche.find((x) => x.id === ref);
+        else _cdLehrplanData.lernbereiche.forEach((lb) => {
+          const hit = (lb.lernziele || []).find((k) => k.id === ref);
+          if (hit) it = hit;
+        });
         if (it) it.checkedAt = res.checkedAt || null;
         _renderCdLehrplan();
       } catch (e) {
@@ -1343,6 +1397,30 @@ function _renderCdLehrplan() {
       }
     };
   });
+}
+
+async function _cdLehrplanRunExtract() {
+  if (_cdLehrplanExtracting) return;
+  _cdLehrplanExtracting = true;
+  _renderCdLehrplan();
+  const btn = $("cdLehrplanExtractBtn");
+  try {
+    const { jobId } = await API.post("/lehrplan/lernziele/extract");
+    while (true) {
+      await new Promise((r) => setTimeout(r, 2500));
+      const s = await API.get("/lehrplan/lernziele/extract/" + jobId);
+      if (btn && s.progress) {
+        btn.textContent = `Feinziele werden erzeugt … ${s.progress.processed}/${s.progress.total}`;
+      }
+      if (s.status === "done") { toast("Feinziele aus dem Lehrplan erzeugt."); break; }
+      if (s.status === "error") { toast(s.error || "Extraktion fehlgeschlagen.", false); break; }
+    }
+  } catch (e) {
+    toast(e.message, false);
+  } finally {
+    _cdLehrplanExtracting = false;
+    if (String(detailClassId)) renderClassDetailLehrplan();
+  }
 }
 
 /* ---------- Hefter der SuS: chronologische Übersicht der Heftereinträge dieser Klasse ----------

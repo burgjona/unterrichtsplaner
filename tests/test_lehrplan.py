@@ -1,9 +1,58 @@
-"""Lehrplan-Abhakmodul: Checkliste je Klasse + Abhak-Status."""
+"""Lehrplan-Abhakmodul: Checkliste je Klasse + Abhak-Status + KI-Feinziele."""
+import json
 import sqlite3
 
 import pytest
 
+from src.lib import ai
 from src.seed import seed_lehrplan_ziele, seed_lernbereiche
+
+
+# ---- Fake Anthropic client (Muster aus tests/test_lernziele.py) ----
+class _Usage:
+    input_tokens, output_tokens, cache_read_input_tokens = 800, 200, 0
+
+
+class _Resp:
+    def __init__(self, text):
+        self.content = [type("B", (), {"type": "text", "text": text})()]
+        self.usage = _Usage()
+        self.stop_reason = "end_turn"
+
+
+class _FakeClient:
+    def __init__(self, payload, calls):
+        self._payload, self.messages, self._calls = payload, self, calls
+
+    def stream(self, **kwargs):
+        self._calls.append(kwargs)
+        return self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def get_final_message(self):
+        return _Resp(self._payload)
+
+
+@pytest.fixture(autouse=True)
+def _clear_prompt_cache():
+    ai._prompt_cache.clear()
+    yield
+    ai._prompt_cache.clear()
+
+
+def _install_ai(monkeypatch, payload):
+    state = {"calls": []}
+    monkeypatch.setattr(ai, "_make_client", lambda api_key: _FakeClient(payload, state["calls"]))
+    return state
+
+
+def _set_key(client):
+    assert client.put("/api/settings/api-key", json={"apiKey": "sk-ant-test-0000"}).status_code == 200
 
 
 @pytest.fixture
@@ -115,3 +164,69 @@ def test_bad_item_type_422(seeded, client, auth):
 
 def test_requires_auth(seeded, client):
     assert client.get("/api/lehrplan/checklist", params={"classId": 1}).status_code == 401
+
+
+# ---------- KI-Batch: Feinziele je Lernbereich ----------
+_LZ_PAYLOAD = json.dumps({"lernziele": [
+    {"anforderung": "Kennen", "text": "Kennen von verschiedenen Lesetechniken",
+     "inhalte": ["orientierendes Lesen", "verweilendes Lesen"]},
+    {"anforderung": "Beherrschen", "text": "Beherrschen der Interpunktion am Satzende",
+     "inhalte": []},
+]})
+
+
+def test_extract_requires_api_key(seeded, client, auth):
+    assert client.post("/api/lehrplan/lernziele/extract").status_code == 400
+
+
+def test_extract_lernziele_batch_and_checklist(seeded, client, auth, monkeypatch):
+    st = _install_ai(monkeypatch, _LZ_PAYLOAD)
+    _set_key(client)
+
+    r = client.post("/api/lehrplan/lernziele/extract")
+    assert r.status_code == 200
+    job_id = r.json()["jobId"]
+
+    # BackgroundTasks laufen im TestClient synchron -> Job ist fertig
+    status = client.get(f"/api/lehrplan/lernziele/extract/{job_id}").json()
+    assert status["status"] == "done", status
+    assert status["progress"]["processed"] == status["progress"]["total"] > 0
+    assert status["progress"]["failed"] == 0
+    assert len(st["calls"]) == status["progress"]["total"]  # ein Call je Lernbereich
+
+    cid = _make_class(client, grade=8, track="RS")
+    data = client.get("/api/lehrplan/checklist", params={"classId": cid}).json()
+    assert data["lernzieleMissing"] == 0
+    lb = data["lernbereiche"][0]
+    assert [z["text"] for z in lb["lernziele"]] == [
+        "Kennen von verschiedenen Lesetechniken",
+        "Beherrschen der Interpunktion am Satzende",
+    ]
+    assert lb["lernziele"][0]["inhalte"] == "orientierendes Lesen; verweilendes Lesen"
+    assert lb["lernziele"][1]["inhalte"] is None
+
+    # abhaken eines Feinziels
+    lz = lb["lernziele"][0]
+    rr = client.put("/api/lehrplan/checks", json={
+        "classId": cid, "itemType": "lernziel", "itemRef": lz["id"], "checked": True})
+    assert rr.status_code == 200 and rr.json()["checked"] is True
+    data2 = client.get("/api/lehrplan/checklist", params={"classId": cid}).json()
+    assert data2["lernbereiche"][0]["lernziele"][0]["checkedAt"] is not None
+
+
+def test_extract_is_idempotent_and_resumes(seeded, client, auth, monkeypatch):
+    _install_ai(monkeypatch, _LZ_PAYLOAD)
+    _set_key(client)
+    j1 = client.post("/api/lehrplan/lernziele/extract").json()["jobId"]
+    assert client.get(f"/api/lehrplan/lernziele/extract/{j1}").json()["status"] == "done"
+    n1 = None
+    # zweiter Lauf: nichts mehr zu tun, keine Dubletten
+    st2 = _install_ai(monkeypatch, _LZ_PAYLOAD)
+    j2 = client.post("/api/lehrplan/lernziele/extract").json()["jobId"]
+    prog = client.get(f"/api/lehrplan/lernziele/extract/{j2}").json()["progress"]
+    assert prog["processed"] == prog["total"]
+    assert st2["calls"] == []  # kein LB mehr offen -> kein KI-Call
+
+    cid = _make_class(client, grade=7, track="HS")
+    lb = client.get("/api/lehrplan/checklist", params={"classId": cid}).json()["lernbereiche"][0]
+    assert len(lb["lernziele"]) == 2  # nicht 4

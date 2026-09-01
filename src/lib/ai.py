@@ -34,6 +34,7 @@ ROUTING = {
     "jahresplan_import": "sonnet",   # Termin-Erkennung aus dem Schul-Jahresplan (PDF) — U20
     "sequenzplan": "sonnet",         # Sequenzstunden-Generierung aus einem Stoffplan-Block
     "tafelbild": "sonnet",           # Tafelbild-Vorschlag aus Freitext (U31)
+    "lehrplan_lernziele": "sonnet",   # Feinziele je Lernbereich aus dem OCR-Rohtext extrahieren
 }
 
 _prompt_cache = {}  # sha256(prompt) -> Antworttext (lokal, prozessweit)
