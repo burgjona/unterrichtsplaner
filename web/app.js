@@ -2139,9 +2139,11 @@ function renderHefterReminders() {
     const badge = status === "todo"
       ? '<span class="badge warn">nachpflegen</span>'
       : '<span class="badge">noch offen</span>';
+    // Datum als eigene Zeile (nicht in der schmalen .time-Spalte — die ist für Uhrzeiten
+    // dimensioniert und würde "20.08.2026" abschneiden).
     div.innerHTML =
-      `<span class="time">${esc(when)}</span>` +
-      `<span>Heftereintrag: ${esc(l.title || "Stunde")}</span>${badge}`;
+      `<span class="lbl"><span>Heftereintrag: ${esc(l.title || "Stunde")}</span>` +
+      `<span class="sub">${esc(when)}</span></span>${badge}`;
     div.onclick = () => openLessonModal(l);
     list.appendChild(div);
   });

@@ -124,7 +124,8 @@ input.input-error { border-color: var(--bad); background: color-mix(in srgb, var
 .hero-panel { background: var(--primary); color:white; border-radius:20px; padding:22px; }
 .hero-panel h2 { margin:0 0 6px; font-size:22px; }
 .mini-list { display:grid; gap:8px; }
-.mini-item { padding:11px 13px; border-radius:14px; background:var(--mini-item-bg, rgba(255,255,255,0.16)); display:flex; justify-content:space-between; align-items:center; gap:10px; cursor:pointer; }
+.mini-item { padding:11px 13px; border-radius:14px; background:var(--mini-item-bg, rgba(255,255,255,0.16)); display:flex; justify-content:space-between; align-items:center; gap:10px; cursor:pointer; min-width:0; }
+.mini-item > span:not(.time):not(.badge) { min-width:0; overflow-wrap:anywhere; }
 .mini-item:hover { background: var(--mini-item-bg-hover, rgba(255,255,255,0.26)); }
 .mini-item .time { font-weight:var(--fw-bold); color:var(--mini-time, #fef9c3); font-size:12px; min-width:50px; }
 .card.dark .mini-item { background:rgba(255,255,255,0.10); }
@@ -135,7 +136,8 @@ input.input-error { border-color: var(--bad); background: color-mix(in srgb, var
 .badge.bad { background:var(--badge-bad-bg, #fecaca); color:var(--badge-bad-text, #7f1d1d); }
 .sec-h { font-size:11px; text-transform:uppercase; letter-spacing:.07em; color:var(--sidebar-label, #86efac); margin:12px 0 6px; }
 .sec-h:first-child { margin-top:0; }
-.mini-item .lbl { display:flex; flex-direction:column; gap:1px; }
+.mini-item .lbl { display:flex; flex-direction:column; gap:1px; flex:1; min-width:0; }
+.mini-item .lbl > span { overflow-wrap:anywhere; }
 .mini-item .lbl .sub { font-size:11.5px; font-weight:400; opacity:.75; }
 .mini-empty { font-size:12.5px; opacity:.75; padding:6px 2px; }
 
@@ -335,7 +337,9 @@ a.todo-hefter-link:hover { text-decoration:underline; }
 .view-toggle { display:flex; gap:6px; margin-left:auto; }
 .view-toggle button { background:var(--surface-2); border:1px solid var(--line); border-radius:8px; padding:6px 12px; cursor:pointer; font-size:12px; font-weight:var(--fw-bold); color:var(--muted); }
 .view-toggle button.active { background:var(--primary); color:white; border-color:var(--primary); }
-@media (max-width: 1080px) { .hero-grid, .grid-3, .grid-2, .grid-4, .row, .row-3, .row-4, .meyer-grid { grid-template-columns: 1fr; } .ql-row { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+/* minmax(0,1fr) statt 1fr: eine 1fr-Spur wächst an breiten/nicht umbrechbaren Kindern über
+   den Viewport hinaus (Grid-Blowout). minmax(0,…) erlaubt das Schrumpfen — Inhalt bleibt im Bild. */
+@media (max-width: 1080px) { .hero-grid, .grid-3, .grid-2, .grid-4, .row, .row-3, .row-4, .meyer-grid { grid-template-columns: minmax(0, 1fr); } .ql-row { grid-template-columns: repeat(2, minmax(0,1fr)); } }
 .burger-btn { display:none; }
 .nav-backdrop { display:none; }
 .bottom-nav { display:none; }
@@ -405,7 +409,7 @@ a.todo-hefter-link:hover { text-decoration:underline; }
 @media (max-width: 600px) {
   main { padding:12px; padding-bottom:calc(78px + env(safe-area-inset-bottom)); }
   .card { padding:14px; border-radius:14px; }
-  .row-4 { grid-template-columns: 1fr; }
+  .row-4 { grid-template-columns: minmax(0, 1fr); }
   .cal-nav { flex-wrap:wrap; gap:8px; }
   .view-toggle { width:100%; }
   .view-toggle button { flex:1; }
@@ -421,10 +425,20 @@ a.todo-hefter-link:hover { text-decoration:underline; }
   .table-scroll { overflow-x:visible; }
   table { width:100%; table-layout:fixed; }
   th, td { word-break:break-word; padding:6px 4px; font-size:11px; white-space:normal; }
-  .row, .row-3 { grid-template-columns: 1fr; }
-  .grid-4, .grid-3, .grid-2 { grid-template-columns: 1fr; }
-  .hero-grid { grid-template-columns: 1fr; }
-  .ql-row { grid-template-columns: 1fr; }
+  /* Breite Datentabellen (viele Spalten + Aktions-Buttons) quetschen sich mit table-layout:fixed
+     nicht sinnvoll auf 375px — stattdessen horizontal scrollen lassen (Seite scrollt nicht mit). */
+  .table-scroll-wide { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  .table-scroll-wide table { table-layout:auto; min-width:560px; }
+  .table-scroll-wide th, .table-scroll-wide td { white-space:nowrap; word-break:normal; }
+  .row, .row-3 { grid-template-columns: minmax(0, 1fr); }
+  .grid-4, .grid-3, .grid-2 { grid-template-columns: minmax(0, 1fr); }
+  .hero-grid { grid-template-columns: minmax(0, 1fr); }
+  .hero-panel, .hero-grid > .card { min-width: 0; }
+  .ql-row { grid-template-columns: minmax(0, 1fr); }
+  /* Auf sehr schmalen Geräten (≤ ~320px) sonst leichter Überhang: Aktions-/Label-Zeilen umbrechen. */
+  .phase-head, .phase-head-actions { flex-wrap: wrap; }
+  .tt-plan-label { flex-wrap: wrap; }
+  .tt-plan-label select { min-width: 0; flex: 1; }
 }
 
 /* M10 U3: Sidebar am Desktop einklappbar (nur >920px, Mobile-Drawer unberührt) */
@@ -660,8 +674,11 @@ a.todo-hefter-link:hover { text-decoration:underline; }
 .date-chip.lue { background:#fee2e2; color:#991b1b; }
 .date-chip.lue:hover { background:#fbcaca; }
 @media (max-width: 1080px) {
-  .cal-layout, .cal-layout.side-collapsed { grid-template-columns: 1fr; }
+  /* minmax(0,1fr) statt 1fr: sonst wächst die Spur an breiten Kindern (Kalendergitter,
+     Tagesagenda, Toolbar) über den Viewport hinaus — Inhalt lief rechts aus dem Bild. */
+  .cal-layout, .cal-layout.side-collapsed { grid-template-columns: minmax(0, 1fr); }
   .cal-layout.side-collapsed .cal-side { display:flex; }
+  .cal-main { min-width: 0; }
 }
 
 /* U26: Google-Verknüpfung im Termin-Modal */
