@@ -1235,8 +1235,101 @@ function renderClassDetail() {
   renderClassDupControl();
   getSeatPlanModule().then((m) => m.initSeatPlan());
   renderClassDetailHefter();
+  renderClassDetailLehrplan();
   renderClassDetailStoffPlans();
   renderClassDetailNotes();
+}
+
+/* ---------- Lehrplan-Abhakmodul: Ziele der Klassenstufe + Lernbereiche abhaken ----------
+   Referenz kommt aus /lehrplan/checklist (nach Fach/Klassenstufe/Bildungsgang der Klasse
+   gefiltert); der Abhak-Status hängt an DIESER Klasse (schuljahres-spezifisch). Reines
+   Online-REST, kein Offline-Sync. Abgehakte Einträge bleiben sichtbar (durchgestrichen). */
+let _cdLehrplanData = null;
+
+async function renderClassDetailLehrplan() {
+  const wrap = $("cdLehrplan");
+  const progBox = $("cdLehrplanProgress");
+  if (!wrap) return;
+  const clsId = detailClassId;
+  wrap.innerHTML = '<p class="muted small" style="margin-top:0;">Lädt …</p>';
+  if (progBox) progBox.innerHTML = "";
+  try {
+    _cdLehrplanData = await API.get("/lehrplan/checklist?classId=" + encodeURIComponent(clsId));
+  } catch (e) {
+    _cdLehrplanData = null;
+    wrap.innerHTML = `<p class="muted small" style="margin-top:0;">Lehrplan konnte nicht geladen werden: ${esc(e.message)}</p>`;
+    return;
+  }
+  if (String(detailClassId) !== String(clsId)) return; // Klasse zwischenzeitlich gewechselt
+  _renderCdLehrplan();
+}
+
+function _cdLehrplanCounts() {
+  const d = _cdLehrplanData;
+  const all = [...d.ziele, ...d.lernbereiche];
+  return { done: all.filter((i) => i.checkedAt).length, total: all.length };
+}
+
+function _renderCdLehrplan() {
+  const wrap = $("cdLehrplan");
+  const progBox = $("cdLehrplanProgress");
+  const d = _cdLehrplanData;
+  if (!wrap || !d) return;
+
+  if (progBox) {
+    const c = _cdLehrplanCounts();
+    progBox.innerHTML = `<span class="lp-progress">${c.done}/${c.total} abgehakt</span>`;
+  }
+
+  const section = (titleText, items, type, countItems) => {
+    const done = countItems.filter((i) => i.checkedAt).length;
+    const rows = items.map((i) => {
+      const badge = i.richtwertUstd != null
+        ? `<span class="lp-check-ustd">${esc(i.richtwertUstd)} Ustd.</span>` : "";
+      const codePrefix = type === "lb" ? `<span class="lp-check-code">${esc(i.code)}</span> ` : "";
+      const dateTag = i.checkedAt
+        ? `<span class="lp-check-date">${esc(deDate(i.checkedAt))}</span>` : "";
+      return (
+        `<label class="lp-check-item${i.checkedAt ? " done" : ""}" data-lp-row="${type}:${i.id}">` +
+        `<input type="checkbox" data-lp-type="${type}" data-lp-ref="${i.id}"${i.checkedAt ? " checked" : ""}/>` +
+        `<span class="lp-check-text">${codePrefix}${esc(i.text)} ${badge}</span>` +
+        dateTag +
+        `</label>`
+      );
+    }).join("");
+    return (
+      `<div class="lp-check-group">` +
+      `<h4>${esc(titleText)} <span class="muted small">(${done}/${countItems.length})</span></h4>` +
+      (items.length ? rows : '<p class="muted small">Keine Einträge im Lehrplan.</p>') +
+      `</div>`
+    );
+  };
+
+  wrap.innerHTML =
+    section("Ziele der Klassenstufe", d.ziele, "ziel", d.ziele) +
+    section("Lernbereiche", d.lernbereiche, "lb", d.lernbereiche);
+
+  wrap.querySelectorAll('input[type="checkbox"][data-lp-type]').forEach((cb) => {
+    cb.onchange = async () => {
+      const type = cb.dataset.lpType;
+      const ref = Number(cb.dataset.lpRef);
+      const checked = cb.checked;
+      cb.disabled = true;
+      try {
+        const res = await API.put("/lehrplan/checks", {
+          classId: detailClassId, itemType: type, itemRef: ref, checked,
+        });
+        const list = type === "ziel" ? _cdLehrplanData.ziele : _cdLehrplanData.lernbereiche;
+        const it = list.find((x) => x.id === ref);
+        if (it) it.checkedAt = res.checkedAt || null;
+        _renderCdLehrplan();
+      } catch (e) {
+        cb.checked = !checked;
+        cb.disabled = false;
+        toast(e.message, false);
+      }
+    };
+  });
 }
 
 /* ---------- Hefter der SuS: chronologische Übersicht der Heftereinträge dieser Klasse ----------

@@ -171,6 +171,39 @@ class LernbereichOut(Base):
     source: Optional[str] = None
 
 
+# ---------- Lehrplan-Abhakmodul ----------
+class LehrplanChecklistItem(Base):
+    id: int                       # lehrplan_ziele.id bzw. lernbereiche.id
+    code: str
+    text: str                     # Ziel-Text bzw. LB-Titel
+    richtwert_ustd: Optional[int] = None  # nur bei Lernbereichen
+    checked_at: Optional[str] = None      # gesetzt => abgehakt
+
+
+class LehrplanChecklistOut(Base):
+    class_id: int
+    subject: str
+    grade: int
+    track: Optional[str] = None
+    ziele: List[LehrplanChecklistItem]
+    lernbereiche: List[LehrplanChecklistItem]
+
+
+class LehrplanCheckIn(Base):
+    class_id: int
+    item_type: str                # 'ziel' | 'lb'
+    item_ref: int
+    checked: bool
+
+
+class LehrplanCheckOut(Base):
+    class_id: int
+    item_type: str
+    item_ref: int
+    checked: bool
+    checked_at: Optional[str] = None
+
+
 # ---------- Stunden ----------
 class Klafki(Base):
     gegenwart: str = ""

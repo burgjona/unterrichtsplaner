@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from src.db import init_db
-from src.seed import parse_lernbereiche, seed_lernbereiche
+from src.seed import parse_lernbereiche, seed_lehrplan_ziele, seed_lernbereiche
 
 DOCS = Path(__file__).resolve().parent.parent / "docs"
 
@@ -39,4 +39,28 @@ def test_seed_is_idempotent(tmp_path):
     second = seed_lernbereiche(conn)  # INSERT OR IGNORE → nichts Neues
     assert second == 0
     assert conn.execute("SELECT COUNT(*) FROM lernbereiche").fetchone()[0] == 62
+    conn.close()
+
+
+def test_seed_lehrplan_ziele(tmp_path):
+    conn = init_db(str(tmp_path / "seed.db"))
+    seed_lernbereiche(conn)
+    first = seed_lehrplan_ziele(conn)
+    # Deutsch: 9 (grade, track)-Kombis x 4 Ziele = 36; WTH: 3 x 3 = 9
+    assert first == 45
+    assert conn.execute("SELECT COUNT(*) FROM lehrplan_ziele").fetchone()[0] == 45
+    assert seed_lehrplan_ziele(conn) == 0  # idempotent
+    d5 = conn.execute(
+        "SELECT text FROM lehrplan_ziele WHERE subject='Deutsch' AND grade=5 "
+        "AND track='gemischt' ORDER BY sort_order"
+    ).fetchall()
+    assert [r[0] for r in d5] == [
+        "Entwickeln des Leseverstehens",
+        "Entwickeln der mündlichen Sprachfähigkeit",
+        "Entwickeln der schriftlichen Sprachfähigkeit",
+        "Entwickeln der Reflexionsfähigkeit über Sprache",
+    ]
+    assert conn.execute(
+        "SELECT COUNT(*) FROM lehrplan_ziele WHERE subject='WTH' AND grade=8"
+    ).fetchone()[0] == 3
     conn.close()

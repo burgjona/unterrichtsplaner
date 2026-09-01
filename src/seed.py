@@ -131,6 +131,55 @@ def extract_detail_md(text: str, subject: str) -> dict:
     return result
 
 
+# Kuratierte "Ziele der Klassenstufe" (Kompetenzbereiche) je Fach. Quelle: der
+# "Ziele"-Block vor "### Lernbereich 1" jeder Klassenstufe in docs/lp_os_*.md.
+# Die Ueberschriften sind im saechsischen Lehrplan ueber alle Klassenstufen des
+# Faches konstant (nur der erlaeuternde Fliesstext variiert, den wir nicht abhaken);
+# daher eine Liste je Fach, beim Seed auf alle (grade, track)-Kombinationen des
+# Faches verteilt (Scope identisch zu lernbereiche).
+_ZIELE = {
+    "Deutsch": [
+        "Entwickeln des Leseverstehens",
+        "Entwickeln der mündlichen Sprachfähigkeit",
+        "Entwickeln der schriftlichen Sprachfähigkeit",
+        "Entwickeln der Reflexionsfähigkeit über Sprache",
+    ],
+    "WTH": [
+        "Erkennen komplexer Zusammenhänge der Lebens- und Arbeitswelt in "
+        "übergreifender ökonomischer Betrachtungsweise",
+        "Lösen realitätsbezogener Aufgaben- und Problemstellungen durch sach- und "
+        "fachgerechtes Umgehen mit Artefakten, Verfahren und Informationen",
+        "Kooperatives und partnerschaftliches Lernen und Arbeiten unter besonderer "
+        "Berücksichtigung von Selbst- und Fremdbewertung",
+    ],
+}
+
+
+def seed_lehrplan_ziele(conn: sqlite3.Connection) -> int:
+    """Seedet die 'Ziele der Klassenstufe' je (subject, grade, track).
+
+    Verteilt die kuratierte Fach-Liste auf alle (grade, track)-Kombinationen, die
+    in lernbereiche vorkommen -> Scope bleibt automatisch synchron. Idempotent
+    (INSERT OR IGNORE ueber UNIQUE(subject, grade, track, code)).
+    """
+    combos = conn.execute(
+        "SELECT DISTINCT subject, grade, track FROM lernbereiche"
+    ).fetchall()
+    inserted = 0
+    for subject, grade, track in combos:
+        for idx, text in enumerate(_ZIELE.get(subject, []), start=1):
+            cur = conn.execute(
+                """INSERT OR IGNORE INTO lehrplan_ziele
+                   (subject, grade, track, code, text, sort_order, source)
+                   VALUES (?,?,?,?,?,?,?)""",
+                (subject, grade, track, f"Z{idx}", text, idx,
+                 f"lp_os_{subject.lower()}_2019"),
+            )
+            inserted += cur.rowcount
+    conn.commit()
+    return inserted
+
+
 def seed_lernbereiche(conn: sqlite3.Connection, docs_dir: str = None) -> int:
     docs = Path(docs_dir or settings.docs_dir)
     inserted = 0
@@ -161,9 +210,14 @@ def seed_lernbereiche(conn: sqlite3.Connection, docs_dir: str = None) -> int:
 def main() -> None:  # pragma: no cover - CLI
     conn = init_db(settings.db_path)
     n = seed_lernbereiche(conn)
+    z = seed_lehrplan_ziele(conn)
     total = conn.execute("SELECT COUNT(*) FROM lernbereiche").fetchone()[0]
+    ztotal = conn.execute("SELECT COUNT(*) FROM lehrplan_ziele").fetchone()[0]
     conn.close()
-    print(f"Seed abgeschlossen: {n} neu eingefügt, {total} Lernbereiche gesamt.")
+    print(
+        f"Seed abgeschlossen: {n} neu (Lernbereiche, {total} gesamt), "
+        f"{z} neu (Ziele der Klassenstufe, {ztotal} gesamt)."
+    )
 
 
 if __name__ == "__main__":
