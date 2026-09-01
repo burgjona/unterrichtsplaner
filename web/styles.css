@@ -557,9 +557,17 @@ a.todo-hefter-link:hover { text-decoration:underline; }
   margin-top:14px;
 }
 .cd-col-main, .cd-col-side { display:grid; gap:14px; align-content:start; min-width:0; }
+/* Grid-Items schrumpfen sonst nicht unter ihre Inhalts-Mindestbreite (min-width:auto)
+   und laufen aus der Spalte -> hier explizit erlauben. */
+.cd-col-main > *, .cd-col-side > * { min-width:0; }
 
 @media (max-width: 1080px) {
-  .cd-layout { grid-template-columns:1fr; }
+  /* Mobile/Tablet: exakt die bisherige Reihenfolge und Einspaltigkeit wiederherstellen
+     (display:contents hebt die beiden Spalten-Wrapper auf, cd-ord-* setzt die Alt-Folge). */
+  .cd-layout { display:flex; flex-direction:column; gap:14px; }
+  .cd-col-main, .cd-col-side { display:contents; }
+  .cd-ord-1 { order:1; } .cd-ord-2 { order:2; } .cd-ord-3 { order:3; } .cd-ord-4 { order:4; }
+  .cd-ord-5 { order:5; } .cd-ord-6 { order:6; } .cd-ord-7 { order:7; } .cd-ord-8 { order:8; }
 }
 
 @media (max-width: 600px) {
