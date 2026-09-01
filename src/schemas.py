@@ -184,7 +184,9 @@ class LehrplanChecklistOut(Base):
     class_id: int
     subject: str
     grade: int
-    track: Optional[str] = None
+    track: Optional[str] = None          # tatsaechlich angezeigter Bildungsgang
+    class_track: Optional[str] = None    # Bildungsgang der Klasse (kann abweichen)
+    track_fallback: bool = False         # True => class_track passt nicht, es wird ein Ersatz gezeigt
     ziele: List[LehrplanChecklistItem]
     lernbereiche: List[LehrplanChecklistItem]
 

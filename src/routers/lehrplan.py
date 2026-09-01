@@ -27,6 +27,28 @@ def _class_or_404(conn, user_id: int, class_id: int):
     return row
 
 
+def _resolve_track(conn, subject: str, grade: int, class_track):
+    """Welcher Bildungsgang der Referenz wird fuer diese Klasse angezeigt?
+
+    Die Klasse kann 'gemischt'/leer sein, obwohl der Lehrplan fuer Deutsch ab
+    Kl. 7 nur RS/HS kennt. Dann faellt die Anzeige auf einen vorhandenen
+    Bildungsgang zurueck (RS bevorzugt) statt leer zu bleiben.
+    Rueckgabe: (effektiver_track_oder_None, fallback_bool, verfuegbare_tracks).
+    """
+    avail = {
+        r[0] for r in conn.execute(
+            "SELECT DISTINCT track FROM lernbereiche WHERE subject = ? AND grade = ?",
+            (subject, grade),
+        ).fetchall()
+    }
+    if not avail:
+        return None, False, avail
+    if class_track and class_track in avail:
+        return class_track, False, avail
+    eff = "RS" if "RS" in avail else sorted(avail)[0]
+    return eff, True, avail
+
+
 @router.get("/checklist", response_model=LehrplanChecklistOut)
 def checklist(
     class_id: int = Query(alias="classId"),
@@ -34,7 +56,8 @@ def checklist(
     user_id: int = Depends(get_user_id),
 ):
     cls = _class_or_404(conn, user_id, class_id)
-    subject, grade, track = cls["subject"], cls["grade"], cls["track"]
+    subject, grade = cls["subject"], cls["grade"]
+    eff_track, fallback, _ = _resolve_track(conn, subject, grade, cls["track"])
 
     checked = {
         (r["item_type"], r["item_ref"]): r["checked_at"]
@@ -44,15 +67,14 @@ def checklist(
         ).fetchall()
     }
 
-    def _match(sql_extra: str):
-        # Bildungsgang: Deutsch ab Kl. 7 mit RS/HS getrennt; Kl. 5/6 und WTH 'gemischt'.
+    def _match(table: str):
         params = [subject, grade]
         track_sql = ""
-        if track:
+        if eff_track:
             track_sql = " AND track = ?"
-            params.append(track)
+            params.append(eff_track)
         return conn.execute(
-            f"SELECT * FROM {sql_extra} WHERE subject = ? AND grade = ?{track_sql} ORDER BY sort_order",
+            f"SELECT * FROM {table} WHERE subject = ? AND grade = ?{track_sql} ORDER BY sort_order",
             params,
         ).fetchall()
 
@@ -71,7 +93,8 @@ def checklist(
         for r in _match("lernbereiche")
     ]
     return LehrplanChecklistOut(
-        class_id=class_id, subject=subject, grade=grade, track=track,
+        class_id=class_id, subject=subject, grade=grade, track=eff_track,
+        class_track=cls["track"], track_fallback=fallback,
         ziele=ziele, lernbereiche=lernbereiche,
     )
 
@@ -88,8 +111,9 @@ def set_check(body: LehrplanCheckIn, conn=Depends(get_db), user_id: int = Depend
     ref = conn.execute(
         f"SELECT subject, grade, track FROM {ref_table} WHERE id = ?", (body.item_ref,)
     ).fetchone()
+    eff_track, _, _ = _resolve_track(conn, cls["subject"], cls["grade"], cls["track"])
     if ref is None or (ref["subject"], ref["grade"]) != (cls["subject"], cls["grade"]) or (
-        cls["track"] and ref["track"] != cls["track"]
+        eff_track and ref["track"] != eff_track
     ):
         raise HTTPException(status_code=404, detail="Lehrplan-Eintrag passt nicht zu dieser Klasse.")
 

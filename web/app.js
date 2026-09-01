@@ -1305,7 +1305,20 @@ function _renderCdLehrplan() {
     );
   };
 
+  const trackNames = { RS: "Realschulbildungsgang", HS: "Hauptschulbildungsgang", gemischt: "gemischt" };
+  let hint = "";
+  if (d.trackFallback) {
+    const shown = trackNames[d.track] || d.track;
+    hint =
+      `<p class="lp-hint">Bildungsgang der Klasse ist „${esc(d.classTrack || "—")}", ` +
+      `der Lehrplan trennt hier aber nach Bildungsgang. Angezeigt wird der <strong>${esc(shown)}</strong>. ` +
+      `Für den anderen den Bildungsgang der Klasse über „Stammdaten bearbeiten" anpassen.</p>`;
+  } else if (d.ziele.length === 0 && d.lernbereiche.length === 0) {
+    hint = `<p class="lp-hint">Für Fach „${esc(d.subject)}" / Klassenstufe ${esc(d.grade)} liegt kein Lehrplan in der App vor.</p>`;
+  }
+
   wrap.innerHTML =
+    hint +
     section("Ziele der Klassenstufe", d.ziele, "ziel", d.ziele) +
     section("Lernbereiche", d.lernbereiche, "lb", d.lernbereiche);
 

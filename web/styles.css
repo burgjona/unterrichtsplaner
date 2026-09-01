@@ -224,6 +224,8 @@ a.todo-hefter-link:hover { text-decoration:underline; }
 
 /* Lehrplan-Abhakmodul (Klassen-Detailseite) */
 .lp-progress { font-size:12px; font-weight:var(--fw-bold); color:var(--primary-dark); }
+.lp-hint { font-size:12px; color:var(--badge-warn-text); background:var(--badge-warn-bg);
+  border-radius:8px; padding:8px 10px; margin:0 0 12px; }
 .lp-check-group { margin-top:12px; }
 .lp-check-group:first-child { margin-top:0; }
 .lp-check-group h4 { margin:0 0 8px; font-size:14px; }

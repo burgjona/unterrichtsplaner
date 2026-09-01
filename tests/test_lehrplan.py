@@ -85,6 +85,20 @@ def test_check_rejects_out_of_scope_ref(seeded, client, auth):
     assert r.status_code == 404
 
 
+def test_gemischt_deutsch_falls_back_to_rs(seeded, client, auth):
+    cid = _make_class(client, name="8x", grade=8, track="gemischt")
+    data = client.get("/api/lehrplan/checklist", params={"classId": cid}).json()
+    assert data["trackFallback"] is True
+    assert data["classTrack"] == "gemischt"
+    assert data["track"] == "RS"
+    assert len(data["lernbereiche"]) == 6 and len(data["ziele"]) == 4
+    # Abhaken eines angezeigten (RS-)Eintrags funktioniert trotz Klassen-Track 'gemischt'
+    lb = data["lernbereiche"][0]
+    r = client.put("/api/lehrplan/checks", json={
+        "classId": cid, "itemType": "lb", "itemRef": lb["id"], "checked": True})
+    assert r.status_code == 200 and r.json()["checked"] is True
+
+
 def test_unknown_class_404(seeded, client, auth):
     assert client.get("/api/lehrplan/checklist", params={"classId": 999999}).status_code == 404
     r = client.put("/api/lehrplan/checks", json={
