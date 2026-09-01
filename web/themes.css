@@ -28,8 +28,8 @@
   --bg: #f7fbf3; --sidebar: #14532d;
   --surface: #ffffff; --surface-2: #f0faf0;
   --text: #14261a; --muted: #5b6b5f;
-  --line: #dbe8da; --primary: #16a34a; --primary-dark: #14532d;
-  --yellow: #eab308; --orange: #f97316; --ok: #22c55e; --warn: #eab308; --bad: #ef4444;
+  --line: #dbe8da; --primary: #0d7a35; --primary-dark: #14532d;
+  --yellow: #eab308; --orange: #f97316; --ok: #22c55e; --warn: #eab308; --bad: #dc2626;
   --shadow: 0 12px 30px rgba(20,83,45,0.10);
   --sidebar-text: #dcfce7; --sidebar-sub: #bbf7d0; --sidebar-label: #86efac;
   --avatar-bg: #a3e635;
@@ -46,7 +46,7 @@
   --bg: #0d1a12; --sidebar: #0a2418;
   --surface: #142218; --surface-2: #18301f;
   --text: #e6f5e9; --muted: #9db8a5;
-  --line: #24402d; --primary: #22c55e; --primary-dark: #14532d;
+  --line: #24402d; --primary: #15803d; --primary-dark: #14532d;
   --yellow: #eab308; --orange: #fb923c; --ok: #22c55e; --warn: #eab308; --bad: #f87171;
   --shadow: 0 12px 30px rgba(0,0,0,0.45);
   --sidebar-text: #c7ecd3; --sidebar-sub: #86efac; --sidebar-label: #4ade80;
@@ -66,8 +66,8 @@
   --bg: #f2fbfd; --sidebar: #0e5a6b;
   --surface: #ffffff; --surface-2: #e8f8fb;
   --text: #10262b; --muted: #4f6b71;
-  --line: #cfeaf0; --primary: #0891b2; --primary-dark: #0e5a6b;
-  --yellow: #f59e0b; --orange: #fb923c; --ok: #14b8a6; --warn: #f59e0b; --bad: #ef4444;
+  --line: #cfeaf0; --primary: #0e7490; --primary-dark: #0e5a6b;
+  --yellow: #f59e0b; --orange: #fb923c; --ok: #14b8a6; --warn: #f59e0b; --bad: #dc2626;
   --shadow: 0 12px 30px rgba(8,145,178,0.12);
   --sidebar-text: #d1f4fa; --sidebar-sub: #a5e9f2; --sidebar-label: #67e8f9;
   --avatar-bg: #fcd34d;
@@ -84,7 +84,7 @@
   --bg: #071a1f; --sidebar: #062a33;
   --surface: #0e2a31; --surface-2: #123640;
   --text: #e0f7fb; --muted: #93b8c0;
-  --line: #1d4450; --primary: #22d3ee; --primary-dark: #0e5a6b;
+  --line: #1d4450; --primary: #0e7490; --primary-dark: #0e5a6b;
   --yellow: #fbbf24; --orange: #fb923c; --ok: #2dd4bf; --warn: #fbbf24; --bad: #f87171;
   --shadow: 0 12px 30px rgba(0,0,0,0.5);
   --sidebar-text: #b8ecf4; --sidebar-sub: #67e8f9; --sidebar-label: #22d3ee;
@@ -104,7 +104,7 @@
   --bg: #fdf6ee; --sidebar: #7c2d12;
   --surface: #ffffff; --surface-2: #fbeee0;
   --text: #2b1a0e; --muted: #6b5545;
-  --line: #ecdcc9; --primary: #ea580c; --primary-dark: #7c2d12;
+  --line: #ecdcc9; --primary: #c2410c; --primary-dark: #7c2d12;
   --yellow: #ca8a04; --orange: #f97316; --ok: #65a30d; --warn: #ca8a04; --bad: #dc2626;
   --shadow: 0 12px 30px rgba(124,45,18,0.12);
   --sidebar-text: #fde4cf; --sidebar-sub: #fbcfa5; --sidebar-label: #fdba74;
@@ -122,7 +122,7 @@
   --bg: #1a0f07; --sidebar: #2a1206;
   --surface: #241610; --surface-2: #2f1e14;
   --text: #f7e7d6; --muted: #bda491;
-  --line: #40291b; --primary: #fb923c; --primary-dark: #7c2d12;
+  --line: #40291b; --primary: #c2410c; --primary-dark: #7c2d12;
   --yellow: #eab308; --orange: #fb923c; --ok: #84cc16; --warn: #eab308; --bad: #f87171;
   --shadow: 0 12px 30px rgba(0,0,0,0.5);
   --sidebar-text: #fbd9bd; --sidebar-sub: #fdba74; --sidebar-label: #fb923c;
@@ -142,8 +142,8 @@
   --bg: #f4f7fb; --sidebar: #1e293b;
   --surface: #ffffff; --surface-2: #eef2f8;
   --text: #16202e; --muted: #5a6675;
-  --line: #d8e0ec; --primary: #2563eb; --primary-dark: #1e293b;
-  --yellow: #eab308; --orange: #f97316; --ok: #0ea5e9; --warn: #eab308; --bad: #ef4444;
+  --line: #d8e0ec; --primary: #1d4ed8; --primary-dark: #1e293b;
+  --yellow: #eab308; --orange: #f97316; --ok: #0ea5e9; --warn: #eab308; --bad: #dc2626;
   --shadow: 0 12px 30px rgba(30,41,59,0.12);
   --sidebar-text: #dbe4f0; --sidebar-sub: #b6c6dc; --sidebar-label: #93c5fd;
   --avatar-bg: #7dd3fc;
@@ -160,7 +160,7 @@
   --bg: #0b111c; --sidebar: #0f1826;
   --surface: #141d2b; --surface-2: #1a2537;
   --text: #e6edf7; --muted: #97a6bb;
-  --line: #26344a; --primary: #60a5fa; --primary-dark: #1e293b;
+  --line: #26344a; --primary: #2563eb; --primary-dark: #1e293b;
   --yellow: #eab308; --orange: #fb923c; --ok: #38bdf8; --warn: #eab308; --bad: #f87171;
   --shadow: 0 12px 30px rgba(0,0,0,0.55);
   --sidebar-text: #cbd8ea; --sidebar-sub: #93c5fd; --sidebar-label: #60a5fa;

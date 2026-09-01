@@ -78,7 +78,7 @@ function renderUndoBar() {
   }
   bar.innerHTML = `<span>${esc(lastUndo.label)}</span>
     <button class="btn tiny" id="undoBarBtn" style="white-space:nowrap;">Rückgängig</button>
-    <button class="btn tiny secondary" id="undoBarClose" style="white-space:nowrap;">✕</button>`;
+    <button class="btn tiny secondary" id="undoBarClose" style="white-space:nowrap;" aria-label="Hinweis schließen">✕</button>`;
   bar.querySelector("#undoBarBtn").onclick = runUndo;
   bar.querySelector("#undoBarClose").onclick = () => { lastUndo = null; renderUndoBar(); };
 }
@@ -190,20 +190,33 @@ function buildMeyerGrid(containerId) {
   meyerMerkmale.forEach((name, i) => {
     const row = document.createElement("div");
     row.className = "meyer-row";
+    const nm = `${i + 1}. ${esc(name)}`;
     row.innerHTML =
-      `<span class="name">${i + 1}. ${esc(name)}</span>
-       <div class="ampel-select" data-idx="${i}">
-         <button type="button" class="ampel-btn g" data-val="gruen"></button>
-         <button type="button" class="ampel-btn y" data-val="gelb"></button>
-         <button type="button" class="ampel-btn r" data-val="rot"></button>
+      `<span class="name" id="${containerId}-m${i}">${nm}</span>
+       <div class="ampel-select" data-idx="${i}" role="radiogroup" aria-labelledby="${containerId}-m${i}">
+         <button type="button" class="ampel-btn g" data-val="gruen" role="radio" aria-checked="false" aria-label="gut umsetzbar"></button>
+         <button type="button" class="ampel-btn y" data-val="gelb" role="radio" aria-checked="false" aria-label="teilweise"></button>
+         <button type="button" class="ampel-btn r" data-val="rot" role="radio" aria-checked="false" aria-label="noch offen / Risiko"></button>
        </div>`;
     wrap.appendChild(row);
   });
   wrap.querySelectorAll(".ampel-select").forEach((sel) => {
-    sel.querySelectorAll(".ampel-btn").forEach((btn) => {
-      btn.onclick = () => {
-        sel.querySelectorAll(".ampel-btn").forEach((b) => b.classList.remove("selected"));
-        btn.classList.add("selected");
+    const btns = Array.from(sel.querySelectorAll(".ampel-btn"));
+    const pick = (btn) => {
+      btns.forEach((b) => {
+        const on = b === btn;
+        b.classList.toggle("selected", on);
+        b.setAttribute("aria-checked", on ? "true" : "false");
+        b.tabIndex = on ? 0 : -1;
+      });
+      btn.focus();
+    };
+    btns.forEach((btn, bi) => {
+      btn.tabIndex = bi === 0 ? 0 : -1;
+      btn.onclick = () => pick(btn);
+      btn.onkeydown = (e) => {
+        if (e.key === "ArrowRight" || e.key === "ArrowDown") { e.preventDefault(); pick(btns[(bi + 1) % btns.length]); }
+        else if (e.key === "ArrowLeft" || e.key === "ArrowUp") { e.preventDefault(); pick(btns[(bi - 1 + btns.length) % btns.length]); }
       };
     });
   });
@@ -216,14 +229,25 @@ function readMeyerGrid(containerId) {
   });
   return out;
 }
+function _ampelSync(sel) {
+  sel.querySelectorAll(".ampel-btn").forEach((b, bi) => {
+    const on = b.classList.contains("selected");
+    b.setAttribute("aria-checked", on ? "true" : "false");
+    b.tabIndex = on ? 0 : (bi === 0 && !sel.querySelector(".ampel-btn.selected") ? 0 : -1);
+  });
+}
 function resetMeyerGrid(containerId) {
-  $(containerId).querySelectorAll(".ampel-btn.selected").forEach((b) => b.classList.remove("selected"));
+  $(containerId).querySelectorAll(".ampel-select").forEach((sel) => {
+    sel.querySelectorAll(".ampel-btn.selected").forEach((b) => b.classList.remove("selected"));
+    _ampelSync(sel);
+  });
 }
 function setMeyerGrid(containerId, values) {
   $(containerId).querySelectorAll(".ampel-select").forEach((sel, i) => {
     sel.querySelectorAll(".ampel-btn").forEach((b) => b.classList.remove("selected"));
     const v = (values || [])[i];
     if (v) { const t = sel.querySelector(`.ampel-btn[data-val="${v}"]`); if (t) t.classList.add("selected"); }
+    _ampelSync(sel);
   });
 }
 
@@ -797,7 +821,7 @@ async function loadLessonMaterials(lessonId) {
   try {
     const mats = await API.get(`/lessons/${lessonId}/materials`);
     wrap.innerHTML = mats.length
-      ? mats.map((m) => `<div class="file-chip"><span><a href="/api/materials/${m.id}/download">${esc(m.filename)}</a></span><button class="btn small danger" data-del-mat="${m.id}">✕</button></div>`).join("")
+      ? mats.map((m) => `<div class="file-chip"><span><a href="/api/materials/${m.id}/download">${esc(m.filename)}</a></span><button class="btn small danger" data-del-mat="${m.id}" aria-label="Material entfernen">✕</button></div>`).join("")
       : '<p class="muted small">Noch kein Material verknüpft.</p>';
     wireMaterialDeleteButtons(wrap, () => loadLessonMaterials(lessonId));
   } catch (e) { wrap.innerHTML = ""; }
@@ -1701,7 +1725,7 @@ async function renderClassStudents() {
       `<input class="cd-student-input" value="${esc(s.name)}" data-student-name="${s.id}" />` +
       `<button class="btn small secondary" data-student-up="${s.id}" ${idx === 0 ? "disabled" : ""}>↑</button>` +
       `<button class="btn small secondary" data-student-down="${s.id}" ${idx === detailStudents.length - 1 ? "disabled" : ""}>↓</button>` +
-      `<button class="btn small danger" data-student-del="${s.id}">✕</button>`;
+      `<button class="btn small danger" data-student-del="${s.id}" aria-label="Schüler entfernen">✕</button>`;
     wrap.appendChild(row);
   });
   wrap.querySelectorAll("[data-student-name]").forEach((inp) => {
@@ -2269,7 +2293,7 @@ function renderTodos() {
       `<input type="checkbox" ${t.done ? "checked" : ""} data-todo="${t.id}"/>` +
       `<span class="todo-src ${srcClass}">${esc(srcLabel)}</span>` +
       textCell +
-      `<button class="btn small danger" data-del-todo="${t.id}">✕</button>`;
+      `<button class="btn small danger" data-del-todo="${t.id}" aria-label="Aufgabe entfernen">✕</button>`;
     list.appendChild(div);
   });
   list.querySelectorAll("[data-todo]").forEach((cb) => {
@@ -2347,7 +2371,7 @@ function renderMaterialList() {
     div.innerHTML =
       `<span><a href="/api/materials/${m.id}/download">${esc(m.filename)}</a>` +
       `${m.extracted ? ' <span class="badge ok">durchsuchbar</span>' : ""}${link}</span>` +
-      `<span class="tag-row">${tags}<button class="btn small danger" data-del-mat="${m.id}">✕</button></span>`;
+      `<span class="tag-row">${tags}<button class="btn small danger" data-del-mat="${m.id}" aria-label="Material entfernen">✕</button></span>`;
     wrap.appendChild(div);
   });
   wrap.querySelectorAll("[data-del-mat]").forEach((b) => {
@@ -4189,12 +4213,61 @@ async function loadModalMaterials(l) {
   try {
     const mats = await API.get(`/lessons/${l.id}/materials`);
     wrap.innerHTML = mats.length
-      ? mats.map((m) => `<div class="file-chip"><span><a href="/api/materials/${m.id}/download">${esc(m.filename)}</a></span><button class="btn small danger" data-del-mat="${m.id}">✕</button></div>`).join("")
+      ? mats.map((m) => `<div class="file-chip"><span><a href="/api/materials/${m.id}/download">${esc(m.filename)}</a></span><button class="btn small danger" data-del-mat="${m.id}" aria-label="Material entfernen">✕</button></div>`).join("")
       : '<p class="muted small">Noch kein Material verknüpft.</p>';
     wireMaterialDeleteButtons(wrap, () => loadModalMaterials(l));
   } catch (e) { wrap.innerHTML = ""; }
 }
 function closeModal() { $("modalRoot").innerHTML = ""; }
+
+/* A11y: Fokus-Falle, Esc-Schließen und Fokus-Rückgabe für alle #modalRoot-Dialoge
+   und das Login-Overlay. Ergänzt die bestehende Overlay-Klick-Logik, ohne sie zu ersetzen. */
+(function setupModalA11y() {
+  const root = document.getElementById("modalRoot");
+  const auth = document.getElementById("authOverlay");
+  if (!root || !auth) return;
+  let restoreTo = null;
+  const focusablesIn = (box) =>
+    Array.from(box.querySelectorAll(
+      'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'
+    )).filter((el) => el.offsetWidth || el.offsetHeight || el === document.activeElement);
+  function activate(box) {
+    if (!box || box.dataset.a11yOn) return;
+    box.dataset.a11yOn = "1";
+    box.setAttribute("role", "dialog");
+    box.setAttribute("aria-modal", "true");
+    box.tabIndex = -1;
+    restoreTo = document.activeElement;
+    const f = focusablesIn(box);
+    (f[0] || box).focus();
+  }
+  document.addEventListener("keydown", (e) => {
+    const overlay = root.querySelector(".modal-overlay") || (!auth.classList.contains("hidden") ? auth : null);
+    if (!overlay) return;
+    const box = overlay.querySelector(".modal-box") || overlay;
+    if (e.key === "Escape") {
+      if (root.contains(overlay)) { e.preventDefault(); closeModal(); }
+      return;
+    }
+    if (e.key !== "Tab") return;
+    const f = focusablesIn(box);
+    if (!f.length) return;
+    const first = f[0], last = f[f.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
+  new MutationObserver(() => {
+    const box = root.querySelector(".modal-box");
+    if (box) activate(box);
+    else if (restoreTo && restoreTo.focus) { try { restoreTo.focus(); } catch (_) { /* egal */ } restoreTo = null; }
+  }).observe(root, { childList: true });
+  new MutationObserver(() => {
+    const box = auth.querySelector(".modal-box");
+    if (!box) return;
+    if (!auth.classList.contains("hidden")) activate(box);
+    else { delete box.dataset.a11yOn; if (restoreTo && restoreTo.focus) { try { restoreTo.focus(); } catch (_) { /* egal */ } restoreTo = null; } }
+  }).observe(auth, { attributes: true, attributeFilter: ["class"] });
+})();
 
 // "Stunde verschieben" (Planungskalender u.a. Aufrufer von openLessonModal): Zieldatum nur aus
 // den nächsten laut Stundenplan realen Terminen der Klasse wählbar (kein Freitext-Datum) –
@@ -5368,7 +5441,7 @@ function renderPraesentAblauf() {
     const timeMeta = praesent.editMode
       ? `<span class="praesent-time-edit">
           <input type="number" min="0" class="praesent-time-input" data-phase-time="${i}" value="${p.minutes == null ? "" : esc(p.minutes)}" placeholder="Min."> Min.
-          ${p.minutes != null ? `<button class="btn tiny secondary" data-phase-time-clear="${i}" title="Geplante Zeit entfernen">×</button>` : ""}
+          ${p.minutes != null ? `<button class="btn tiny secondary" data-phase-time-clear="${i}" title="Geplante Zeit entfernen" aria-label="Geplante Zeit entfernen">×</button>` : ""}
         </span>`
       : (p.minutes != null ? `${esc(p.minutes)} Min.` : null);
     const meta = [
@@ -5582,7 +5655,12 @@ function showView(view) {
   if (_sequenzplanModuleInstance) _sequenzplanModuleInstance.flushSeqAutosave().catch(() => {});
   if (_stoffplanModuleInstance) _stoffplanModuleInstance.flushStoffplanAutosave().catch(() => {});
   expandSidebarSectionFor(view);
-  document.querySelectorAll(".nav-btn").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
+  document.querySelectorAll(".nav-btn").forEach((b) => {
+    const on = b.dataset.view === view;
+    b.classList.toggle("active", on);
+    if (on) b.setAttribute("aria-current", "page");
+    else b.removeAttribute("aria-current");
+  });
   document.querySelectorAll(".bn-item").forEach((b) => {
     const bv = b.dataset.view;
     b.classList.toggle("active", bv === view || (bv === "mehr" && !BOTTOM_NAV_VIEWS.has(view)));
@@ -5591,6 +5669,7 @@ function showView(view) {
   $(view).classList.remove("hidden");
   $("pageTitle").textContent = titles[view][0];
   $("pageSub").textContent = titles[view][1];
+  document.title = titles[view][0] + " · Lehrer-Dashboard";
   // Verlässt man die Klassen-Ansicht mit offenem Bearbeiten-Modus, den Update-Modus
   // zurücksetzen – sonst würde ein späteres "Klasse speichern" versehentlich updaten.
   if (view !== "klassen" && editingClassId) resetClassForm();

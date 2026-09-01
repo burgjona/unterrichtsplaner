@@ -2,8 +2,8 @@
   --bg: #f7fbf3; --sidebar: #14532d;
   --surface: #ffffff; --surface-2: #f0faf0;
   --text: #14261a; --muted: #5b6b5f;
-  --line: #dbe8da; --primary: #16a34a; --primary-dark: #14532d;
-  --yellow: #eab308; --orange: #f97316; --ok: #22c55e; --warn: #eab308; --bad: #ef4444;
+  --line: #dbe8da; --primary: #0d7a35; --primary-dark: #14532d;
+  --yellow: #eab308; --orange: #f97316; --ok: #22c55e; --warn: #eab308; --bad: #dc2626;
   --shadow: 0 12px 30px rgba(20,83,45,0.10); --radius: 18px; --radius-sm: 12px;
   /* Theming-Tokens (U9): Standardwerte = Frühling hell; pro Jahreszeit/Dark in themes.css überschrieben. */
   --font-family: 'Noteworthy Light', 'Noteworthy', 'Comic Sans MS', -apple-system, 'Segoe UI', Roboto, sans-serif;
@@ -46,24 +46,31 @@ aside { background: var(--sidebar); color:white; padding:22px 16px; }
 .section-label span { flex:1; text-align:left; }
 .section-chevron { width:13px; height:13px; flex-shrink:0; transition:transform .15s; }
 .section-label[aria-expanded="false"] .section-chevron { transform:rotate(-90deg); }
+.nav-groups { display:contents; }
 .nav-section { display:flex; flex-direction:column; overflow:hidden; }
 .nav-section.collapsed { display:none; }
 .nav-btn { display:flex; align-items:center; gap:10px; width:100%; text-align:left; text-decoration:none; border:0; cursor:pointer; background:transparent; color:var(--sidebar-text, #dcfce7); padding:11px 13px; border-radius:10px; margin-bottom:4px; font-size:14px; font-family:inherit; transition:.15s; }
 .nav-btn.active, .nav-btn:hover { background: rgba(255,255,255,0.14); color:white; }
 .nav-ic { width:18px; height:18px; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
 .nav-ic svg { width:100%; height:100%; }
+/* Nav-Eintrag + „als Tab öffnen“-Knopf: geschwisterlich statt verschachtelt (gültiges HTML,
+   saubere Tastaturbedienung). Der Knopf liegt absolut im .nav-row und verschiebt nichts. */
+.nav-row { position:relative; display:flex; align-items:stretch; margin-bottom:4px; }
+.nav-row .nav-btn { flex:1; margin-bottom:0; padding-right:40px; }
 .nav-tab-open {
-  margin-left:auto; flex-shrink:0; width:22px; height:22px; display:flex; align-items:center; justify-content:center;
-  border-radius:7px; opacity:.5; transition:.15s;
+  position:absolute; right:7px; top:50%; transform:translateY(-50%);
+  flex-shrink:0; width:30px; height:30px; display:flex; align-items:center; justify-content:center;
+  border:0; background:transparent; color:inherit; cursor:pointer; padding:0;
+  border-radius:7px; opacity:.5; transition:opacity .15s, background .15s;
 }
 .nav-tab-open svg { width:14px; height:14px; }
-.nav-btn:hover .nav-tab-open, .nav-tab-open:hover, .nav-tab-open:focus-visible { opacity:1; background:rgba(255,255,255,0.18); }
+.nav-row:hover .nav-tab-open, .nav-tab-open:hover, .nav-tab-open:focus-visible { opacity:1; background:rgba(255,255,255,0.18); }
 .nav-footer { margin-top:20px; padding:13px; border-radius:14px; background:rgba(255,255,255,0.10); font-size:12px; color:var(--sidebar-text, #dcfce7); }
 main { padding:26px 30px; }
 .topbar { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; margin-bottom:18px; flex-wrap:wrap; }
 .date-block .date { font-size:14px; color:var(--primary-dark); font-weight:var(--fw-heavy); }
 .date-block .kw { font-size:12px; color:var(--muted); }
-.title { font-size:26px; font-weight:var(--fw-heavy); color:var(--primary-dark); margin-top:4px; }
+.title { font-size:26px; font-weight:var(--fw-heavy); color:var(--primary-dark); margin:4px 0 0; }
 .page-sub { color:var(--muted); margin-top:4px; }
 .hero-tag { display:inline-flex; align-items:center; gap:8px; padding:9px 14px; border-radius:999px; color:white; background: var(--orange); font-size:12px; font-weight:var(--fw-bold); }
 .grid { display:grid; gap:16px; } .grid-3 { grid-template-columns: repeat(3, minmax(0,1fr)); } .grid-2 { grid-template-columns: repeat(2, minmax(0,1fr)); }
@@ -82,7 +89,7 @@ input:focus, select:focus, textarea:focus { outline:2px solid var(--primary); ou
 .row-3 { display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap:12px; }
 .row-4 { display:grid; grid-template-columns: 1.2fr .7fr .9fr 1fr; gap:10px; }
 .btn { border:0; background: var(--primary); color:white; padding:10px 15px; border-radius:10px; cursor:pointer; font-weight:var(--fw-bold); font-family:inherit; }
-.btn:hover { background:#128a3e; }
+.btn:hover { background:#0b5f29; }
 .btn.secondary { background:#e9f8ec; color:var(--primary-dark); }
 .btn.secondary:hover { background:#d7f3dc; }
 .btn.ghost { background:transparent; color:var(--primary-dark); border:1px solid var(--primary); }
@@ -179,10 +186,12 @@ input.input-error { border-color: var(--bad); background: color-mix(in srgb, var
 .meyer-grid { display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap:8px; }
 .meyer-row { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:9px 11px; background:var(--surface-2); border:1px solid var(--line); border-radius:10px; }
 .meyer-row .name { font-size:12px; font-weight:var(--fw-bold); color:var(--primary-dark); }
-.ampel-select { display:flex; gap:6px; }
-.ampel-btn { width:24px; height:24px; border-radius:999px; border:2px solid transparent; cursor:pointer; opacity:.35; }
+.ampel-select { display:flex; gap:8px; }
+.ampel-btn { position:relative; width:28px; height:28px; border-radius:999px; border:2px solid transparent; cursor:pointer; opacity:.35; }
 .ampel-btn.g { background:var(--ok); } .ampel-btn.y { background:var(--yellow); } .ampel-btn.r { background:var(--bad); }
 .ampel-btn.selected { opacity:1; border-color:#14261a; transform: scale(1.08); }
+.ampel-btn.selected::after { content:"✓"; position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#fff; font-size:14px; font-weight:800; line-height:1; text-shadow:0 1px 2px rgba(0,0,0,.45); }
+.ampel-btn:focus-visible { outline:2px solid var(--primary); outline-offset:2px; }
 .note-box { background:var(--note-bg, #fff7ed); border:1px solid var(--note-border, #fed7aa); color:var(--note-text, #9a3412); border-radius:12px; padding:11px 13px; font-size:13px; margin-top:10px; }
 /* U31: Tafelbild-Vorschlag - KI liefert Struktur (Titel + frei viele Blöcke), hier als
    Kreide-auf-Tafel-Optik gerendert; kein echtes Bild, aber visuell wie an einer Tafel. */
@@ -710,6 +719,16 @@ a.todo-hefter-link:hover { text-decoration:underline; }
 .cmd-foot b { font-weight:var(--fw-heavy); color:var(--text); }
 body.cmd-open { overflow:hidden; }
 @media (prefers-reduced-motion: reduce) { .cmd-box { animation:none; } }
+/* Reduzierte Bewegung: dekorative Verschiebungen/Animationen aus, Zustandswechsel
+   (Farbe/Hintergrund/Opazität) bleiben als Feedback erhalten. */
+@media (prefers-reduced-motion: reduce) {
+  .ql-pill:hover, .tt-chip:hover, .cal-day-agenda-item:hover, .spruch-card:hover,
+  .praesent-seq-tile:hover, .timeline-block.clickable:hover { transform:none; }
+  .cmd-box, .tt-skel, .cal-cell.cal-flash, .spruch-card { animation:none; }
+  .cal-cell, .cal-entry, .praesent-seq-tile, .praesent-step, .cal-lb-row,
+  .date-chip, .nav-btn, .btn, .facet-chip, .search-fitem { transition-property:background-color, border-color, color, opacity; }
+  html { scroll-behavior:auto; }
+}
 @media (max-width: 600px) {
   .cmd-palette { padding:8vh 10px 10px; }
   .cmd-snip { display:none; }
