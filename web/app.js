@@ -4072,13 +4072,41 @@ async function saveVertretung(kindId) {
 
 /* ---------- M1d: Schulmanager-Abgleich (Glocke + Schublade, Konzept B) ----------
 Referenzpunkt Unterricht (Vertretung/Ausfall) = U27-Stundenplan, Aufsicht = Planungskalender
-(schulmanager_diff.py, Server). "Ignorieren" ist bewusst nur clientseitig für diese Sitzung –
-keine Persistenz, blendet nur bis zum nächsten vollständigen Neuladen aus. */
+(schulmanager_diff.py, Server). "Ignorieren" wird clientseitig in localStorage gehalten
+(kein Backend, kein Sync) und übersteht ein Neuladen; Einträge mit vergangenem Datum
+werden beim Laden verworfen, damit die Liste nicht unbegrenzt wächst. */
 let smChanges = null;        // letzter Abgleich-Stand vom Server (kategorisiert)
-const smIgnored = new Set(); // Schlüssel ignorierter Änderungen, nur für diese Sitzung
+const SM_IGNORED_LS = "ldb_sm_ignored";
 
+function smLoadIgnored() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(SM_IGNORED_LS) || "[]");
+    const today = new Date().toISOString().slice(0, 10);
+    return (Array.isArray(raw) ? raw : []).filter(
+      (r) => r && r.key && (!r.date || r.date >= today)
+    );
+  } catch (e) { return []; }
+}
+
+let smIgnoredList = smLoadIgnored();            // [{key, date}] – nur zukünftige/undatierte
+const smIgnored = new Set(smIgnoredList.map((r) => r.key));
+try { localStorage.setItem(SM_IGNORED_LS, JSON.stringify(smIgnoredList)); } catch (e) { /* ignore */ }
+
+function smAddIgnored(key, date) {
+  if (smIgnored.has(key)) return;
+  smIgnored.add(key);
+  smIgnoredList.push({ key, date: date || "" });
+  try { localStorage.setItem(SM_IGNORED_LS, JSON.stringify(smIgnoredList)); } catch (e) { /* ignore */ }
+}
+
+// Key inkl. Ist-Zustand (Titel/Raum bzw. "entfällt"): ändert Schulmanager dieselbe
+// Stunde später erneut, entsteht ein neuer Key und die Änderung taucht wieder auf.
 function smChangeKey(kind, c) {
-  return kind + "|" + ((c.actual && c.actual.uid) || (c.date + "T" + c.start));
+  const base = kind + "|" + ((c.actual && c.actual.uid) || (c.date + "T" + c.start));
+  const st = c.actual
+    ? (c.actual.title || "") + "~" + (c.actual.room || "")
+    : "entfaellt";
+  return base + "|" + st;
 }
 
 function smVisibleChanges() {
@@ -4187,7 +4215,7 @@ function renderSchulmanagerDrawer() {
 }
 
 function smIgnoreChange(kind, c) {
-  smIgnored.add(smChangeKey(kind, c));
+  smAddIgnored(smChangeKey(kind, c), c.date);
   renderSchulmanagerDrawer();
   renderSchulmanagerBell();
 }
@@ -4196,7 +4224,7 @@ function smIgnoreChange(kind, c) {
 // bestehenden Editor vorausgefüllt – der eigentliche Kalendereintrag entsteht erst,
 // wenn dort gespeichert wird (Absprache mit dem Nutzer).
 function smActOnChange(kind, c) {
-  smIgnored.add(smChangeKey(kind, c));  // aus der Schublade nehmen, sobald in Bearbeitung
+  smAddIgnored(smChangeKey(kind, c), c.date);  // aus der Schublade nehmen, sobald in Bearbeitung
   renderSchulmanagerBell();
   closeSchulmanagerDrawer();
   if (kind === "vertretung" || kind === "ausfall") {
