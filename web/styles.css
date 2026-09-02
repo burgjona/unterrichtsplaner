@@ -674,15 +674,16 @@ a.todo-hefter-link:hover { text-decoration:underline; }
 .sp-grid-wrap { border:1px solid var(--line); border-radius:12px; padding:12px; background:var(--surface-2); overflow-x:auto; }
 .sp-board {
   text-align:center; font-weight:var(--fw-bold); font-size:12px; color:var(--primary-dark);
-  background:var(--surface); border:1px solid var(--line); border-radius:8px; padding:6px; margin-bottom:12px;
+  background:var(--surface); border:1px solid var(--line); border-radius:8px; padding:6px; margin-top:12px;
 }
-.sp-grid { display:grid; gap:8px; min-width:max-content; }
+/* Auf Spaltenbreite passen statt horizontal scrollen (kleinere Schrift in den Auswahlfeldern). */
+.sp-grid { display:grid; gap:6px; }
 .sp-seat {
-  display:flex; flex-direction:column; gap:4px; padding:8px;
+  display:flex; flex-direction:column; gap:3px; padding:6px; min-width:0;
   border:1px solid var(--line); border-radius:10px; background:var(--surface);
 }
 .sp-seat-pos { font-size:10px; color:var(--muted); font-weight:var(--fw-bold); }
-.sp-seat-select { width:100%; }
+.sp-seat-select { width:100%; min-width:0; font-size:11px; padding:3px 2px; }
 .sp-list-actions { display:flex; gap:6px; flex-wrap:wrap; }
 
 @media (max-width: 600px) {

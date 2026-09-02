@@ -240,28 +240,10 @@
 
       <div class="cd-layout">
         <div class="cd-col-main">
+          <!-- ===== U18: Sitzplan (Lehrersicht: Tafel unten) ===== -->
           <div class="card cd-ord-2">
-            <div class="cd-head">
-              <h3>Lehrplan – Abhaken</h3>
-              <div id="cdLehrplanProgress" class="cd-actions"></div>
-            </div>
-            <p class="muted small">Ziele der Klassenstufe und Lernbereiche aus dem sächsischen Lehrplan – übers Schuljahr abhaken. Abgehakte bleiben sichtbar.</p>
-            <div id="cdLehrplan"></div>
-          </div>
-
-          <div class="card cd-ord-3">
-            <div class="cd-head">
-              <h3>Hefter der SuS</h3>
-              <div id="cdHefterFilter" class="cd-actions"></div>
-            </div>
-            <p class="muted small">Was die Schüler:innen laut Soll im Hefter stehen haben – chronologisch nach Stunden. Direkt hier bearbeitbar, wird beim Tippen automatisch gespeichert.</p>
-            <div id="cdHefter"></div>
-          </div>
-
-          <!-- ===== U18: Sitzplan ===== -->
-          <div class="card cd-ord-7">
             <h3>Sitzplan</h3>
-            <p class="muted small">Plätze anordnen, Namen aus der Schülerliste zuweisen, speichern und als PDF drucken.</p>
+            <p class="muted small">Plätze anordnen, Namen aus der Schülerliste zuweisen, speichern und als PDF drucken. Ansicht in Lehrersicht: Tafel/Vorne unten.</p>
 
             <div class="row" style="margin-top:10px;align-items:end;">
               <div><label class="small muted" for="spName">Name des Sitzplans</label><input id="spName" placeholder="z. B. Standardplan" /></div>
@@ -290,6 +272,24 @@
             </div>
           </div>
           <!-- ===== /U18 ===== -->
+
+          <div class="card cd-ord-3">
+            <div class="cd-head">
+              <h3>Lehrplan – Abhaken</h3>
+              <div id="cdLehrplanProgress" class="cd-actions"></div>
+            </div>
+            <p class="muted small">Ziele der Klassenstufe und Lernbereiche aus dem sächsischen Lehrplan – übers Schuljahr abhaken. Abgehakte bleiben sichtbar.</p>
+            <div id="cdLehrplan"></div>
+          </div>
+
+          <div class="card cd-ord-4">
+            <div class="cd-head">
+              <h3>Hefter der SuS</h3>
+              <div id="cdHefterFilter" class="cd-actions"></div>
+            </div>
+            <p class="muted small">Was die Schüler:innen laut Soll im Hefter stehen haben – chronologisch nach Stunden. Direkt hier bearbeitbar, wird beim Tippen automatisch gespeichert.</p>
+            <div id="cdHefter"></div>
+          </div>
         </div>
 
         <div class="cd-col-side">
@@ -298,28 +298,14 @@
             <div id="cdLessons"></div>
           </div>
 
-          <div class="card cd-ord-4">
+          <div class="card cd-ord-5">
             <h3>Gespeicherte Stoffverteilungspläne</h3>
             <!-- U19: echte Liste der Stoffpläne dieser Klasse -->
             <div id="cdStoffPlans"></div>
           </div>
 
-          <div class="card cd-ord-6">
-            <h3>Schülerliste</h3>
-            <p class="muted small">Namen der Klasse pflegen – Grundlage für den späteren Sitzplan.</p>
-            <div id="cdStudentList"></div>
-            <div class="row" style="margin-top:10px;">
-              <div style="grid-column: span 2;"><input id="cdStudentName" placeholder="Name eingeben und Enter drücken …" /></div>
-            </div>
-            <div style="margin-top:12px;">
-              <label class="small muted" for="cdStudentBulk">Mehrere Namen einfügen (eine Zeile = ein Name)</label>
-              <textarea id="cdStudentBulk" rows="3" placeholder="Anna Muster&#10;Ben Beispiel&#10;…"></textarea>
-              <div style="margin-top:8px;"><button class="btn small secondary" id="cdStudentBulkBtn">Alle hinzufügen</button></div>
-            </div>
-          </div>
-
           <!-- Notizen zu dieser Klasse (U17-Anbindung) -->
-          <div class="card cd-ord-8">
+          <div class="card cd-ord-7">
             <div class="cd-head">
               <h3>Notizen zu dieser Klasse</h3>
               <button class="btn small secondary" id="cdNoteNewBtn">+ Neue Notiz</button>
@@ -329,10 +315,24 @@
           </div>
 
           <!-- U16: Plan für Parallelklasse duplizieren -->
-          <div class="card u16-dup-card cd-ord-5">
+          <div class="card u16-dup-card cd-ord-6">
             <h3>Plan für Parallelklasse duplizieren</h3>
             <p class="muted small">Einen Stoffplan dieser Klasse als Entwurf für eine andere Klasse übernehmen. Zeiträume lassen sich neu berechnen oder per KI anpassen.</p>
             <div id="cdDupBody"></div>
+          </div>
+
+          <div class="card cd-ord-8">
+            <h3>Schülerliste</h3>
+            <p class="muted small">Namen der Klasse pflegen – Grundlage für den Sitzplan.</p>
+            <div id="cdStudentList"></div>
+            <div class="row" style="margin-top:10px;">
+              <div style="grid-column: span 2;"><input id="cdStudentName" placeholder="Name eingeben und Enter drücken …" /></div>
+            </div>
+            <div style="margin-top:12px;">
+              <label class="small muted" for="cdStudentBulk">Mehrere Namen einfügen (eine Zeile = ein Name)</label>
+              <textarea id="cdStudentBulk" rows="3" placeholder="Anna Muster&#10;Ben Beispiel&#10;…"></textarea>
+              <div style="margin-top:8px;"><button class="btn small secondary" id="cdStudentBulkBtn">Alle hinzufügen</button></div>
+            </div>
           </div>
         </div>
       </div>

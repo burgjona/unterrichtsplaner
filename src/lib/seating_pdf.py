@@ -2,8 +2,9 @@
 
 build_pdf erhält den Sitzplan-Namen, die Klassenbezeichnung, rows/cols und die Platzliste
 (seats: [{row,col,name?}]) und liefert die Datei als bytes. Font-Registrierung analog
-asuv_export (_register_fonts), damit Umlaute korrekt gesetzt werden. Die Tafel/Vorderseite
-wird oben angedeutet, damit die Ausrichtung des Plans klar ist.
+asuv_export (_register_fonts), damit Umlaute korrekt gesetzt werden. Lehrersicht: die
+Tafel/Vorderseite wird unten angedeutet, die Reihen werden von hinten (oben) nach vorne
+(unten) gedruckt. Die gespeicherten row-Indizes bleiben unveraendert (row 0 = vorne).
 """
 from io import BytesIO
 from typing import List, Optional
@@ -51,8 +52,9 @@ def build_pdf(plan_name: str, class_label: str, rows: Optional[int], cols: Optio
         if 0 <= r < n_rows and 0 <= c < n_cols:
             grid[r][c] = s.get("name") or ""
 
+    # Lehrersicht: hinterste Reihe zuerst (oben), vorderste Reihe zuletzt (unten an der Tafel).
     data = [[Paragraph(esc(grid[r][c]) or "&nbsp;", cell_st) for c in range(n_cols)]
-            for r in range(n_rows)]
+            for r in range(n_rows - 1, -1, -1)]
 
     buf = BytesIO()
     page = landscape(A4)
@@ -66,15 +68,6 @@ def build_pdf(plan_name: str, class_label: str, rows: Optional[int], cols: Optio
         Paragraph(esc(class_label), sub_st),
     ]
 
-    # Tafel/Vorderseite andeuten (volle Breite).
-    board = Table([[Paragraph("Tafel / Vorne", board_st)]], colWidths=[doc.width])
-    board.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), (0.85, 0.9, 0.85)),
-        ("BOX", (0, 0), (-1, -1), 0.5, (0.5, 0.5, 0.5)),
-        ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-    ]))
-    story += [board, Spacer(1, 0.6 * cm)]
-
     col_w = doc.width / n_cols
     row_h = min(2.4 * cm, (doc.height - 3 * cm) / n_rows) if n_rows else 2.4 * cm
     table = Table(data, colWidths=[col_w] * n_cols, rowHeights=[row_h] * n_rows)
@@ -84,6 +77,15 @@ def build_pdf(plan_name: str, class_label: str, rows: Optional[int], cols: Optio
         ("BACKGROUND", (0, 0), (-1, -1), (0.98, 0.98, 1.0)),
     ]))
     story.append(table)
+
+    # Tafel/Vorderseite unten andeuten (Lehrersicht, volle Breite).
+    board = Table([[Paragraph("Tafel / Vorne", board_st)]], colWidths=[doc.width])
+    board.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), (0.85, 0.9, 0.85)),
+        ("BOX", (0, 0), (-1, -1), 0.5, (0.5, 0.5, 0.5)),
+        ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    story += [Spacer(1, 0.6 * cm), board]
 
     doc.build(story)
     return buf.getvalue()

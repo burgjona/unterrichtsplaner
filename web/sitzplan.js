@@ -60,9 +60,10 @@ export function createSeatPlanModule(ctx) {
     if (!wrap) return;
     const detailStudents = getDetailStudents();
     const assigned = spAssignedIds();
-    let html = '<div class="sp-board">Tafel / Vorne</div>';
-    html += '<div class="sp-grid" style="grid-template-columns:repeat(' + seatPlan.cols + ',minmax(96px,1fr));">';
-    for (let r = 0; r < seatPlan.rows; r++) {
+    // Lehrersicht: Tafel/Vorne unten, hinterste Reihe oben. Nur die Anzeige ist
+    // gespiegelt – die gespeicherten row-Indizes bleiben unveraendert (row 0 = vorne).
+    let html = '<div class="sp-grid" style="grid-template-columns:repeat(' + seatPlan.cols + ',minmax(0,1fr));">';
+    for (let r = seatPlan.rows - 1; r >= 0; r--) {
       for (let c = 0; c < seatPlan.cols; c++) {
         const cell = seatPlan.grid[r][c];
         const opts = ['<option value="">— leer —</option>'];
@@ -76,6 +77,7 @@ export function createSeatPlanModule(ctx) {
       }
     }
     html += "</div>";
+    html += '<div class="sp-board">Tafel / Vorne</div>';
     wrap.innerHTML = html;
     wrap.querySelectorAll(".sp-seat-select").forEach((sel) => {
       sel.onchange = () => {
