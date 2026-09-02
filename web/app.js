@@ -2433,9 +2433,9 @@ async function renderWeekOverview() {
     })
     .sort((a, b) => (a.entryDate + (a.startTime || "")).localeCompare(b.entryDate + (b.startTime || "")));
 
-  // Termine des heutigen Tages erscheinen nur im "Guten Tag!"-Panel (todayAppointmentsList),
-  // nicht zusätzlich in der Wochenübersicht.
-  const appts = allAppts.filter((e) => !(e.entryDate <= todayStr && (e.endDate || e.entryDate) >= todayStr));
+  // Nur noch kommende Termine: heutige Termine stehen im "Guten Tag!"-Panel
+  // (todayAppointmentsList), bereits vergangene Tage der Woche entfallen ganz.
+  const appts = allAppts.filter((e) => e.entryDate > todayStr);
 
   const apptRow = (e) => {
     const badgeClass = e.entryType === "lu" ? "bad" : e.entryType === "exam" ? "warn" : "ok";
@@ -2478,7 +2478,7 @@ async function renderWeekOverview() {
     const data = await calTtFetch(mondayStr);
     const unplanned = [];
     (data.days || []).forEach((day) => {
-      if (day.date === todayStr) return;     // Heute steht bereits im "Guten Tag!"-Panel
+      if (day.date <= todayStr) return;      // Heute steht im "Guten Tag!"-Panel, Vergangenes entfällt
       if (schoolDateFor(day.date)) return;   // Ferien/Feiertag → an dem Tag ohnehin keine Stunde
       (day.items || []).forEach((it) => {
         if (it.classId == null) return;      // kein Klassen-Slot (z. B. Aufsicht) → nicht relevant
