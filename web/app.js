@@ -2264,7 +2264,10 @@ async function renderTodayList() {
           const div = document.createElement("div");
           div.className = "mini-item";
           if (isPast) div.style.opacity = "0.55";
+          // Nur echte Unterrichts-Slots (mit Klasse) tragen einen Planungsstatus –
+          // Aufsichten/Pausen u. Ä. sind keine zu planenden Stunden.
           const statusBadge = isNow ? '<span class="badge ok">jetzt</span>'
+            : it.classId == null ? ""
             : match ? '<span class="badge ok">geplant</span>' : '<span class="badge warn">nicht geplant</span>';
           div.innerHTML = `<span class="time">${esc(it.timeRange || "")}</span><span>${esc(it.title)}</span>${statusBadge}`;
           if (match) div.onclick = () => openLessonModal(match);
@@ -3859,7 +3862,7 @@ async function renderDayAgendaTt(dStr) {
       `<span class="cal-day-agenda-time">${esc(it.timeRange || "")}</span>` +
       `<span class="cal-day-agenda-title">${esc(planned ? planned.title : it.title)}` +
       `${it.subtitle ? ` <span class="muted small">· ${esc(it.subtitle)}</span>` : ""}` +
-      `${planned ? "" : ' <span class="muted small">· noch nicht geplant</span>'}</span>${delBtn}</div>`;
+      `${planned || it.classId == null ? "" : ' <span class="muted small">· noch nicht geplant</span>'}</span>${delBtn}</div>`;
   }).join("") : `<p class="muted small cal-day-agenda-empty">Keine Stunden an diesem Tag.</p>`;
   list.querySelectorAll("[data-tt-item]").forEach((el) => {
     el.onclick = (ev) => {
