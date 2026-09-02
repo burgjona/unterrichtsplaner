@@ -1132,6 +1132,7 @@ function renderAll() {
   renderAsuvLessonSelect();
   renderPraesentControls();
   renderSpruchDesTages();
+  renderStateTiles();
 }
 
 function renderClassTable() {
@@ -1198,6 +1199,101 @@ function openClassDetail(cid) {
   openStoffPlanId = null;            // U19: kein Stoffplan aus einer anderen Klasse offen halten
   showView("klasse-detail");
   renderClassDetail();
+}
+
+/* ---------- Generische Status-Kacheln für die übrigen Ansichten ----------
+   tiles: [{label, value(HTML), bar?, attn?, go?, scroll?(elementId), view?(viewName)}]
+   Klick/Enter: scroll = zur Karte scrollen, view = Ansicht öffnen. */
+function _statTileHtml(t) {
+  return (
+    `<a class="stat-tile${t.attn ? " attn" : ""}" role="button" tabindex="0"` +
+    (t.scroll ? ` data-stile-scroll="${t.scroll}"` : "") +
+    (t.view ? ` data-stile-view="${t.view}"` : "") + ">" +
+    `<span class="stat-tile-l">${esc(t.label)}</span>` +
+    `<span class="stat-tile-v">${t.value}</span>` +
+    (t.bar != null ? `<span class="stat-tile-bar"><i style="width:${Math.max(0, Math.min(100, t.bar))}%"></i></span>` : "") +
+    (t.go ? `<span class="stat-tile-go">${esc(t.go)}</span>` : "") +
+    `</a>`
+  );
+}
+function renderStatTiles(containerId, tiles) {
+  const box = $(containerId);
+  if (!box) return;
+  box.className = "stat-tiles";
+  box.innerHTML = (tiles || []).map(_statTileHtml).join("");
+  box.querySelectorAll("[data-stile-scroll],[data-stile-view]").forEach((el) => {
+    const act = () => {
+      const vw = el.getAttribute("data-stile-view");
+      if (vw) { showView(vw); return; }
+      const t = $(el.getAttribute("data-stile-scroll"));
+      const tgt = (t && t.closest(".card")) || t;
+      if (tgt) tgt.scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+    el.onclick = act;
+    el.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); act(); } };
+  });
+}
+
+let _weekUnplannedCount = null;   // von renderWeekOverview gesetzt (async), für die "heute"-Kachel
+
+// Baut die Kacheln aller Ansichten, die rein aus `state` berechenbar sind. Wird aus
+// renderAll() (nach jedem Datenrefresh) und nach dem Wochen-Fetch aufgerufen.
+function renderStateTiles() {
+  const openTodos = state.todos.filter((t) => !t.done).length;
+  const hefterTodos = state.todos.filter((t) => t.hefterLessonId != null && !t.done).length;
+  renderStatTiles("heuteTiles", [
+    { label: "Ungeplant diese Woche", value: _weekUnplannedCount == null ? "…" : String(_weekUnplannedCount),
+      attn: _weekUnplannedCount > 0, go: "Verplanen →", view: "stunde" },
+    { label: "Heftereinträge offen", value: String(hefterTodos), attn: hefterTodos > 0,
+      go: "Nachtragen →", scroll: "hefterReminderList" },
+    { label: "Offene Reflexionen", value: String(state.open.length), attn: state.open.length > 0,
+      go: "Nachbereiten →", view: "reflexion" },
+    { label: "Offene To-dos", value: String(openTodos), go: "Zur Liste →", scroll: "todoList" },
+  ]);
+
+  const withPlan = new Set(Object.keys(state.activePlans || {}).map(String));
+  const planbare = state.classes.filter((c) => c.subject && c.subject !== "kein Fach");
+  const ohnePlan = planbare.filter((c) => !withPlan.has(String(c.id))).length;
+  renderStatTiles("klassenTiles", [
+    { label: "Klassen", value: String(state.classes.length), go: "Übersicht ↓", scroll: "classTable" },
+    { label: "Stunden gesamt", value: String(state.lessons.length), go: "Zur Planung →", view: "stunde" },
+    { label: "Ohne aktiven Stoffplan", value: String(ohnePlan), attn: ohnePlan > 0,
+      go: "Plan anlegen →", view: "stoff" },
+  ]);
+
+  renderStatTiles("reflexionTiles", [
+    { label: "Offene Reflexionen", value: String(state.open.length), attn: state.open.length > 0,
+      go: "Erfassen →", scroll: "openReflectList" },
+    { label: "Journal-Einträge", value: String((state.reflections || []).length), go: "Journal ↓", scroll: "reflectTable" },
+  ]);
+
+  renderStatTiles("materialTiles", [
+    { label: "Materialien", value: String((state.materials || []).length), go: "Bibliothek ↓", scroll: "materialList" },
+    { label: "ASUV-Entwürfe", value: String((state.asuvDrafts || []).length), go: "Öffnen ↓", scroll: "asuvLibraryList" },
+  ]);
+
+  renderStatTiles("stoffTiles", [
+    { label: "Gespeicherte Pläne", value: String((state.stoffPlans || []).length), go: "Verwalten ↓", scroll: "stoffPlansCard" },
+    { label: "Lernbereiche im Vorschlag", value: String((state.stoffPreview || []).length), go: "Planvorschlag ↓", scroll: "planTable" },
+    { label: "Klassen mit aktivem Plan", value: String(withPlan.size), go: "Klassen →", view: "klassen" },
+  ]);
+
+  renderStatTiles("sequenzTiles", [
+    { label: "Klassen mit aktivem Plan", value: String(withPlan.size), go: "Stoffplan →", view: "stoff" },
+    { label: "Ohne Reflexion", value: String(state.open.length), attn: state.open.length > 0, go: "Reflexion →", view: "reflexion" },
+  ]);
+
+  renderStatTiles("stundeTiles", [
+    { label: "Gespeicherte Stunden", value: String(state.lessons.length), go: "Liste ↓", scroll: "lessonTable" },
+    { label: "Ungeplant diese Woche", value: _weekUnplannedCount == null ? "…" : String(_weekUnplannedCount),
+      attn: _weekUnplannedCount > 0, go: "Home →", view: "heute" },
+    { label: "Ohne Reflexion", value: String(state.open.length), attn: state.open.length > 0, go: "Reflexion →", view: "reflexion" },
+  ]);
+
+  renderStatTiles("asuvTiles", [
+    { label: "Gespeicherte ASUV", value: String((state.asuvDrafts || []).length), go: "In der Bibliothek →", view: "material" },
+    { label: "Stunden verfügbar", value: String(state.lessons.length), go: "Stunde wählen ↓", scroll: "asuvLesson" },
+  ]);
 }
 
 /* Status-Kacheln der Klassendetailseite. Werte, die synchron feststehen (Stunden, Hefter,
@@ -2366,6 +2462,8 @@ async function renderWeekOverview() {
         if (!planned) unplanned.push({ date: day.date, weekday: day.weekday, title: it.title, timeRange: it.timeRange });
       });
     });
+    _weekUnplannedCount = unplanned.length;
+    if (typeof renderStateTiles === "function") renderStateTiles();
     unplannedEl.innerHTML = "";
     if (!unplanned.length) {
       unplannedEl.innerHTML = '<p class="mini-empty">Keine ungeplanten Stunden diese Woche.</p>';
