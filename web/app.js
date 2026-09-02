@@ -1294,6 +1294,27 @@ function renderStateTiles() {
     { label: "Gespeicherte ASUV", value: String((state.asuvDrafts || []).length), go: "In der Bibliothek →", view: "material" },
     { label: "Stunden verfügbar", value: String(state.lessons.length), go: "Stunde wählen ↓", scroll: "asuvLesson" },
   ]);
+
+  // Kalender: Termine diese Woche, LK/Prüfungen im angezeigten Monat, nächste Ferien.
+  const _mon = new Date(); _mon.setDate(_mon.getDate() - ((_mon.getDay() + 6) % 7));
+  const _monS = isoDate(_mon);
+  const _sun = new Date(_mon); _sun.setDate(_sun.getDate() + 6);
+  const _sunS = isoDate(_sun);
+  const weekEvents = (state.calendar || []).filter((e) => {
+    const end = e.endDate || e.entryDate; return e.entryDate <= _sunS && end >= _monS;
+  }).length;
+  const _my = calCursor.getFullYear() + "-" + String(calCursor.getMonth() + 1).padStart(2, "0");
+  const monthLK = (state.calendar || []).filter((e) =>
+    (e.entryDate || "").startsWith(_my) && (e.entryType === "lu" || e.entryType === "exam")).length;
+  const _todayS = isoDate(new Date());
+  const nextFerien = (state.schoolDates || [])
+    .filter((s) => s.kind === "ferien" && s.startDate > _todayS)
+    .sort((a, b) => a.startDate.localeCompare(b.startDate))[0];
+  renderStatTiles("kalenderTiles", [
+    { label: "Termine diese Woche", value: String(weekEvents), go: "Kalender ↓", scroll: "calGrid" },
+    { label: "LK / Prüfungen im Monat", value: String(monthLK), attn: monthLK > 0, go: "Übersicht ↓", scroll: "classTimeline" },
+    { label: "Nächste Ferien", value: nextFerien ? esc(deDate(nextFerien.startDate)) : "–", go: "Kalender ↓", scroll: "calGrid" },
+  ]);
 }
 
 /* Status-Kacheln der Klassendetailseite. Werte, die synchron feststehen (Stunden, Hefter,
@@ -6699,8 +6720,8 @@ function wireEvents() {
   $("saveReflect").onclick = saveReflect;
 
   // Kalender
-  $("calPrevBtn").onclick = () => { calCursor.setDate(calCursor.getDate() - (calMode === "week" ? 7 : 30)); renderCalendar(); };
-  $("calNextBtn").onclick = () => { calCursor.setDate(calCursor.getDate() + (calMode === "week" ? 7 : 30)); renderCalendar(); };
+  $("calPrevBtn").onclick = () => { calCursor.setDate(calCursor.getDate() - (calMode === "week" ? 7 : 30)); renderCalendar(); renderStateTiles(); };
+  $("calNextBtn").onclick = () => { calCursor.setDate(calCursor.getDate() + (calMode === "week" ? 7 : 30)); renderCalendar(); renderStateTiles(); };
   $("calMonthBtn").onclick = () => { calMode = "month"; $("calMonthBtn").classList.add("active"); $("calWeekBtn").classList.remove("active"); renderCalendar(); };
   $("calWeekBtn").onclick = () => { calMode = "week"; $("calWeekBtn").classList.add("active"); $("calMonthBtn").classList.remove("active"); renderCalendar(); };
   // U27c: blasse Stundenplan-Ebene ein-/ausschalten (persistiert, nur Wochen-Modus).

@@ -209,6 +209,37 @@ function ttRenderView() {
   ttRenderToolbar();
   ttRenderGrid();
   ttRenderLegend();
+  ttRenderTiles();
+}
+
+// Status-Kacheln der Stundenplan-Ansicht (nutzt renderStatTiles aus app.js — gemeinsamer
+// Skript-Scope). Bezieht sich auf die aktuell angezeigte A/B-Woche.
+function ttRenderTiles() {
+  if (typeof renderStatTiles !== "function") return;
+  const kindName = (e) => {
+    const k = ttState.kinds.find((x) => x.id === e.kindId);
+    return k ? k.name : "";
+  };
+  const visible = ttState.entries.filter((e) => e.weekType === "both" || e.weekType === ttState.week);
+  const nonBreak = ttState.slots.filter((s) => s.slotType !== "break").length;
+  const idx = new Map(ttState.slots.map((s, i) => [s.id, i]));
+  const covered = new Set();
+  visible.forEach((e) => {
+    const si = idx.get(e.slotId);
+    if (si == null) return;
+    for (let k = 0; k < Math.min(e.spanSlots, ttState.slots.length - si); k++) {
+      if (ttState.slots[si + k] && ttState.slots[si + k].slotType !== "break") covered.add(e.weekday + ":" + (si + k));
+    }
+  });
+  const aufsichten = visible.filter((e) => /aufsicht/i.test(kindName(e))).length;
+  const vertretungen = visible.filter((e) => /vertretung/i.test(kindName(e))).length;
+  const frei = Math.max(0, nonBreak * 5 - covered.size);
+  renderStatTiles("stundenplanTiles", [
+    { label: "Belegte Stunden (" + ttState.week + "-Woche)", value: String(covered.size), scroll: "ttGrid" },
+    { label: "Freistunden", value: nonBreak ? String(frei) : "–", scroll: "ttGrid" },
+    { label: "Aufsichten", value: String(aufsichten), scroll: "ttGrid" },
+    { label: "Vertretungen", value: String(vertretungen), attn: vertretungen > 0, scroll: "ttGrid" },
+  ]);
 }
 
 function ttRenderToolbar() {
