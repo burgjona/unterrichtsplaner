@@ -8,7 +8,7 @@
    Stattdessen bekommt createSeatPlanModule() alles explizit übergeben (ctx). */
 
 export function createSeatPlanModule(ctx) {
-  const { $, esc, API, toast, SyncEngine, getDetailClassId, getDetailStudents } = ctx;
+  const { $, esc, API, toast, SyncEngine, getDetailClassId, getDetailStudents, cdSetTile } = ctx;
 
   // state: aktuell im Editor bearbeiteter Sitzplan (grid = Matrix[row][col] -> {studentId,name}|null)
   const seatPlan = { editId: null, rows: 4, cols: 5, grid: [] };
@@ -125,6 +125,7 @@ export function createSeatPlanModule(ctx) {
         .sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")) || String(b.id).localeCompare(String(a.id)));
     } catch (e) { toast(e.message, false); return; }
     seatPlansCache = plans;
+    if (cdSetTile) cdSetTile("sitzplan", String(plans.length));
     if (!plans.length) { wrap.innerHTML = '<p class="muted small">Noch keine Sitzpläne gespeichert.</p>'; return; }
     wrap.innerHTML = "";
     plans.forEach((p) => {

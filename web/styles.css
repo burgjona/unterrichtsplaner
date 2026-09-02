@@ -122,6 +122,25 @@ input.input-error { border-color: var(--bad); background: color-mix(in srgb, var
 .small { font-size:12px; } .muted { color:var(--muted); }
 .hero-grid { display:grid; grid-template-columns: 1.3fr .9fr; gap:16px; margin-bottom:16px; }
 .hero-panel { background: var(--primary); color:white; border-radius:20px; padding:22px; }
+
+/* HEUTE-Redesign: Desktop 3 Spalten (Stundenplan | Woche im Blick | To-dos/Spruch),
+   Schnellaktionen voller Breite darunter. Mobile (<=1080px) -> eine Spalte in der
+   bisherigen Reihenfolge (Stundenplan, Woche, Schnellaktionen, To-dos, Spruch);
+   Spruch bleibt <=920px ausgeblendet (Regel weiter unten). */
+.dash-grid { display:grid; grid-template-columns: 1.7fr 1fr 1fr; gap:16px; align-items:start; margin-bottom:0; }
+.dash-grid > * { min-width:0; }
+.dash-side { display:grid; gap:16px; align-content:start; }
+.dash-grid .ql-row { grid-column:1 / -1; margin-top:0; }
+
+@media (max-width: 1080px) {
+  .dash-grid { display:flex; flex-direction:column; gap:16px; }
+  .dash-side { display:contents; }
+  .dash-grid .hero-panel { order:1; }
+  .dash-grid .dash-week  { order:2; }
+  .dash-grid .ql-row     { order:3; }
+  .dash-grid .card.soft  { order:4; }
+  .dash-grid .spruch-card { order:5; }
+}
 .hero-panel h2 { margin:0 0 6px; font-size:22px; }
 .mini-list { display:grid; gap:8px; }
 .mini-item { padding:11px 13px; border-radius:14px; background:var(--mini-item-bg, rgba(255,255,255,0.16)); display:flex; justify-content:space-between; align-items:center; gap:10px; cursor:pointer; min-width:0; }
@@ -545,6 +564,74 @@ a.todo-hefter-link:hover { text-decoration:underline; }
 .cd-student-row { display:flex; align-items:center; gap:8px; padding:5px 0; }
 .cd-student-no { width:26px; text-align:right; color:var(--muted); font-size:13px; flex-shrink:0; }
 .cd-student-input { flex:1; }
+
+/* Klassen-Detail Redesign: zweispaltiges Raster auf Desktop, Karten so hoch wie ihr
+   Inhalt. Kopfband = erste Karte (.cd-band). Mobile (<=1080px) → eine Spalte. */
+.cd-band { margin-bottom:0; }
+
+/* Status-Kacheln (Kennzahlen). Klick springt zur zugehörigen Karte / Ansicht.
+   .cd-tiles = Klassendetail (fixe 6 Spalten); .stat-tiles = generisch (auto-fit). */
+.cd-tiles { display:grid; grid-template-columns:repeat(6, minmax(0,1fr)); gap:10px; margin-top:14px; }
+.stat-tiles { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:10px; margin-bottom:16px; }
+.cd-tile, .stat-tile {
+  display:block; text-align:left; color:inherit; text-decoration:none;
+  background:var(--surface); border:1px solid var(--line); border-radius:var(--radius-sm);
+  box-shadow:var(--shadow); padding:11px 12px; cursor:pointer; transition:transform .08s, border-color .08s;
+}
+.cd-tile:hover, .cd-tile:focus-visible, .stat-tile:hover, .stat-tile:focus-visible { transform:translateY(-2px); border-color:var(--primary); outline:none; }
+.cd-tile-l, .cd-tile-v, .cd-tile-bar, .cd-tile-go { display:block; }
+.cd-tile-l, .stat-tile-l { display:block; font-size:10.5px; font-weight:var(--fw-bold); color:var(--muted); text-transform:uppercase; letter-spacing:.03em; }
+.cd-tile-v, .stat-tile-v { display:block; font-size:19px; font-weight:var(--fw-heavy); color:var(--primary-dark); font-variant-numeric:tabular-nums; margin-top:2px; }
+.cd-tile-v small, .stat-tile-v small { font-size:12px; color:var(--muted); font-weight:var(--fw-bold); }
+.cd-tile-bar, .stat-tile-bar { display:block; height:5px; border-radius:999px; background:var(--track, #e4efe1); margin-top:7px; overflow:hidden; }
+.cd-tile-bar > i, .stat-tile-bar > i { display:block; height:100%; background:var(--primary); border-radius:999px; }
+.cd-tile.attn .cd-tile-v, .stat-tile.attn .stat-tile-v { color:var(--orange); }
+.cd-tile.attn .cd-tile-bar > i, .stat-tile.attn .stat-tile-bar > i { background:var(--orange); }
+.cd-tile-go, .stat-tile-go { display:block; font-size:10.5px; color:var(--primary); font-weight:var(--fw-bold); margin-top:6px; }
+
+@media (max-width: 1080px) { .cd-tiles { grid-template-columns:repeat(3, minmax(0,1fr)); } }
+@media (max-width: 600px)  { .cd-tiles, .stat-tiles { grid-template-columns:repeat(2, minmax(0,1fr)); } }
+.cd-layout {
+  display:grid;
+  grid-template-columns: minmax(0, 1.32fr) minmax(0, 1fr);
+  gap:14px;
+  align-items:start;
+  margin-top:14px;
+}
+.cd-col-main, .cd-col-side { display:grid; gap:14px; align-content:start; min-width:0; }
+/* Grid-Items schrumpfen sonst nicht unter ihre Inhalts-Mindestbreite (min-width:auto)
+   und laufen aus der Spalte -> hier explizit erlauben. */
+.cd-col-main > *, .cd-col-side > * { min-width:0; }
+
+@media (max-width: 1080px) {
+  /* Mobile/Tablet: exakt die bisherige Reihenfolge und Einspaltigkeit wiederherstellen
+     (display:contents hebt die beiden Spalten-Wrapper auf, cd-ord-* setzt die Alt-Folge). */
+  .cd-layout { display:flex; flex-direction:column; gap:14px; }
+  .cd-col-main, .cd-col-side { display:contents; }
+  .cd-ord-1 { order:1; } .cd-ord-2 { order:2; } .cd-ord-3 { order:3; } .cd-ord-4 { order:4; }
+  .cd-ord-5 { order:5; } .cd-ord-6 { order:6; } .cd-ord-7 { order:7; } .cd-ord-8 { order:8; }
+}
+
+/* Generische Zwei-Spalten-Ansicht (Desktop): breitere Hauptspalte + schmale Nebenspalte,
+   Karten so hoch wie ihr Inhalt. Mobile (<=1080px) -> eine Spalte in Original-Reihenfolge
+   (die .vcol-Wrapper werden per display:contents aufgehoben, .ord-* stellt die Folge her). */
+.v2col { display:grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap:14px; align-items:start; }
+.v3col { display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap:14px; align-items:start; }
+.v2col > *, .v3col > * { min-width:0; }
+.v2col .vcol, .v3col .vcol { display:grid; gap:14px; align-content:start; min-width:0; }
+.v2col .vcol > *, .v3col .vcol > * { min-width:0; }
+.v2col .vcol > .note-box, .v3col .vcol > .note-box { margin-top:0; }
+@media (max-width: 1080px) {
+  .v2col, .v3col { display:flex; flex-direction:column; gap:14px; }
+  .v2col .vcol, .v3col .vcol { display:contents; }
+  .ord-1{order:1}.ord-2{order:2}.ord-3{order:3}.ord-4{order:4}.ord-5{order:5}
+  .ord-6{order:6}.ord-7{order:7}.ord-8{order:8}.ord-9{order:9}
+  .ord-10{order:10}.ord-11{order:11}.ord-12{order:12}
+}
+@media (min-width: 1081px) and (max-width: 1240px) {
+  /* auf mittelbreiten Desktops werden 3 Spalten zu eng -> 2 Spalten */
+  .v3col { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 
 @media (max-width: 600px) {
   .cd-head { flex-direction:column; align-items:stretch; }

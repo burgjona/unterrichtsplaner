@@ -1132,6 +1132,7 @@ function renderAll() {
   renderAsuvLessonSelect();
   renderPraesentControls();
   renderSpruchDesTages();
+  renderStateTiles();
 }
 
 function renderClassTable() {
@@ -1200,6 +1201,175 @@ function openClassDetail(cid) {
   renderClassDetail();
 }
 
+/* ---------- Generische Status-Kacheln für die übrigen Ansichten ----------
+   tiles: [{label, value(HTML), bar?, attn?, go?, scroll?(elementId), view?(viewName)}]
+   Klick/Enter: scroll = zur Karte scrollen, view = Ansicht öffnen. */
+function _statTileHtml(t) {
+  return (
+    `<a class="stat-tile${t.attn ? " attn" : ""}" role="button" tabindex="0"` +
+    (t.scroll ? ` data-stile-scroll="${t.scroll}"` : "") +
+    (t.view ? ` data-stile-view="${t.view}"` : "") + ">" +
+    `<span class="stat-tile-l">${esc(t.label)}</span>` +
+    `<span class="stat-tile-v">${t.value}</span>` +
+    (t.bar != null ? `<span class="stat-tile-bar"><i style="width:${Math.max(0, Math.min(100, t.bar))}%"></i></span>` : "") +
+    (t.go ? `<span class="stat-tile-go">${esc(t.go)}</span>` : "") +
+    `</a>`
+  );
+}
+function renderStatTiles(containerId, tiles) {
+  const box = $(containerId);
+  if (!box) return;
+  box.className = "stat-tiles";
+  box.innerHTML = (tiles || []).map(_statTileHtml).join("");
+  box.querySelectorAll("[data-stile-scroll],[data-stile-view]").forEach((el) => {
+    const act = () => {
+      const vw = el.getAttribute("data-stile-view");
+      if (vw) { showView(vw); return; }
+      const t = $(el.getAttribute("data-stile-scroll"));
+      const tgt = (t && t.closest(".card")) || t;
+      if (tgt) tgt.scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+    el.onclick = act;
+    el.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); act(); } };
+  });
+}
+
+let _weekUnplannedCount = null;   // von renderWeekOverview gesetzt (async), für die "heute"-Kachel
+
+// Baut die Kacheln aller Ansichten, die rein aus `state` berechenbar sind. Wird aus
+// renderAll() (nach jedem Datenrefresh) und nach dem Wochen-Fetch aufgerufen.
+function renderStateTiles() {
+  const openTodos = state.todos.filter((t) => !t.done).length;
+  const hefterTodos = state.todos.filter((t) => t.hefterLessonId != null && !t.done).length;
+  renderStatTiles("heuteTiles", [
+    { label: "Ungeplant diese Woche", value: _weekUnplannedCount == null ? "…" : String(_weekUnplannedCount),
+      attn: _weekUnplannedCount > 0, go: "Verplanen →", view: "stunde" },
+    { label: "Heftereinträge offen", value: String(hefterTodos), attn: hefterTodos > 0,
+      go: "Nachtragen →", scroll: "hefterReminderList" },
+    { label: "Offene Reflexionen", value: String(state.open.length), attn: state.open.length > 0,
+      go: "Nachbereiten →", view: "reflexion" },
+    { label: "Offene To-dos", value: String(openTodos), go: "Zur Liste →", scroll: "todoList" },
+  ]);
+
+  const withPlan = new Set(Object.keys(state.activePlans || {}).map(String));
+  const planbare = state.classes.filter((c) => c.subject && c.subject !== "kein Fach");
+  const ohnePlan = planbare.filter((c) => !withPlan.has(String(c.id))).length;
+  renderStatTiles("klassenTiles", [
+    { label: "Klassen", value: String(state.classes.length), go: "Übersicht ↓", scroll: "classTable" },
+    { label: "Stunden gesamt", value: String(state.lessons.length), go: "Zur Planung →", view: "stunde" },
+    { label: "Ohne aktiven Stoffplan", value: String(ohnePlan), attn: ohnePlan > 0,
+      go: "Plan anlegen →", view: "stoff" },
+  ]);
+
+  renderStatTiles("reflexionTiles", [
+    { label: "Offene Reflexionen", value: String(state.open.length), attn: state.open.length > 0,
+      go: "Erfassen →", scroll: "openReflectList" },
+    { label: "Journal-Einträge", value: String((state.reflections || []).length), go: "Journal ↓", scroll: "reflectTable" },
+  ]);
+
+  renderStatTiles("materialTiles", [
+    { label: "Materialien", value: String((state.materials || []).length), go: "Bibliothek ↓", scroll: "materialList" },
+    { label: "ASUV-Entwürfe", value: String((state.asuvDrafts || []).length), go: "Öffnen ↓", scroll: "asuvLibraryList" },
+  ]);
+
+  renderStatTiles("stoffTiles", [
+    { label: "Gespeicherte Pläne", value: String((state.stoffPlans || []).length), go: "Verwalten ↓", scroll: "stoffPlansCard" },
+    { label: "Lernbereiche im Vorschlag", value: String((state.stoffPreview || []).length), go: "Planvorschlag ↓", scroll: "planTable" },
+    { label: "Klassen mit aktivem Plan", value: String(withPlan.size), go: "Klassen →", view: "klassen" },
+  ]);
+
+  renderStatTiles("sequenzTiles", [
+    { label: "Klassen mit aktivem Plan", value: String(withPlan.size), go: "Stoffplan →", view: "stoff" },
+    { label: "Ohne Reflexion", value: String(state.open.length), attn: state.open.length > 0, go: "Reflexion →", view: "reflexion" },
+  ]);
+
+  renderStatTiles("stundeTiles", [
+    { label: "Gespeicherte Stunden", value: String(state.lessons.length), go: "Liste ↓", scroll: "lessonTable" },
+    { label: "Ungeplant diese Woche", value: _weekUnplannedCount == null ? "…" : String(_weekUnplannedCount),
+      attn: _weekUnplannedCount > 0, go: "Home →", view: "heute" },
+    { label: "Ohne Reflexion", value: String(state.open.length), attn: state.open.length > 0, go: "Reflexion →", view: "reflexion" },
+  ]);
+
+  renderStatTiles("asuvTiles", [
+    { label: "Gespeicherte ASUV", value: String((state.asuvDrafts || []).length), go: "In der Bibliothek →", view: "material" },
+    { label: "Stunden verfügbar", value: String(state.lessons.length), go: "Stunde wählen ↓", scroll: "asuvLesson" },
+  ]);
+
+  // Kalender: Termine diese Woche, LK/Prüfungen im angezeigten Monat, nächste Ferien.
+  const _mon = new Date(); _mon.setDate(_mon.getDate() - ((_mon.getDay() + 6) % 7));
+  const _monS = isoDate(_mon);
+  const _sun = new Date(_mon); _sun.setDate(_sun.getDate() + 6);
+  const _sunS = isoDate(_sun);
+  const weekEvents = (state.calendar || []).filter((e) => {
+    const end = e.endDate || e.entryDate; return e.entryDate <= _sunS && end >= _monS;
+  }).length;
+  const _my = calCursor.getFullYear() + "-" + String(calCursor.getMonth() + 1).padStart(2, "0");
+  const monthLK = (state.calendar || []).filter((e) =>
+    (e.entryDate || "").startsWith(_my) && (e.entryType === "lu" || e.entryType === "exam")).length;
+  const _todayS = isoDate(new Date());
+  const nextFerien = (state.schoolDates || [])
+    .filter((s) => s.kind === "ferien" && s.startDate > _todayS)
+    .sort((a, b) => a.startDate.localeCompare(b.startDate))[0];
+  renderStatTiles("kalenderTiles", [
+    { label: "Termine diese Woche", value: String(weekEvents), go: "Kalender ↓", scroll: "calGrid" },
+    { label: "LK / Prüfungen im Monat", value: String(monthLK), attn: monthLK > 0, go: "Übersicht ↓", scroll: "classTimeline" },
+    { label: "Nächste Ferien", value: nextFerien ? esc(deDate(nextFerien.startDate)) : "–", go: "Kalender ↓", scroll: "calGrid" },
+  ]);
+}
+
+/* Status-Kacheln der Klassendetailseite. Werte, die synchron feststehen (Stunden, Hefter,
+   ggf. Schülerzahl), werden sofort gesetzt; asynchron nachgeladene (Lehrplan, Stoffpläne,
+   Sitzpläne, Schüler) rufen cdSetTile(), sobald ihre Render-Funktion fertig ist. */
+function _cdTileEl(key, label, valueHtml, o) {
+  o = o || {};
+  return (
+    `<a class="cd-tile${o.attn ? " attn" : ""}" role="button" tabindex="0" data-cd-tile="${key}" data-cd-scroll="${o.scroll || ""}">` +
+    `<span class="cd-tile-l">${esc(label)}</span>` +
+    `<span class="cd-tile-v" data-cd-tileval>${valueHtml}</span>` +
+    `<span class="cd-tile-bar"${o.bar != null ? "" : " hidden"}><i style="width:${o.bar != null ? Math.max(0, Math.min(100, o.bar)) : 0}%"></i></span>` +
+    (o.go ? `<span class="cd-tile-go">${esc(o.go)}</span>` : "") +
+    `</a>`
+  );
+}
+function cdSetTile(key, valueHtml, o) {
+  o = o || {};
+  const el = document.querySelector(`#cdTiles [data-cd-tile="${key}"]`);
+  if (!el) return;
+  const v = el.querySelector("[data-cd-tileval]");
+  if (v && valueHtml != null) v.innerHTML = valueHtml;
+  if (o.bar != null) {
+    const bar = el.querySelector(".cd-tile-bar");
+    if (bar) { bar.hidden = false; bar.querySelector("i").style.width = Math.max(0, Math.min(100, o.bar)) + "%"; }
+  }
+  if (o.attn != null) el.classList.toggle("attn", !!o.attn);
+}
+function cdRenderTiles(lessons) {
+  const box = $("cdTiles");
+  if (!box) return;
+  const hefterAll = lessons.length;
+  const hefterDone = lessons.filter((l) => (l.hefteintrag || "").trim()).length;
+  box.innerHTML =
+    _cdTileEl("lehrplan", "Lehrplan", "…", { scroll: "cdLehrplan", go: "Abhaken ↓" }) +
+    _cdTileEl("stunden", "Stunden geplant", String(lessons.length), { scroll: "cdLessons", go: "Öffnen ↓" }) +
+    _cdTileEl("hefter", "Hefter gepflegt", `${hefterDone}<small> / ${hefterAll}</small>`, {
+      scroll: "cdHefter", go: "Pflegen ↓",
+      bar: hefterAll ? (hefterDone / hefterAll) * 100 : 0,
+      attn: hefterAll > 0 && hefterDone / hefterAll < 0.5,
+    }) +
+    _cdTileEl("stoff", "Stoffpläne", "…", { scroll: "cdStoffPlans", go: "Öffnen ↓" }) +
+    _cdTileEl("schueler", "Schüler:innen", "…", { scroll: "cdStudentList", go: "Liste ↓" }) +
+    _cdTileEl("sitzplan", "Sitzpläne", "…", { scroll: "spList", go: "Sitzplan ↓" });
+  box.querySelectorAll("[data-cd-tile]").forEach((el) => {
+    const jump = () => {
+      const t = $(el.getAttribute("data-cd-scroll"));
+      const target = (t && t.closest(".card")) || t;
+      if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+    el.onclick = jump;
+    el.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); jump(); } };
+  });
+}
+
 function renderClassDetail() {
   const c = state.classes.find((x) => String(x.id) === String(detailClassId));
   if (!c) { toast("Klasse nicht gefunden.", false); showView("klassen"); return; }
@@ -1231,6 +1401,7 @@ function renderClassDetail() {
       wrap.appendChild(div);
     });
   }
+  cdRenderTiles(lessons);
   renderClassStudents();
   renderClassDupControl();
   getSeatPlanModule().then((m) => m.initSeatPlan());
@@ -1300,6 +1471,8 @@ function _renderCdLehrplan() {
   if (progBox) {
     const c = _cdLehrplanCounts();
     progBox.innerHTML = `<span class="lp-progress">${c.done}/${c.total} abgehakt</span>`;
+    cdSetTile("lehrplan", c.total ? `${c.done}<small> / ${c.total}</small>` : "–",
+      { bar: c.total ? (c.done / c.total) * 100 : 0 });
   }
 
   const trackNames = { RS: "Realschulbildungsgang", HS: "Hauptschulbildungsgang", gemischt: "gemischt" };
@@ -1437,6 +1610,10 @@ function renderClassDetailHefter() {
     .filter((l) => String(l.classId) === String(detailClassId))
     .sort((a, b) => (a.date || "9999").localeCompare(b.date || "9999") || (a.time || "").localeCompare(b.time || ""));
   const withEntry = all.filter((l) => (l.hefteintrag || "").trim()).length;
+  cdSetTile("hefter", `${withEntry}<small> / ${all.length}</small>`, {
+    bar: all.length ? (withEntry / all.length) * 100 : 0,
+    attn: all.length > 0 && withEntry / all.length < 0.5,
+  });
 
   if (filterBox) {
     filterBox.innerHTML =
@@ -1709,6 +1886,7 @@ async function renderClassDetailStoffPlans() {
     const all = await SyncEngine.materialize("stoff_plans");
     detailStoffPlans = all.filter((p) => String(p.classId) === String(detailClassId));
   } catch (e) { detailStoffPlans = []; }
+  cdSetTile("stoff", String(detailStoffPlans.length));
   if (!detailStoffPlans.length) {
     wrap.innerHTML = '<p class="muted small">Noch keine gespeicherten Stoffverteilungspläne für diese Klasse.</p>';
     return;
@@ -1893,6 +2071,7 @@ async function renderClassStudents() {
   try {
     detailStudents = await materializeStudentsForClass(detailClassId);
   } catch (e) { toast(e.message, false); return; }
+  cdSetTile("schueler", String(detailStudents.length));
   // U18: Sitzplan-Dropdowns hängen an der Schülerliste – nach (Neu-)Laden aktualisieren.
   // Nur re-rendern, wenn das Sitzplan-Modul bereits geladen ist (kein Nachladen erzwingen).
   if (_seatPlanModuleInstance && _seatPlanModuleInstance.hasGrid()) _seatPlanModuleInstance.renderSeatGrid();
@@ -1990,6 +2169,7 @@ function getSeatPlanModule() {
         $, esc, API, toast, SyncEngine,
         getDetailClassId: () => detailClassId,
         getDetailStudents: () => detailStudents,
+        cdSetTile,
       });
       return _seatPlanModuleInstance;
     });
@@ -2303,6 +2483,8 @@ async function renderWeekOverview() {
         if (!planned) unplanned.push({ date: day.date, weekday: day.weekday, title: it.title, timeRange: it.timeRange });
       });
     });
+    _weekUnplannedCount = unplanned.length;
+    if (typeof renderStateTiles === "function") renderStateTiles();
     unplannedEl.innerHTML = "";
     if (!unplanned.length) {
       unplannedEl.innerHTML = '<p class="mini-empty">Keine ungeplanten Stunden diese Woche.</p>';
@@ -6538,8 +6720,8 @@ function wireEvents() {
   $("saveReflect").onclick = saveReflect;
 
   // Kalender
-  $("calPrevBtn").onclick = () => { calCursor.setDate(calCursor.getDate() - (calMode === "week" ? 7 : 30)); renderCalendar(); };
-  $("calNextBtn").onclick = () => { calCursor.setDate(calCursor.getDate() + (calMode === "week" ? 7 : 30)); renderCalendar(); };
+  $("calPrevBtn").onclick = () => { calCursor.setDate(calCursor.getDate() - (calMode === "week" ? 7 : 30)); renderCalendar(); renderStateTiles(); };
+  $("calNextBtn").onclick = () => { calCursor.setDate(calCursor.getDate() + (calMode === "week" ? 7 : 30)); renderCalendar(); renderStateTiles(); };
   $("calMonthBtn").onclick = () => { calMode = "month"; $("calMonthBtn").classList.add("active"); $("calWeekBtn").classList.remove("active"); renderCalendar(); };
   $("calWeekBtn").onclick = () => { calMode = "week"; $("calWeekBtn").classList.add("active"); $("calMonthBtn").classList.remove("active"); renderCalendar(); };
   // U27c: blasse Stundenplan-Ebene ein-/ausschalten (persistiert, nur Wochen-Modus).
