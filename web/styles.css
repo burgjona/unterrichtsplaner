@@ -142,7 +142,7 @@ input.input-error { border-color: var(--bad); background: color-mix(in srgb, var
   .dash-grid .spruch-card { order:5; }
 }
 .hero-panel h2 { margin:0 0 6px; font-size:22px; }
-.mini-list { display:grid; gap:8px; }
+.mini-list { display:grid; grid-template-columns:minmax(0,1fr); gap:8px; }
 .mini-item { padding:11px 13px; border-radius:14px; background:var(--mini-item-bg, rgba(255,255,255,0.16)); display:flex; justify-content:space-between; align-items:center; gap:10px; cursor:pointer; min-width:0; }
 .mini-item > span:not(.time):not(.badge) { min-width:0; overflow-wrap:anywhere; }
 .mini-item:hover { background: var(--mini-item-bg-hover, rgba(255,255,255,0.26)); }
@@ -453,7 +453,7 @@ a.todo-hefter-link:hover { text-decoration:underline; }
   .grid-4, .grid-3, .grid-2 { grid-template-columns: minmax(0, 1fr); }
   .hero-grid { grid-template-columns: minmax(0, 1fr); }
   .hero-panel, .hero-grid > .card { min-width: 0; }
-  .ql-row { grid-template-columns: minmax(0, 1fr); }
+  .ql-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap:10px; }
   /* Auf sehr schmalen Geräten (≤ ~320px) sonst leichter Überhang: Aktions-/Label-Zeilen umbrechen. */
   .phase-head, .phase-head-actions { flex-wrap: wrap; }
   .tt-plan-label { flex-wrap: wrap; }
