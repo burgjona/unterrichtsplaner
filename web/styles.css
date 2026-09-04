@@ -353,6 +353,8 @@ a.todo-hefter-link:hover { text-decoration:underline; }
 .cal-nav { display:flex; align-items:center; gap:10px; margin-bottom:12px; flex-wrap:wrap; }
 #calLabel { white-space:nowrap; }
 .cal-nav button { background:var(--surface-2); border:1px solid var(--line); border-radius:8px; padding:6px 11px; cursor:pointer; font-weight:var(--fw-bold); color:var(--primary-dark); }
+/* frueher inline am Button (index.html); als Regel identisch am Desktop, aber mobil ueberschreibbar. */
+.cal-nav #calNewEntryBtn { margin-left:auto; }
 .view-toggle { display:flex; gap:6px; margin-left:auto; }
 .view-toggle button { background:var(--surface-2); border:1px solid var(--line); border-radius:8px; padding:6px 12px; cursor:pointer; font-size:12px; font-weight:var(--fw-bold); color:var(--muted); }
 .view-toggle button.active { background:var(--primary); color:white; border-color:var(--primary); }
@@ -635,7 +637,9 @@ a.todo-hefter-link:hover { text-decoration:underline; }
 
 @media (max-width: 600px) {
   .cd-head { flex-direction:column; align-items:stretch; }
-  .cd-actions .btn { flex:1; }
+  /* Drei gleich breite Spalten pressen "In Schüleransicht zeigen" auf drei Zeilen —
+     zwei Knöpfe pro Reihe halten die Beschriftungen kurz. */
+  .cd-actions .btn { flex:1 1 calc(50% - 4px); }
   .cd-meta-item { flex:1; min-width:calc(50% - 5px); }
 }
 
@@ -1118,4 +1122,157 @@ body.cmd-open { overflow:hidden; }
 .sm-chip.aufsicht { background:var(--badge-ok-bg); color:var(--badge-ok-text); }
 @media (max-width: 600px) {
   .sm-drawer { width:100%; max-width:100%; }
+}
+
+/* ==========================================================================
+   U34: Mobiler Feinschliff — ausschliesslich in @media-Bloecken, das
+   Desktop-Layout bleibt unveraendert. Der Block steht bewusst am Dateiende:
+   gleiche Spezifitaet wie frueher notierte Mobilregeln, aber spaeter in der
+   Kaskade, damit er die Altwerte gezielt ablöst.
+   Behandelt: (1) Kennzahlen-Kacheln als kompaktes Band, (2) Klassenansicht
+   Liste vor Formular + Tabelle als Karten, (3) Schriftgroessen-Untergrenze,
+   (4) Touch-Ziele >= 44px, (5) Kalender: lesbare Wochenansicht + Toolbar.
+   ========================================================================== */
+@media (max-width: 600px) {
+
+  /* --- (1) Kennzahlen-Kacheln: Zahl links, Beschriftung rechts ------------
+     Vorher fuellten 3-4 Kacheln (haeufig mit Wert 0) den kompletten ersten
+     Bildschirm; der eigentliche Inhalt begann erst nach ~430px. Als flaches
+     Band brauchen dieselben Kacheln rund ein Drittel davon — es verschwindet
+     nichts, auch die Sprungziele ("Zur Liste →") bleiben sichtbar. */
+  .stat-tiles, .cd-tiles { gap:8px; margin-bottom:12px; }
+  .stat-tile, .cd-tile {
+    display:grid; grid-template-columns:auto minmax(0,1fr);
+    column-gap:11px; align-items:center; padding:9px 12px; min-height:54px;
+  }
+  .stat-tile-v, .cd-tile-v {
+    grid-column:1; grid-row:1 / span 2; align-self:center;
+    font-size:23px; line-height:1.05; margin-top:0;
+  }
+  .stat-tile-l, .cd-tile-l {
+    grid-column:2; grid-row:1;
+    font-size:12px; line-height:1.25; letter-spacing:0;
+    text-transform:none; color:var(--text);
+  }
+  .stat-tile-go, .cd-tile-go { grid-column:2; grid-row:2; font-size:11.5px; margin-top:1px; }
+  .stat-tile-bar, .cd-tile-bar { grid-column:1 / -1; grid-row:3; margin-top:7px; }
+
+  /* --- (2a) Klassen: erst die Liste, dann das Anlege-Formular -------------
+     Auf dem Desktop steht das Formular oben (Reihenfolge im DOM). Mobil ist
+     die Uebersicht der haeufigere Zweck, deshalb hier nur die Anzeige-
+     reihenfolge tauschen — das DOM und damit der Desktop bleiben unberuehrt.
+     .hidden setzt display:none !important und sticht dieses display:flex. */
+  #klassen { display:flex; flex-direction:column; }
+  #klassenTiles { order:0; }
+  #klassenListCard { order:1; }
+  #klassenFormCard { order:2; margin-top:14px; }
+
+  /* --- (2b) Klassentabelle als Karten -------------------------------------
+     Sieben Spalten auf 375px ergaben 11px-Text in Restspalten. Jede Zeile
+     wird zur Karte, die Spaltenkoepfe kommen per data-label aus app.js. */
+  #classTableWrap { overflow-x:visible; }
+  #classTable { min-width:0; table-layout:auto; }
+  #classTable thead { display:none; }
+  #classTable, #classTable tbody, #classTable tr { display:block; }
+  #classTable tbody tr {
+    border:1px solid var(--line); border-radius:var(--radius-sm);
+    background:var(--surface); padding:11px 13px; margin-bottom:9px;
+    box-shadow:0 3px 10px rgba(20,83,45,.05);
+  }
+  #classTable td {
+    display:flex; gap:12px; justify-content:space-between; align-items:baseline;
+    border:0; padding:3px 0; font-size:13.5px; white-space:normal; border-radius:0;
+  }
+  #classTable td::before {
+    content:attr(data-label); flex:0 0 auto;
+    color:var(--muted); font-size:12px; font-weight:var(--fw-bold);
+  }
+  #classTable td:empty { display:none; }
+  #classTable td[data-label="Klasse"] { justify-content:flex-start; padding:0 0 5px; }
+  #classTable td[data-label="Klasse"]::before { display:none; }
+  /* Der Klassenname ist die Hauptaktion der Karte -> volle Zeilenbreite als Tippflaeche. */
+  #classTable .class-name-link { display:flex; align-items:center; width:100%; min-height:44px;
+    font-size:18px; line-height:1.35; }
+  #classTable .cd-row-actions { display:flex; gap:8px; white-space:normal; padding-top:9px; }
+  #classTable .cd-row-actions::before { display:none; }
+  #classTable .cd-row-actions .btn { flex:1; }
+
+  /* --- (3) Schrift-Untergrenze --------------------------------------------
+     10-11px sind auf Armlaenge nicht mehr sicher lesbar; 12px ist die
+     Untergrenze fuer Fliesstext, 11.5px fuer reine Marken/Labels. */
+  th, td { font-size:12.5px; padding:7px 5px; }
+  th { font-size:11.5px; }
+  .hint { font-size:12px; }
+  .sec-h, .day-heading { font-size:11.5px; }
+  .todo-src, .tt-time-range, .tt-break-label, .cal-kw { font-size:11px; }
+  .badge { font-size:11.5px; }
+  .cal-head { font-size:11.5px; }
+  .cal-dot-more { font-size:10px; }
+
+  /* --- (4) Touch-Ziele ----------------------------------------------------
+     Ergaenzt die bestehende 44px-Regel um die Stellen, die sie nicht erfasst:
+     Icon-Buttons, Farbwaehler und Checkboxen (letztere teils mit
+     Inline-width:auto im Markup, daher !important). */
+  .cal-nav button { min-height:44px; padding:9px 13px; }
+  .btn.tiny { min-width:44px; font-size:12px; }
+  .ampel-btn { width:40px; height:40px; }
+  .phase-kind-select { font-size:16px; min-height:40px; padding:6px 8px; }
+  .g-tab { padding:6px 5px 6px 13px; }
+  .g-tab-close { padding:9px 11px; font-size:17px; }
+  .g-tabs-close-all { min-height:40px; }
+  input[type="color"] { min-height:44px; }
+  input[type="checkbox"], input[type="radio"] { width:20px !important; height:20px; flex-shrink:0; }
+  .class-toggle-summary { min-height:44px; }
+
+  /* --- (5a) Kalender-Wochenansicht als Tagesliste -------------------------
+     Sieben Spalten auf 375px liessen von "09:45 Deutsch 8b" nur "09…" uebrig
+     und die Tropenplan-Schalter ragten in die Nachbarspalte. Das Raster wird
+     hier zu zwei Spalten (Wochentag | Tag), die sieben Tage untereinander —
+     ohne Aenderung an der DOM-Reihenfolge, rein ueber grid-area. Die
+     Monatsansicht (.with-kw) bleibt ein Raster, dort zeigen die Kacheln
+     ohnehin nur Farbpunkte. */
+  #calGrid:not(.with-kw) { grid-template-columns:40px minmax(0,1fr); gap:7px 10px; }
+  #calGrid:not(.with-kw) > .cal-head:nth-child(1) { grid-area:1 / 1; }
+  #calGrid:not(.with-kw) > .cal-head:nth-child(2) { grid-area:2 / 1; }
+  #calGrid:not(.with-kw) > .cal-head:nth-child(3) { grid-area:3 / 1; }
+  #calGrid:not(.with-kw) > .cal-head:nth-child(4) { grid-area:4 / 1; }
+  #calGrid:not(.with-kw) > .cal-head:nth-child(5) { grid-area:5 / 1; }
+  #calGrid:not(.with-kw) > .cal-head:nth-child(6) { grid-area:6 / 1; }
+  #calGrid:not(.with-kw) > .cal-head:nth-child(7) { grid-area:7 / 1; }
+  #calGrid:not(.with-kw) > .cal-cell:nth-child(8)  { grid-area:1 / 2; }
+  #calGrid:not(.with-kw) > .cal-cell:nth-child(9)  { grid-area:2 / 2; }
+  #calGrid:not(.with-kw) > .cal-cell:nth-child(10) { grid-area:3 / 2; }
+  #calGrid:not(.with-kw) > .cal-cell:nth-child(11) { grid-area:4 / 2; }
+  #calGrid:not(.with-kw) > .cal-cell:nth-child(12) { grid-area:5 / 2; }
+  #calGrid:not(.with-kw) > .cal-cell:nth-child(13) { grid-area:6 / 2; }
+  #calGrid:not(.with-kw) > .cal-cell:nth-child(14) { grid-area:7 / 2; }
+  #calGrid:not(.with-kw) > .cal-head { align-self:start; padding:12px 0 0; }
+  #calGrid:not(.with-kw) > .cal-cell { min-height:46px; padding:8px 10px; }
+  #calGrid:not(.with-kw) .cal-daynum { font-size:14px; margin-bottom:4px; }
+  /* Volle Zeilenbreite -> Titel darf umbrechen statt abgeschnitten zu werden. */
+  #calGrid:not(.with-kw) .cal-entry { font-size:12.5px; padding:5px 8px; border-radius:7px;
+    white-space:normal; overflow-wrap:anywhere; min-height:32px; }
+  #calGrid:not(.with-kw) .cal-tt-chip { font-size:12px; padding:2px 7px; }
+  /* Ueber die volle Zeilenbreite gut treffbar; 44px waeren mal sieben Tagen ein halber
+     Bildschirm fuer einen selten benutzten Schalter. */
+  #calGrid:not(.with-kw) .cal-tt-daytoggle { font-size:11.5px; padding:8px 9px; min-height:40px; }
+
+  /* --- (5b) Monatsraster: Breite fuer die Tageskacheln zurueckgewinnen ---- */
+  .cal-grid.with-kw { grid-template-columns:22px repeat(7, minmax(0,1fr)); gap:4px 3px; }
+  .cal-cell { min-height:52px; }
+
+  /* --- (5c) Kalender-Toolbar in drei ruhige Baender -----------------------
+     Zuvor umbrach die Werkzeugleiste in vier ungleich breite Reihen und
+     verbrauchte ~330px, bevor das Raster begann. */
+  .cal-nav { gap:8px; }
+  #calPrevBtn { order:1; }
+  /* #calLabel traegt am Desktop white-space:nowrap; mobil muss "Woche 36, Aug / September
+     2026" umbrechen duerfen, sonst laeuft es ueber den Weiter-Knopf. */
+  #calLabel { order:2; flex:1 1 0; min-width:0; white-space:normal; text-align:center;
+    font-size:14.5px; line-height:1.25; }
+  #calNextBtn { order:3; }
+  #calWeekBadge { order:4; margin:0 auto; }
+  .cal-nav .view-toggle { order:5; flex:0 0 100%; margin-left:0; }
+  .cal-nav > .btn { order:6; flex:1 1 calc(50% - 4px); }
+  .cal-nav #calNewEntryBtn { margin-left:0; }
 }

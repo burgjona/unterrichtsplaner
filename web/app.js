@@ -1141,9 +1141,12 @@ function renderClassTable() {
   state.classes.forEach((c) => {
     const tr = document.createElement("tr");
     tr.innerHTML =
-      `<td><a href="#" class="class-name-link" data-open-class="${c.id}">${esc(c.name)}</a></td>` +
-      `<td>${esc(c.subject)}</td><td>${esc(c.grade)}</td>` +
-      `<td>${esc(c.track || "")}</td><td>${esc(c.weeklyHours)}</td><td>${esc(c.parallelGroup || "")}</td>` +
+      // data-label: liefert der mobilen Kartendarstellung (@media <=600px) die Spaltenbeschriftung,
+      // da dort der <thead> ausgeblendet wird. Auf dem Desktop ohne Wirkung.
+      `<td data-label="Klasse"><a href="#" class="class-name-link" data-open-class="${c.id}">${esc(c.name)}</a></td>` +
+      `<td data-label="Fach">${esc(c.subject)}</td><td data-label="Stufe">${esc(c.grade)}</td>` +
+      `<td data-label="Bildungsgang">${esc(c.track || "")}</td><td data-label="Std./Woche">${esc(c.weeklyHours)}</td>` +
+      `<td data-label="Parallelgruppe">${esc(c.parallelGroup || "")}</td>` +
       `<td class="cd-row-actions">` +
       `<button class="btn small secondary" data-edit-class="${c.id}">bearbeiten</button> ` +
       `<button class="btn small danger" data-del-class="${c.id}">entfernen</button></td>`;
