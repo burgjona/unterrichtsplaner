@@ -116,6 +116,28 @@ def test_search_update_and_delete_sync(client, auth):
     assert client.get("/api/search?q=anderer").json()["total"] == 0
 
 
+def test_search_class_insert_update_delete_sync(client, auth):
+    """Regression: 028_klasse_kein_fach.sql hatte beim Table-Rebuild die search_classes_*-
+    Trigger aus 020_suche.sql verloren (repariert in 064_suche_klassen_trigger.sql) – neue
+    Klassen landeten nicht mehr im Index, Umbenennungen/Löschungen wurden nicht nachgezogen."""
+    klasse = _mk_class(client, name="Zauberklasse 8b", grade=8)
+
+    r = client.get("/api/search?q=zauberklasse").json()
+    hits = [x for x in r["results"] if x["type"] == "class"]
+    assert len(hits) == 1
+    assert hits[0]["id"] == klasse["id"]
+    assert hits[0]["grade"] == 8 and hits[0]["subject"] == "Deutsch"
+
+    # Umbenennen zieht den Index nach (altes Wort weg, neues da)
+    client.put(f"/api/classes/{klasse['id']}", json={"name": "Drachenklasse 8b"})
+    assert client.get("/api/search?q=zauberklasse").json()["total"] == 0
+    assert client.get("/api/search?q=drachenklasse").json()["total"] == 1
+
+    # Hartes Löschen entfernt den Eintrag (der Standard-DELETE archiviert nur → bleibt indiziert)
+    client.delete(f"/api/classes/{klasse['id']}?hard=true")
+    assert client.get("/api/search?q=drachenklasse").json()["total"] == 0
+
+
 def test_search_scoping_excludes_other_user(client, auth, app):
     """Fremde Nutzerdaten tauchen nicht auf; globale Lernbereiche schon."""
     conn = sqlite3.connect(app.state.db_path)
