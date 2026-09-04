@@ -18,7 +18,11 @@ export function createSeatPlanModule(ctx) {
     return Array.from({ length: rows }, () => Array.from({ length: cols }, () => null));
   }
 
-  function initSeatPlan() {
+  // autoLoadLatest: beim Oeffnen der Klassenseite gleich den zuletzt bearbeiteten Sitzplan
+  // zeigen, statt mit einem leeren 4x5-Raster zu starten (die Liste ist nach updatedAt
+  // absteigend sortiert, seatPlansCache[0] ist also der juengste). Der "Neu"-Button ruft
+  // ohne Flag auf und bleibt damit ein echter Reset.
+  async function initSeatPlan({ autoLoadLatest = false } = {}) {
     seatPlan.editId = null;
     seatPlan.rows = 4;
     seatPlan.cols = 5;
@@ -28,8 +32,11 @@ export function createSeatPlanModule(ctx) {
     $("spAiDesc").value = "";
     seatPlan.grid = spEmptyGrid(seatPlan.rows, seatPlan.cols);
     renderSeatGrid();
-    renderSeatPlanList();
     $("spExportBtn").disabled = true;
+    await renderSeatPlanList();
+    if (autoLoadLatest && seatPlansCache.length) {
+      await loadSeatPlan(seatPlansCache[0].id, { silent: true });
+    }
   }
 
   // Baut das Raster aus den Feldern rows/cols neu auf und überträgt bereits gesetzte Plätze.
@@ -148,10 +155,12 @@ export function createSeatPlanModule(ctx) {
     wrap.querySelectorAll("[data-sp-del]").forEach((b) => (b.onclick = () => deleteSeatPlan(b.dataset.spDel)));
   }
 
-  async function loadSeatPlan(pid) {
+  // silent: beim automatischen Anzeigen (initSeatPlan) keinen Toast werfen - der Nutzer hat
+  // nichts geklickt, und "Sitzplan nicht gefunden" waere dort ein Fehlalarm.
+  async function loadSeatPlan(pid, { silent = false } = {}) {
     try {
       const p = seatPlansCache.find((x) => String(x.id) === String(pid));
-      if (!p) { toast("Sitzplan nicht gefunden.", false); return; }
+      if (!p) { if (!silent) toast("Sitzplan nicht gefunden.", false); return; }
       seatPlan.editId = p.id;
       seatPlan.rows = p.rows || 1;
       seatPlan.cols = p.cols || 1;
@@ -162,8 +171,8 @@ export function createSeatPlanModule(ctx) {
       renderSeatGrid();
       $("spExportBtn").disabled = false;
       $("spExportBtn").onclick = () => exportSeatPlan(p.id);
-      toast("Sitzplan geladen.");
-    } catch (e) { toast(e.message, false); }
+      if (!silent) toast("Sitzplan geladen.");
+    } catch (e) { if (!silent) toast(e.message, false); }
   }
 
   async function saveSeatPlan() {

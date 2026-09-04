@@ -1411,7 +1411,7 @@ function renderClassDetail() {
   cdRenderTiles(lessons);
   renderClassStudents();
   renderClassDupControl();
-  getSeatPlanModule().then((m) => m.initSeatPlan());
+  getSeatPlanModule().then((m) => m.initSeatPlan({ autoLoadLatest: true }));
   renderClassDetailHefter();
   renderClassDetailLehrplan();
   renderClassDetailStoffPlans();
