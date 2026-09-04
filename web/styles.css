@@ -133,7 +133,10 @@ input.input-error { border-color: var(--bad); background: color-mix(in srgb, var
 .dash-grid .ql-row { grid-column:1 / -1; margin-top:0; }
 
 @media (max-width: 1080px) {
-  .dash-grid { display:flex; flex-direction:column; gap:16px; }
+  /* align-items:start stammt aus dem Desktop-Raster (Karten so hoch wie ihr Inhalt) und
+     wirkte in der Flex-Spalte auf die BREITE: "Woche im Blick" & Co. schrumpften auf
+     Inhaltsbreite (223 von 351px) statt den Bildschirm zu fuellen. Hier zuruecksetzen. */
+  .dash-grid { display:flex; flex-direction:column; gap:16px; align-items:stretch; }
   .dash-side { display:contents; }
   .dash-grid .hero-panel { order:1; }
   .dash-grid .dash-week  { order:2; }
@@ -918,6 +921,9 @@ body.cmd-open { overflow:hidden; }
 .tt-plan-label { display:flex; align-items:center; gap:6px; margin:0; font-size:12px; color:var(--muted); font-weight:var(--fw-bold); }
 .tt-plan-label select { width:auto; min-width:150px; }
 .tt-empty { background:var(--note-bg, #fff7ed); border:1px solid var(--note-border, #fed7aa); color:var(--note-text, #9a3412); border-radius:12px; padding:12px 14px; font-size:13px; margin-bottom:12px; }
+/* U34: Tageswahl gilt nur fuer schmale Screens; am Desktop zeigt das Raster alle
+   fuenf Tage nebeneinander. Sichtbar gemacht wird sie im @media-Block. */
+.tt-daypicker { display:none; }
 .tt-scroll { overflow-x:auto; padding-bottom:4px; }
 .tt-grid { display:grid; gap:4px; min-width:760px; }
 .tt-dayhead { text-align:center; padding-bottom:2px; align-self:end; }
@@ -967,8 +973,10 @@ body.cmd-open { overflow:hidden; }
   .tt-editors .tt-editor-card:first-child { grid-column: 1 / -1; }
 }
 @media (max-width: 600px) {
-  .tt-grid { min-width:680px; }
-  .tt-chip-title { font-size:11px; }
+  /* U34: Das Raster zeigt mobil nur den gewaehlten Tag — die fruehere Mindestbreite
+     mit horizontalem Scrollen entfaellt, dadurch haben die Chips wieder Platz. */
+  .tt-chip-title { font-size:13px; }
+  .tt-chip-sub { font-size:11.5px; }
   .tt-toolbar-actions { margin-left:0; }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -1260,6 +1268,39 @@ body.cmd-open { overflow:hidden; }
   /* --- (5b) Monatsraster: Breite fuer die Tageskacheln zurueckgewinnen ---- */
   .cal-grid.with-kw { grid-template-columns:22px repeat(7, minmax(0,1fr)); gap:4px 3px; }
   .cal-cell { min-height:52px; }
+
+  /* --- (6) Stundenplan: ein Tag statt fuenf Mikrospalten ------------------
+     Fuenf Tagesspalten ergaben auf 375px ~55px pro Tag, das Raster scrollte
+     horizontal ohne sichtbaren Hinweis — man sah zwei von fuenf Tagen. Mobil
+     zeigt die Ansicht jetzt den in .tt-daypicker gewaehlten Tag ueber die volle
+     Breite. Das Umschalten passiert vollstaendig hier: stundenplan.js schreibt
+     nur data-tt-day an das Raster und data-tt-wd an die tagesgebundenen Kinder.
+     Die !important sind noetig, weil Spalten und Raster-Template inline gesetzt
+     werden (Doppelstunden brauchen berechnete grid-row-Spannen). */
+  .tt-daypicker { display:grid; grid-template-columns:repeat(5, minmax(0,1fr)); gap:6px; margin-top:12px; }
+  .tt-daypicker-btn {
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px;
+    min-height:46px; padding:6px 2px; cursor:pointer;
+    border:1px solid var(--line); border-radius:10px; background:var(--surface-2);
+    font-family:inherit; font-size:13px; font-weight:var(--fw-bold); color:var(--muted);
+  }
+  .tt-daypicker-btn.tt-today { border-color:var(--primary); color:var(--primary-dark); }
+  .tt-daypicker-btn.active { background:var(--primary); border-color:var(--primary); color:#fff; }
+  .tt-daypicker-dot { width:5px; height:5px; border-radius:50%; background:var(--primary); }
+  .tt-daypicker-btn.active .tt-daypicker-dot { background:rgba(255,255,255,.85); }
+  /* Platzhalter statt display:none — sonst springt die Beschriftung der Tage ohne
+     Eintraege gegenueber den anderen nach unten. */
+  .tt-daypicker-dot.is-empty { background:transparent; }
+
+  .tt-grid { min-width:0; grid-template-columns:52px minmax(0,1fr) !important; }
+  .tt-grid > [data-tt-wd] { grid-column:2 !important; }
+  .tt-grid[data-tt-day="0"] > [data-tt-wd]:not([data-tt-wd="0"]):not([data-tt-wd="all"]),
+  .tt-grid[data-tt-day="1"] > [data-tt-wd]:not([data-tt-wd="1"]):not([data-tt-wd="all"]),
+  .tt-grid[data-tt-day="2"] > [data-tt-wd]:not([data-tt-wd="2"]):not([data-tt-wd="all"]),
+  .tt-grid[data-tt-day="3"] > [data-tt-wd]:not([data-tt-wd="3"]):not([data-tt-wd="all"]),
+  .tt-grid[data-tt-day="4"] > [data-tt-wd]:not([data-tt-wd="4"]):not([data-tt-wd="all"]) { display:none; }
+  /* Der Tageskopf wiederholt die Auswahl direkt ueber der Spalte. */
+  .tt-day-pill { font-size:14px; padding:4px 12px; }
 
   /* --- (5c) Kalender-Toolbar in drei ruhige Baender -----------------------
      Zuvor umbrach die Werkzeugleiste in vier ungleich breite Reihen und

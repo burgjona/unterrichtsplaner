@@ -23,6 +23,10 @@ const ttState = {
   planId: null,
   settings: { weekAParity: "odd", isoWeek: 0, currentWeekType: "A" },
   week: "A",            // aktuell ANGEZEIGTE A/B-Woche (aus currentWeekType vorbelegt)
+  // U34: mobil (<=600px) zeigt das Raster nur EINEN Wochentag; hier steht welcher.
+  // Am Desktop bleibt der Wert unbenutzt — dort blendet CSS die Tageswahl aus und
+  // das Raster behaelt alle fuenf Spalten. Vorbelegt mit heute (Wochenende -> Montag).
+  day: Math.max(0, ttTodayWeekday()),
   editorsOpen: false,   // Editoren-Bereich (Klingelzeiten/Typen/A-B) ein-/ausgeklappt
 };
 
@@ -189,15 +193,16 @@ async function ttShow() {
 /* ---------- Rendern: Skeleton (kein Spinner) ---------- */
 function ttRenderSkeleton() {
   const grid = $("ttGrid");
+  grid.dataset.ttDay = String(ttState.day);
   grid.style.gridTemplateColumns = "56px repeat(5, minmax(0,1fr))";
   grid.style.gridTemplateRows = "auto " + Array(8).fill("52px").join(" ");
   let h = `<div class="tt-corner" style="grid-column:1;grid-row:1;"></div>`;
   for (let w = 0; w < 5; w++)
-    h += `<div class="tt-dayhead" style="grid-column:${w + 2};grid-row:1;"><span class="tt-skel tt-skel-head"></span></div>`;
+    h += `<div class="tt-dayhead" data-tt-wd="${w}" style="grid-column:${w + 2};grid-row:1;"><span class="tt-skel tt-skel-head"></span></div>`;
   for (let i = 0; i < 8; i++) {
     h += `<div class="tt-time" style="grid-column:1;grid-row:${i + 2};"><span class="tt-skel tt-skel-time"></span></div>`;
     for (let w = 0; w < 5; w++)
-      h += `<div style="grid-column:${w + 2};grid-row:${i + 2};padding:2px;"><span class="tt-skel"></span></div>`;
+      h += `<div data-tt-wd="${w}" style="grid-column:${w + 2};grid-row:${i + 2};padding:2px;"><span class="tt-skel"></span></div>`;
   }
   grid.innerHTML = h;
   $("ttEmpty").classList.add("hidden");
@@ -242,6 +247,30 @@ function ttRenderTiles() {
   ]);
 }
 
+/* U34: Tageswahl fuer schmale Screens. Das Wochenraster braucht fuenf Spalten; auf
+   375px blieben davon ~55px pro Tag. Statt horizontal zu scrollen zeigt die Ansicht
+   mobil einen Tag — welchen, waehlt diese Leiste. Sie steht immer im Markup und wird
+   am Desktop per CSS ausgeblendet (wie .burger-btn), damit hier keine Breakpoint-
+   Logik im JS noetig ist. Der Punkt unter dem Kuerzel markiert Tage mit Eintraegen
+   in der gerade gezeigten A/B-Woche. */
+function ttDayPickerHtml() {
+  const todayWd = ttTodayWeekday();
+  const busy = new Set(
+    ttState.entries
+      .filter((e) => e.weekType === "both" || e.weekType === ttState.week)
+      .map((e) => e.weekday));
+  return `<div class="tt-daypicker" role="group" aria-label="Wochentag waehlen">` +
+    ttWEEKDAYS.map((name, i) => {
+      const cls = (i === ttState.day ? " active" : "") + (i === todayWd ? " tt-today" : "");
+      return `<button type="button" data-tt-day="${i}" class="tt-daypicker-btn${cls}" ` +
+             `aria-pressed="${i === ttState.day}" aria-label="${esc(name)}${i === todayWd ? " (heute)" : ""}">` +
+             `<span class="tt-daypicker-lbl">${esc(name.slice(0, 2))}</span>` +
+             `<span class="tt-daypicker-dot${busy.has(i) ? "" : " is-empty"}" aria-hidden="true"></span>` +
+             `</button>`;
+    }).join("") +
+    `</div>`;
+}
+
 function ttRenderToolbar() {
   const s = ttState.settings;
   const planOpts = ttState.plans.map((p) =>
@@ -265,9 +294,12 @@ function ttRenderToolbar() {
          <button type="button" class="btn small secondary" id="ttSlotsBtn">Klingelzeiten</button>
          <button type="button" class="btn small" id="ttAddEntryBtn">+ Eintrag</button>
        </div>
-     </div>`;
+     </div>` + ttDayPickerHtml();
   $("ttToolbar").querySelectorAll("[data-tt-week]").forEach((b) => {
     b.onclick = () => { ttState.week = b.dataset.ttWeek; ttRenderView(); };
+  });
+  $("ttToolbar").querySelectorAll("[data-tt-day]").forEach((b) => {
+    b.onclick = () => { ttState.day = Number(b.dataset.ttDay); ttRenderView(); };
   });
   $("ttPlanSelect").onchange = ttOnPlanChange;
   $("ttAddPlanBtn").onclick = ttOpenPlanModal;
@@ -278,6 +310,10 @@ function ttRenderToolbar() {
 function ttRenderGrid() {
   const grid = $("ttGrid");
   const slots = ttState.slots;
+  // U34: Der gewaehlte Tag steht am Container; die CSS-Regeln im 600px-Block blenden
+  // damit die uebrigen Spalten aus und ruecken die verbleibende auf Spalte 2. Am
+  // Desktop hat das Attribut keine Wirkung — das Raster bleibt fuenfspaltig.
+  grid.dataset.ttDay = String(ttState.day);
   grid.style.gridTemplateColumns = "56px repeat(5, minmax(0,1fr))";
   grid.style.gridTemplateRows =
     ["auto"].concat(slots.map((s) => s.slotType === "break" ? "34px" : "62px")).join(" ");
@@ -286,7 +322,7 @@ function ttRenderGrid() {
   let h = `<div class="tt-corner" style="grid-column:1;grid-row:1;"></div>`;
   for (let w = 0; w < 5; w++) {
     const today = w === todayWd;
-    h += `<div class="tt-dayhead" style="grid-column:${w + 2};grid-row:1;">` +
+    h += `<div class="tt-dayhead" data-tt-wd="${w}" style="grid-column:${w + 2};grid-row:1;">` +
          `<span class="tt-day-pill${today ? " tt-today" : ""}">${esc(ttWEEKDAYS[w])}</span></div>`;
   }
   // Zeitspalte + Pausen-Bänder (Bänder ZUERST → Chips/Zellen darüber gemalt).
@@ -295,7 +331,7 @@ function ttRenderGrid() {
     if (s.slotType === "break") {
       h += `<div class="tt-time tt-time-break" style="grid-column:1;grid-row:${row};">` +
            `<span class="tt-time-range">${esc(s.startTime)}</span></div>`;
-      h += `<div class="tt-break-band" style="grid-column:2 / span 5;grid-row:${row};">` +
+      h += `<div class="tt-break-band" data-tt-wd="all" style="grid-column:2 / span 5;grid-row:${row};">` +
            `<span class="tt-break-label">${esc(s.label)}</span></div>`;
     } else {
       h += `<div class="tt-time" style="grid-column:1;grid-row:${row};">` +
@@ -334,7 +370,7 @@ function ttRenderGrid() {
     const title = ttEntryTitle(e);
     const abPill = e.weekType !== "both" ? `<span class="tt-chip-ab">${esc(e.weekType)}</span>` : "";
     const sub = e.room ? `<span class="tt-chip-sub">${esc(e.room)}</span>` : "";
-    h += `<div class="tt-chip" data-tt-entry="${e.id}" tabindex="0" role="button" ` +
+    h += `<div class="tt-chip" data-tt-entry="${e.id}" data-tt-wd="${e.weekday}" tabindex="0" role="button" ` +
          `aria-label="${esc(title)} bearbeiten" ` +
          `style="grid-column:${e.weekday + 2};grid-row:${si + 2} / span ${span};${ttChipStyle(color)}">` +
          abPill +
