@@ -14,18 +14,6 @@
         "8097"
       ],
       "port": 8097
-    },
-    {
-      "name": "offlinetest",
-      "runtimeExecutable": "/private/tmp/claude-501/-Users-joad-Claude-Projects-Unterrichtsplaner/f9e47f93-5041-4ce9-8c7c-7ddbd0d496c4/scratchpad/offlinetest/run.sh",
-      "runtimeArgs": [],
-      "port": 8199
-    },
-    {
-      "name": "uicheck",
-      "runtimeExecutable": "/private/tmp/claude-501/-Users-joad-Claude-Projects-Unterrichtsplaner/ff484ad3-f9c7-47cc-bee4-3698d4370fb3/scratchpad/uitest/run.sh",
-      "runtimeArgs": [],
-      "port": 8298
     }
   ]
 }
