@@ -114,6 +114,15 @@ tbody tr td:first-child { border-radius:10px 0 0 10px; } tbody tr td:last-child 
 .phase-title { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .phase-head-actions { display:flex; align-items:center; gap:6px; }
 .phase-kind-select { width:auto; padding:3px 6px; font-size:12px; }
+/* Die vier Felder einer Phase (Zeit/Sozialform/Methode/Material) haben am Desktop
+   keine Beschriftung — die Anordnung in einer Zeile erklaert sie. Mobil steht jedes
+   Feld allein, deshalb dort sichtbar (siehe @media-Block). */
+/* Einklappbare Karten (U34c): am Desktop gibt es den Schalter nicht und der Wrapper
+   ist eine gewoehnliche <div> — die Karte sieht aus wie vorher. Sichtbar wird der
+   Mechanismus ausschliesslich im 600px-Block. */
+.card-collapse { display:none; }
+.phase-field { min-width:0; }
+.phase-field-lbl { display:none; }
 input.input-error { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 10%, var(--surface)); }
 .phase-time-error { color: var(--bad); font-size:12px; margin:6px 0 0; }
 .phase-time-error.ok { color: var(--ok); }
@@ -377,9 +386,16 @@ a.todo-hefter-link:hover { text-decoration:underline; }
   #sidebarNav.open { transform:translateX(0); }
   .nav-backdrop { position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:20; }
   .nav-backdrop.open { display:block; }
-  main { padding:14px; max-width:100%; overflow-x:hidden; padding-bottom:calc(78px + env(safe-area-inset-bottom)); }
-  .topbar { display:block; }
-  .topbar-head { display:flex; align-items:center; gap:10px; }
+  main { padding:14px; max-width:100%; overflow-x:hidden;
+    padding-left:max(14px, env(safe-area-inset-left)); padding-right:max(14px, env(safe-area-inset-right));
+    padding-bottom:calc(84px + max(12px, env(safe-area-inset-bottom))); }
+  /* Die Glocke ist im DOM Geschwister von .topbar-head und landete deshalb unter dem
+     Suchfeld. Als zweispaltiges Raster sitzt sie oben rechts neben dem Titel, ohne
+     dass die Reihenfolge im Markup (und damit der Desktop) angefasst werden muss. */
+  .topbar { display:grid; grid-template-columns:minmax(0,1fr) auto; column-gap:10px; }
+  .topbar-head { grid-column:1; grid-row:1; display:flex; align-items:center; gap:10px; }
+  .sm-bell { grid-column:2; grid-row:1; align-self:center; }
+  .topbar-search { grid-column:1 / -1; grid-row:2; }
   .topbar-titles { flex:1; min-width:0; }
   .title { font-size:19px; }
   .page-sub { font-size:12px; }
@@ -395,7 +411,9 @@ a.todo-hefter-link:hover { text-decoration:underline; }
 .bottom-nav {
   position:fixed; left:0; right:0; bottom:0; z-index:15;
   align-items:flex-end; justify-content:space-around;
-  padding:6px 4px calc(6px + env(safe-area-inset-bottom));
+  /* max() statt calc(): auf Geraeten ohne Home-Indikator (env = 0) bleibt sonst nur
+     6px Luft und die Symbole kleben am Bildrand — in der PWA besonders auffaellig. */
+  padding:8px 4px max(12px, env(safe-area-inset-bottom));
   background:var(--surface); border-top:1px solid var(--line);
   box-shadow:0 -6px 20px rgba(20,83,45,0.08);
 }
@@ -431,7 +449,9 @@ a.todo-hefter-link:hover { text-decoration:underline; }
 .mehr-item:hover { color:var(--primary-dark); }
 
 @media (max-width: 600px) {
-  main { padding:12px; padding-bottom:calc(78px + env(safe-area-inset-bottom)); }
+  main { padding:12px;
+    padding-left:max(12px, env(safe-area-inset-left)); padding-right:max(12px, env(safe-area-inset-right));
+    padding-bottom:calc(84px + max(12px, env(safe-area-inset-bottom))); }
   .card { padding:14px; border-radius:14px; }
   .row-4 { grid-template-columns: minmax(0, 1fr); }
   .cal-nav { flex-wrap:wrap; gap:8px; }
@@ -461,6 +481,32 @@ a.todo-hefter-link:hover { text-decoration:underline; }
   .ql-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap:10px; }
   /* Auf sehr schmalen Geräten (≤ ~320px) sonst leichter Überhang: Aktions-/Label-Zeilen umbrechen. */
   .phase-head, .phase-head-actions { flex-wrap: wrap; }
+  /* Vier einspaltige Felder pro Phase ergaben ~780px Hoehe je Phase. Paarweise gesetzt
+     halbiert sich das, und die Beschriftung ersetzt den Platzhalter, der beim Tippen
+     verschwindet (die Sozialform hatte gar keinen). */
+  .phase .row-4 { grid-template-columns: repeat(2, minmax(0,1fr)); gap:9px; }
+
+  /* Nachbereitungs-/Referenzbloecke starten zugeklappt (Reflexion, Tafelbild, BiBox):
+     spart rund 2600px Scrollweg, ohne dass etwas unerreichbar wird. */
+  .card-collapse {
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    width:100%; min-height:44px; margin-top:8px; padding:9px 13px;
+    border:1px solid var(--line); border-radius:var(--radius-sm);
+    background:var(--surface-2); color:var(--primary-dark);
+    font-family:inherit; font-size:13.5px; font-weight:var(--fw-bold); cursor:pointer;
+  }
+  /* Pfeil zeigt, was der Tipp bewirkt: zugeklappt nach unten (oeffnet nach unten),
+     aufgeklappt nach oben (schliesst nach oben). */
+  .card-collapse::after {
+    content:""; flex:0 0 auto; width:9px; height:9px; margin:0 5px 4px 0;
+    border-right:2px solid currentColor; border-bottom:2px solid currentColor;
+    transform:rotate(-135deg); transition:transform .15s;
+  }
+  [data-mob-collapse].is-collapsed .card-collapse::after { transform:rotate(45deg); margin:0 5px 4px 0; }
+  [data-mob-collapse].is-collapsed .card-collapse-body { display:none; }
+  [data-mob-collapse].is-collapsed { padding-bottom:14px; }
+  .phase-field { display:flex; flex-direction:column; gap:3px; }
+  .phase-field-lbl { display:block; font-size:12px; font-weight:var(--fw-bold); color:var(--muted); }
   .tt-plan-label { flex-wrap: wrap; }
   .tt-plan-label select { min-width: 0; flex: 1; }
 }
@@ -611,7 +657,9 @@ a.todo-hefter-link:hover { text-decoration:underline; }
 @media (max-width: 1080px) {
   /* Mobile/Tablet: exakt die bisherige Reihenfolge und Einspaltigkeit wiederherstellen
      (display:contents hebt die beiden Spalten-Wrapper auf, cd-ord-* setzt die Alt-Folge). */
-  .cd-layout { display:flex; flex-direction:column; gap:14px; }
+  /* align-items:stretch wie bei .dash-grid: das start aus dem Desktop-Raster wirkt in
+     der Flex-Spalte auf die BREITE und laesst Karten auf Inhaltsbreite schrumpfen. */
+  .cd-layout { display:flex; flex-direction:column; gap:14px; align-items:stretch; }
   .cd-col-main, .cd-col-side { display:contents; }
   .cd-ord-1 { order:1; } .cd-ord-2 { order:2; } .cd-ord-3 { order:3; } .cd-ord-4 { order:4; }
   .cd-ord-5 { order:5; } .cd-ord-6 { order:6; } .cd-ord-7 { order:7; } .cd-ord-8 { order:8; }
@@ -627,11 +675,26 @@ a.todo-hefter-link:hover { text-decoration:underline; }
 .v2col .vcol > *, .v3col .vcol > * { min-width:0; }
 .v2col .vcol > .note-box, .v3col .vcol > .note-box { margin-top:0; }
 @media (max-width: 1080px) {
-  .v2col, .v3col { display:flex; flex-direction:column; gap:14px; }
+  /* Dito — betrifft alle Ansichten mit dem v2col/v3col-Raster (Unterrichtsplanung,
+     Stoffplan, Sequenzplanung, Material, ASUV, Reflexion). Ohne das standen die Karten
+     dort in zufaelligen Breiten nebeneinander statt buendig untereinander. */
+  .v2col, .v3col { display:flex; flex-direction:column; gap:14px; align-items:stretch; }
   .v2col .vcol, .v3col .vcol { display:contents; }
   .ord-1{order:1}.ord-2{order:2}.ord-3{order:3}.ord-4{order:4}.ord-5{order:5}
   .ord-6{order:6}.ord-7{order:7}.ord-8{order:8}.ord-9{order:9}
   .ord-10{order:10}.ord-11{order:11}.ord-12{order:12}
+  /* Unterrichtsplanung: einspaltig soll das Planen vorn stehen. Das Ideenfeld bleibt
+     erster Block (damit faengt eine Stunde an), nur der Material-Upload und die
+     BiBox-Referenz wandern ans Ende. Am Desktop (>1080px) unveraendert. */
+  #stunde .ord-2  { order:1; }   /* Ideenfeld            */
+  #stunde .ord-4  { order:2; }   /* Unterrichtsplanung   */
+  #stunde .ord-5  { order:3; }   /* Lernziele            */
+  #stunde .ord-6  { order:4; }   /* Phasentabelle        */
+  #stunde .ord-8  { order:5; }   /* Tafelbild            */
+  #stunde .ord-9  { order:6; }   /* Heftereintrag        */
+  #stunde .ord-10 { order:7; }   /* Reflexion            */
+  #stunde .ord-7  { order:8; }   /* Lehrbuch-Referenz    */
+  #stunde .ord-3  { order:9; }   /* Zusaetzliches Material */
 }
 @media (min-width: 1081px) and (max-width: 1240px) {
   /* auf mittelbreiten Desktops werden 3 Spalten zu eng -> 2 Spalten */

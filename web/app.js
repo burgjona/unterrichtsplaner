@@ -323,10 +323,14 @@ function renderPhases() {
         </span>
       </div>
       <div class="row-4" style="margin-top:10px;">
-        <input placeholder="Zeit (Min.)" id="time${i}" value="${esc(p.minutes)}" />
-        <select id="social${i}">${socialOpts}</select>
-        <input placeholder="Methode" id="method${i}" value="${esc(p.method)}" />
-        <input placeholder="Material/Raum" id="material${i}" value="${esc(p.material)}" />
+        <div class="phase-field"><label class="phase-field-lbl" for="time${i}">Zeit (Min.)</label>
+          <input placeholder="Zeit (Min.)" id="time${i}" value="${esc(p.minutes)}" /></div>
+        <div class="phase-field"><label class="phase-field-lbl" for="social${i}">Sozialform</label>
+          <select id="social${i}">${socialOpts}</select></div>
+        <div class="phase-field"><label class="phase-field-lbl" for="method${i}">Methode</label>
+          <input placeholder="Methode" id="method${i}" value="${esc(p.method)}" /></div>
+        <div class="phase-field"><label class="phase-field-lbl" for="material${i}">Material/Raum</label>
+          <input placeholder="Material/Raum" id="material${i}" value="${esc(p.material)}" /></div>
       </div>
       <label>Lehrertätigkeit</label><textarea id="teacher${i}">${esc(p.teacher)}</textarea>
       <label>Schülertätigkeit</label><textarea id="student${i}">${esc(p.student)}</textarea>
@@ -7083,8 +7087,43 @@ async function renderArchivNotizen() {
   });
 }
 
+/* U34c: Mobil einklappbare Karten (Markierung `data-mob-collapse` im Markup).
+   Die Unterrichtsplanung ist auf dem Handy rund elf Bildschirme lang; die Nachbereitungs-
+   und Referenzbloecke starten dort zugeklappt. Der Umbau laeuft EINMAL und unabhaengig
+   von der Fensterbreite: Inhalt kommt in einen Wrapper, der Schalter davor. Ob etwas
+   eingeklappt ist, entscheidet allein CSS im 600px-Block — am Desktop ist der Schalter
+   ausgeblendet und der Wrapper eine gewoehnliche <div>. Damit braucht es keinen
+   Resize-Listener, und Drehen des Geraets kann keinen halben Zustand hinterlassen.
+   Alle IDs bleiben erhalten (app.js greift ausschliesslich per getElementById zu). */
+function initMobileCollapse() {
+  document.querySelectorAll("[data-mob-collapse]").forEach((card) => {
+    if (card.querySelector(":scope > .card-collapse-body")) return;   // schon umgebaut
+    const heading = card.querySelector(":scope > h3");
+    if (!heading) return;
+    const body = document.createElement("div");
+    body.className = "card-collapse-body";
+    // Alles nach der Ueberschrift in den Wrapper umhaengen (Reihenfolge bleibt erhalten).
+    while (heading.nextSibling) body.appendChild(heading.nextSibling);
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "card-collapse";
+    btn.setAttribute("aria-expanded", "false");
+    const label = () => {
+      const open = !card.classList.contains("is-collapsed");
+      btn.setAttribute("aria-expanded", String(open));
+      btn.textContent = open ? "Zuklappen" : "Aufklappen";
+    };
+    card.classList.add("is-collapsed");
+    btn.onclick = () => { card.classList.toggle("is-collapsed"); label(); };
+    label();
+    card.appendChild(btn);
+    card.appendChild(body);
+  });
+}
+
 async function init() {
   wireEvents();
+  initMobileCollapse();
   initOfflineSupport();  // U23: Service Worker + Offline-Banner
   try {
     await startApp();  // vorhandene Session?
