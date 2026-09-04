@@ -556,7 +556,11 @@ let pendingLessonMaterialSubject = "";
 function clearLessonForm() {
   ["lessonIdeas", "lessonTitle", "lessonDate", "klafki1", "klafki2", "klafki3", "klafki4", "klafki5",
    "biboxWerk", "biboxSeite", "biboxNotiz", "lessonMatSubject",
-   "tafelbildEingabe", "tafelbildNotiz", "hefteintrag"].forEach((id) => ($(id).value = ""));
+   "tafelbildEingabe"].forEach((id) => ($(id).value = ""));
+  // Formatierte Felder haengen an einem contenteditable neben der textarea (richtext.js) —
+  // ein blosses .value = "" wuerde nur den versteckten Wertträger leeren, nicht die Anzeige.
+  RichText.set("tafelbildNotiz", "", "");
+  RichText.set("hefteintrag", "", "");
   lessonTafelbild = { titel: "", bloecke: [] };
   lessonTafelbildBildId = null;
   renderTafelbild();
@@ -666,8 +670,8 @@ function buildLessonBody() {
     diff: $("diff").value, selbstLernen: $("lernen").value,
     bibox: { werk: $("biboxWerk").value, seite: $("biboxSeite").value, notiz: $("biboxNotiz").value },
     tafelbildEingabe: $("tafelbildEingabe").value, tafelbild: lessonTafelbild,
-    tafelbildNotiz: $("tafelbildNotiz").value,
-    hefteintrag: $("hefteintrag").value,
+    ...RichText.payload("tafelbildNotiz", "tafelbildNotiz"),
+    ...RichText.payload("hefteintrag", "hefteintrag"),
     tafelbildBildMaterialId: lessonTafelbildBildId,
     phases,
     lernziele: readLernziele(phaseIndexMap),
@@ -790,8 +794,8 @@ function loadLessonIntoForm(l) {
   lessonTafelbild = l.tafelbild || { titel: "", bloecke: [] };
   lessonTafelbildBildId = l.tafelbildBildMaterialId != null ? l.tafelbildBildMaterialId : null;
   renderTafelbild();
-  $("tafelbildNotiz").value = l.tafelbildNotiz || "";
-  $("hefteintrag").value = l.hefteintrag || "";
+  RichText.set("tafelbildNotiz", l.tafelbildNotizHtml, l.tafelbildNotiz);
+  RichText.set("hefteintrag", l.hefteintragHtml, l.hefteintrag);
   setPhasesFromLesson(l.phases);
   $("editHintTitle").textContent = l.title || "";
   $("editHint").classList.remove("hidden");
@@ -1654,18 +1658,20 @@ function renderClassDetailHefter() {
     ta.className = "hefter-input";
     ta.rows = 2;
     ta.placeholder = "— noch kein Eintrag —";
-    ta.value = l.hefteintrag || "";
     ta.addEventListener("input", () => {
       if (_cdHefterTimers[l.id]) clearTimeout(_cdHefterTimers[l.id]);
       _cdHefterTimers[l.id] = setTimeout(async () => {
         try {
-          await SyncEngine.update("lessons", l.id, { hefteintrag: ta.value });
-          l.hefteintrag = ta.value;
-          if (editingLessonId === l.id && $("hefteintrag")) $("hefteintrag").value = ta.value;
+          const body = RichText.payload(ta, "hefteintrag");
+          await SyncEngine.update("lessons", l.id, body);
+          l.hefteintrag = body.hefteintrag;
+          l.hefteintragHtml = body.hefteintragHtml;
+          if (editingLessonId === l.id) RichText.set("hefteintrag", body.hefteintragHtml, "");
         } catch (e) { toast(e.message, false); }
       }, 900);
     });
     tr.querySelector(".hefter-entry").appendChild(ta);
+    RichText.set(ta, l.hefteintragHtml, l.hefteintrag);
     tr.querySelector("[data-open-lesson]").onclick = (e) => {
       e.preventDefault();
       const les = state.lessons.find((x) => x.id === l.id);
@@ -4517,7 +4523,7 @@ function openLessonModal(l) {
         ${tbBoard ? `<div class="tafelbild-board">${tbBoard}</div>` : ""}
         ${tbEmpty}
         <label class="small" style="display:block; margin-top:10px;">Notizen</label>
-        <textarea id="modalTbNotiz" style="width:100%; min-height:60px;" placeholder="Eigene Ergänzungen zum Tafelbild ...">${esc(l.tafelbildNotiz || "")}</textarea>
+        <textarea id="modalTbNotiz" style="width:100%; min-height:60px;" placeholder="Eigene Ergänzungen zum Tafelbild ..."></textarea>
         <div style="margin-top:8px;">
           <input type="file" id="modalTbImgFile" accept="image/*" />
           <button class="btn small" id="modalTbImgUpload" style="margin-top:6px;">Eigenes Bild hochladen</button>
@@ -4575,12 +4581,15 @@ function wireModalTafelbild(l) {
       if (_modalTbNotizTimer) clearTimeout(_modalTbNotizTimer);
       _modalTbNotizTimer = setTimeout(async () => {
         try {
-          await SyncEngine.update("lessons", l.id, { tafelbildNotiz: ta.value });
-          l.tafelbildNotiz = ta.value;
-          if (editingLessonId === l.id && $("tafelbildNotiz")) $("tafelbildNotiz").value = ta.value;
+          const body = RichText.payload(ta, "tafelbildNotiz");
+          await SyncEngine.update("lessons", l.id, body);
+          l.tafelbildNotiz = body.tafelbildNotiz;
+          l.tafelbildNotizHtml = body.tafelbildNotizHtml;
+          if (editingLessonId === l.id) RichText.set("tafelbildNotiz", body.tafelbildNotizHtml, "");
         } catch (e) { toast(e.message, false); }
       }, 900);
     });
+    RichText.set(ta, l.tafelbildNotizHtml, l.tafelbildNotiz);
   }
   const up = $("modalTbImgUpload");
   if (up) up.onclick = async () => {
@@ -6816,6 +6825,9 @@ function wireEvents() {
 
   // KI (M7)
   $("aiPlanBtn").onclick = aiLessonSuggest;
+  // Formatier-Editoren (richtext.js) fuer die beiden Freitextfelder aufbauen.
+  RichText.enhance("tafelbildNotiz");
+  RichText.enhance("hefteintrag");
   $("tafelbildBtn").onclick = aiTafelbildSuggest;
   $("tafelbildBildUpload").onclick = uploadTafelbildBild;
   $("tafelbildBildRemove").onclick = removeTafelbildBild;

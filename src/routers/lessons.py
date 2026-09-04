@@ -12,6 +12,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..deps import get_db, get_user_id, row_or_404
+from ..lib.richtext import normalize_rich
 from ..schemas import (
     Bibox, Klafki, LernzielIn, LernzielOut, LessonCreate, LessonMoveSlotIn, LessonMoveSlotOut,
     LessonOut, LessonUpcomingSlotOut, LessonUpdate, MaterialOut, PhaseIn, PhaseOut, Tafelbild,
@@ -26,9 +27,13 @@ _LESSON_COLS = (
     "klafki_gegenwart", "klafki_zukunft", "klafki_exemplarisch", "klafki_zugang",
     "klafki_struktur", "meyer_plan_json", "diff", "selbst_lernen",
     "bibox_werk", "bibox_seite", "bibox_notiz",
-    "tafelbild_eingabe", "tafelbild_json", "tafelbild_notiz",
-    "tafelbild_bild_material_id", "hefteintrag",
+    "tafelbild_eingabe", "tafelbild_json", "tafelbild_notiz", "tafelbild_notiz_html",
+    "tafelbild_bild_material_id", "hefteintrag", "hefteintrag_html",
 )
+
+# Freitextfelder mit Formatierung: (HTML-Spalte, abgeleitete Klartextspalte). Die HTML-Spalte
+# ist die Quelle der Wahrheit, sobald sie gefuellt ist — siehe 065_richtext.sql.
+_RICH_FIELDS = (("tafelbild_notiz_html", "tafelbild_notiz"), ("hefteintrag_html", "hefteintrag"))
 
 
 def _sync_calendar_entry(conn, user_id: int, lesson_id: int) -> None:
@@ -97,6 +102,10 @@ def _sync_calendar_entry(conn, user_id: int, lesson_id: int) -> None:
 
 
 def _lesson_values(body, klafki: Klafki, bibox: Bibox, meyer_plan, tafelbild: Tafelbild) -> dict:
+    # Kommt formatierter Text mit, gewinnt er: der Klartext daneben wird daraus abgeleitet,
+    # damit beide Spalten nie auseinanderlaufen (Volltextsuche haengt am Klartext).
+    tb_html, tb_text = normalize_rich(body.tafelbild_notiz_html)
+    he_html, he_text = normalize_rich(body.hefteintrag_html)
     return {
         "class_id": body.class_id,
         "lernbereich_id": body.lernbereich_id,
@@ -120,9 +129,11 @@ def _lesson_values(body, klafki: Klafki, bibox: Bibox, meyer_plan, tafelbild: Ta
         "bibox_notiz": bibox.notiz,
         "tafelbild_eingabe": body.tafelbild_eingabe,
         "tafelbild_json": json.dumps(tafelbild.model_dump()) if tafelbild is not None else None,
-        "tafelbild_notiz": body.tafelbild_notiz,
+        "tafelbild_notiz": tb_text if body.tafelbild_notiz_html is not None else body.tafelbild_notiz,
+        "tafelbild_notiz_html": tb_html,
         "tafelbild_bild_material_id": body.tafelbild_bild_material_id,
-        "hefteintrag": body.hefteintrag,
+        "hefteintrag": he_text if body.hefteintrag_html is not None else body.hefteintrag,
+        "hefteintrag_html": he_html,
     }
 
 
@@ -174,8 +185,10 @@ def _row_to_out(conn, row) -> LessonOut:
         tafelbild_eingabe=d["tafelbild_eingabe"],
         tafelbild=Tafelbild(**json.loads(d["tafelbild_json"])) if d["tafelbild_json"] else Tafelbild(),
         tafelbild_notiz=d["tafelbild_notiz"],
+        tafelbild_notiz_html=d["tafelbild_notiz_html"],
         tafelbild_bild_material_id=d["tafelbild_bild_material_id"],
         hefteintrag=d["hefteintrag"],
+        hefteintrag_html=d["hefteintrag_html"],
         phases=[PhaseOut(**dict(p)) for p in phases],
         lernziele=[LernzielOut(
             id=z["id"], kind=z["kind"], text=z["text"], bloom_stufe=z["bloom_stufe"],
@@ -258,6 +271,16 @@ def _apply_update_lesson(conn, user_id: int, lid: int, body: LessonUpdate) -> Le
                 "hefteintrag"):
         if key in data:
             sets[key] = data[key]
+    # Rich-Text: kommt *Html mit, wird der Klartext daraus neu abgeleitet (und ueberschreibt
+    # einen in derselben Anfrage mitgeschickten Klartext). Kommt NUR der Klartext, faellt die
+    # Formatierung bewusst weg — sonst zeigte die Oberflaeche weiter das alte formatierte
+    # Fragment, waehrend in der Klartextspalte etwas anderes steht.
+    for html_key, text_key in _RICH_FIELDS:
+        if html_key in data:
+            sets[html_key], sets[text_key] = normalize_rich(data[html_key])
+        elif text_key in data:
+            sets[html_key] = None
+
     if "klafki" in data and body.klafki is not None:
         k = body.klafki
         sets.update(klafki_gegenwart=k.gegenwart, klafki_zukunft=k.zukunft,

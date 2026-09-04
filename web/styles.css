@@ -236,6 +236,39 @@ input.input-error { border-color: var(--bad); background: color-mix(in srgb, var
 .tafelbild-block-head { font-weight:var(--fw-bold); margin-bottom:6px; }
 .tafelbild-block ul { margin:0; padding-left:18px; }
 .tafelbild-block ul li { margin-bottom:3px; }
+/* Formatier-Editor (web/richtext.js) für "Notizen" im Tafelbild und den Heftereintrag.
+   Farben als Klasse statt festem Hex, weil keine einzelne Farbe zugleich auf Weiß und auf
+   dunklem Grund WCAG AA erreicht — die dunklen Themes bekommen deshalb eigene Werte. */
+:root {
+  --rt-rot:#c0392b; --rt-orange:#b35309; --rt-gruen:#15803d; --rt-blau:#1d4ed8; --rt-violett:#7e22ce;
+}
+:root[data-dark="1"] {
+  --rt-rot:#ff8a80; --rt-orange:#ffb74d; --rt-gruen:#6ee7a8; --rt-blau:#8ab4f8; --rt-violett:#d0a2f7;
+}
+.rt-rot { color:var(--rt-rot); } .rt-orange { color:var(--rt-orange); }
+.rt-gruen { color:var(--rt-gruen); } .rt-blau { color:var(--rt-blau); }
+.rt-violett { color:var(--rt-violett); }
+
+.rt-wrap { display:block; }
+.rt-source { display:none; }
+.rt-bar { display:flex; flex-wrap:wrap; align-items:center; gap:4px; margin-bottom:5px; }
+.rt-btn {
+  min-width:28px; height:28px; padding:0 6px; border:1px solid var(--line); border-radius:8px;
+  background:var(--surface); color:var(--text); font-family:inherit; font-size:14px;
+  line-height:1; cursor:pointer;
+}
+.rt-btn:hover { background:var(--surface-2); }
+.rt-btn:focus-visible { outline:2px solid var(--primary); outline-offset:2px; }
+.rt-sep { width:1px; height:20px; background:var(--line); margin:0 3px; }
+.rt-swatch { font-weight:var(--fw-heavy, 800); }
+.rt-input {
+  min-height:70px; padding:11px 13px; border:1px solid var(--line); border-radius:var(--radius-sm, 12px);
+  background:var(--surface); color:var(--text); font-family:inherit; font-size:14px;
+  line-height:1.45; overflow-wrap:break-word; white-space:pre-wrap;
+}
+.rt-input-compact { min-height:44px; }
+.rt-input:focus { outline:none; border-color:var(--primary); }
+.rt-input:empty::before { content:attr(data-placeholder); color:var(--muted); pointer-events:none; }
 .ai-box { background: #fefce8; border:1px solid #fde68a; border-radius:14px; padding:14px; margin-bottom:14px; display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
 .ai-box .txt { font-size:13px; color:#713f12; max-width:520px; }
 .file-drop { border:2px dashed #86efac; border-radius:12px; padding:16px; text-align:center; color:var(--primary-dark); font-size:13px; background:#f0faf0; cursor:pointer; }
