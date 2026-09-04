@@ -27,6 +27,8 @@ const ttState = {
   // Am Desktop bleibt der Wert unbenutzt — dort blendet CSS die Tageswahl aus und
   // das Raster behaelt alle fuenf Spalten. Vorbelegt mit heute (Wochenende -> Montag).
   day: Math.max(0, ttTodayWeekday()),
+  slideFrom: null,      // "left"|"right": Richtung, aus der der neue Tag einblendet
+  swipeBound: false,    // Wisch-Gesten nur einmal an #ttScroll haengen
   editorsOpen: false,   // Editoren-Bereich (Klingelzeiten/Typen/A-B) ein-/ausgeklappt
 };
 
@@ -188,6 +190,7 @@ async function ttShow() {
   }
   ttRenderView();
   ttRenderEditors();
+  ttBindSwipe();
 }
 
 /* ---------- Rendern: Skeleton (kein Spinner) ---------- */
@@ -271,6 +274,91 @@ function ttDayPickerHtml() {
     `</div>`;
 }
 
+/* U34b: Wischen zwischen den Tagen (nur Touch/Stift, nur unterhalb 600px — am Desktop
+   ist die Tageswahl ausgeblendet, dort duerfte eine Geste nichts umschalten, was man
+   nicht sieht). Bewusst OHNE Mitziehen des Rasters: der Nachbartag ist nicht gerendert,
+   ein mitwanderndes Raster wuerde also leeren Hintergrund freilegen. Stattdessen
+   Richtungssperre + Schwelle, danach blendet der neue Tag aus der Wischrichtung ein.
+
+   Die Geste haengt an #ttScroll (steht fest im Markup) statt am Raster, das bei jedem
+   Rendern neu gebaut wird — so genuegt eine einmalige Bindung. touch-action:pan-y im
+   @media-Block ueberlaesst dem Browser das vertikale Scrollen und uns das Horizontale. */
+function ttBindSwipe() {
+  if (ttState.swipeBound) return;
+  const box = $("ttScroll");
+  if (!box || !window.PointerEvent) return;
+  ttState.swipeBound = true;
+
+  const NARROW = () => window.matchMedia("(max-width: 600px)").matches;
+  let id = null, x0 = 0, y0 = 0, t0 = 0, axis = null, swiped = false;
+
+  const reset = () => { id = null; axis = null; };
+
+  box.addEventListener("pointerdown", (ev) => {
+    if (ev.pointerType === "mouse" || !NARROW()) return;
+    // Auch zuruecksetzen: ein sauberer Wisch loest oft gar keinen Klick aus, das Flag
+    // bliebe sonst stehen und wuerde den NAECHSTEN echten Tipp schlucken.
+    swiped = false;
+    id = ev.pointerId; x0 = ev.clientX; y0 = ev.clientY; t0 = ev.timeStamp; axis = null;
+  }, { passive: true });
+
+  box.addEventListener("pointermove", (ev) => {
+    if (ev.pointerId !== id || axis === "y") return;
+    const dx = ev.clientX - x0, dy = ev.clientY - y0;
+    if (axis === null) {
+      if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+      // Faktor 1.3: im Zweifel gewinnt das vertikale Scrollen — der Plan ist laenger
+      // als der Bildschirm, versehentliche Tageswechsel beim Scrollen waeren aergerlich.
+      axis = Math.abs(dx) > Math.abs(dy) * 1.3 ? "x" : "y";
+      if (axis === "y") return;
+    }
+    const far = Math.abs(dx) >= Math.max(45, box.clientWidth * 0.14);
+    const flick = ev.timeStamp - t0 < 250 && Math.abs(dx) >= 28;
+    if (!far && !flick) return;
+    // Wisch nach links = naechster Tag, der von rechts hereinkommt.
+    ttGoToDay(ttState.day + (dx < 0 ? 1 : -1), dx < 0 ? "right" : "left");
+    swiped = true;
+    reset();
+  }, { passive: true });
+
+  const end = (ev) => { if (ev.pointerId === id) reset(); };
+  box.addEventListener("pointerup", end, { passive: true });
+  box.addEventListener("pointercancel", end, { passive: true });
+
+  // Ein Wisch, der ueber einer Zelle endet, darf nicht zusaetzlich deren Eintrags-Dialog
+  // oeffnen. Capture-Phase, damit die Handler am Raster gar nicht erst dran kommen.
+  box.addEventListener("click", (ev) => {
+    if (!swiped) return;
+    swiped = false;
+    ev.preventDefault();
+    ev.stopPropagation();
+  }, true);
+}
+
+/* Tageswechsel (Leiste wie Wischgeste). dir merkt sich, aus welcher Richtung der
+   neue Tag einblenden soll; ausserhalb von Mo-Fr passiert nichts ausser einem
+   kurzen Anstosser am Wochenrand, damit "nichts passiert" nicht wie ein
+   verschluckter Wisch aussieht. */
+function ttGoToDay(next, dir) {
+  if (next === ttState.day) return;
+  // Der Anstosser geht in die Richtung, in die es nicht weitergeht: vor Montag nach
+  // rechts, nach Freitag nach links.
+  if (next < 0 || next > 4) { ttEdgeBump(next < 0 ? "right" : "left"); return; }
+  ttState.slideFrom = dir || null;
+  ttState.day = next;
+  ttRenderView();
+}
+function ttEdgeBump(dir) {
+  const grid = $("ttGrid");
+  if (!grid) return;
+  // Auch die Einblend-Klasse des letzten Wechsels loeschen: ohne Neu-Rendern bliebe sie
+  // sonst am Raster stehen und beide Animationsregeln griffen auf dieselben Kinder.
+  grid.classList.remove("tt-from-left", "tt-from-right", "tt-edge-left", "tt-edge-right");
+  void grid.offsetWidth;              // Reflow: Animation auch bei Wisch-Folge neu starten
+  grid.classList.add("tt-edge-" + dir);
+  setTimeout(() => grid.classList.remove("tt-edge-" + dir), 260);
+}
+
 function ttRenderToolbar() {
   const s = ttState.settings;
   const planOpts = ttState.plans.map((p) =>
@@ -299,7 +387,10 @@ function ttRenderToolbar() {
     b.onclick = () => { ttState.week = b.dataset.ttWeek; ttRenderView(); };
   });
   $("ttToolbar").querySelectorAll("[data-tt-day]").forEach((b) => {
-    b.onclick = () => { ttState.day = Number(b.dataset.ttDay); ttRenderView(); };
+    b.onclick = () => {
+      const next = Number(b.dataset.ttDay);
+      ttGoToDay(next, next > ttState.day ? "right" : "left");
+    };
   });
   $("ttPlanSelect").onchange = ttOnPlanChange;
   $("ttAddPlanBtn").onclick = ttOpenPlanModal;
@@ -379,6 +470,13 @@ function ttRenderGrid() {
          `</div>`;
   }
   grid.innerHTML = h;
+  // Richtungs-Einblendung des gewechselten Tages: die Kinder sind eben neu entstanden,
+  // die Klasse am Raster startet ihre Animation also frisch (siehe @media-Block).
+  grid.classList.remove("tt-from-left", "tt-from-right", "tt-edge-left", "tt-edge-right");
+  if (ttState.slideFrom) {
+    grid.classList.add("tt-from-" + ttState.slideFrom);
+    ttState.slideFrom = null;
+  }
 
   // Verdrahten (Chips = bearbeiten, Zellen = neu). Tastatur: Enter/Space.
   grid.querySelectorAll("[data-tt-entry]").forEach((el) => {

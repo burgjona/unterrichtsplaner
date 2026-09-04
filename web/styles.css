@@ -1292,6 +1292,9 @@ body.cmd-open { overflow:hidden; }
      Eintraege gegenueber den anderen nach unten. */
   .tt-daypicker-dot.is-empty { background:transparent; }
 
+  /* Vertikales Scrollen bleibt beim Browser, horizontale Gesten gehoeren der
+     Tageswahl (ttBindSwipe in stundenplan.js). */
+  .tt-scroll { touch-action:pan-y; }
   .tt-grid { min-width:0; grid-template-columns:52px minmax(0,1fr) !important; }
   .tt-grid > [data-tt-wd] { grid-column:2 !important; }
   .tt-grid[data-tt-day="0"] > [data-tt-wd]:not([data-tt-wd="0"]):not([data-tt-wd="all"]),
@@ -1301,6 +1304,19 @@ body.cmd-open { overflow:hidden; }
   .tt-grid[data-tt-day="4"] > [data-tt-wd]:not([data-tt-wd="4"]):not([data-tt-wd="all"]) { display:none; }
   /* Der Tageskopf wiederholt die Auswahl direkt ueber der Spalte. */
   .tt-day-pill { font-size:14px; padding:4px 12px; }
+
+  /* Der gewechselte Tag kommt aus der Wischrichtung herein — nur die Tagesspalte,
+     die Zeitspalte links bleibt ruhig stehen und verankert den Blick.
+     .tt-edge ist die Antwort am Wochenrand: ein kurzer Anstosser sagt "hier ist
+     Schluss", statt die Geste kommentarlos verpuffen zu lassen. */
+  @keyframes tt-day-from-right { from { opacity:0; transform:translateX(18px); } }
+  @keyframes tt-day-from-left  { from { opacity:0; transform:translateX(-18px); } }
+  @keyframes tt-day-edge-left  { 40% { transform:translateX(-7px); } }
+  @keyframes tt-day-edge-right { 40% { transform:translateX(7px); } }
+  .tt-grid.tt-from-right > [data-tt-wd] { animation:tt-day-from-right .19s cubic-bezier(.22,.7,.3,1); }
+  .tt-grid.tt-from-left  > [data-tt-wd] { animation:tt-day-from-left  .19s cubic-bezier(.22,.7,.3,1); }
+  .tt-grid.tt-edge-left  > [data-tt-wd] { animation:tt-day-edge-left  .22s ease-out; }
+  .tt-grid.tt-edge-right > [data-tt-wd] { animation:tt-day-edge-right .22s ease-out; }
 
   /* --- (5c) Kalender-Toolbar in drei ruhige Baender -----------------------
      Zuvor umbrach die Werkzeugleiste in vier ungleich breite Reihen und
@@ -1316,4 +1332,13 @@ body.cmd-open { overflow:hidden; }
   .cal-nav .view-toggle { order:5; flex:0 0 100%; margin-left:0; }
   .cal-nav > .btn { order:6; flex:1 1 calc(50% - 4px); }
   .cal-nav #calNewEntryBtn { margin-left:0; }
+}
+
+/* Muss NACH dem U34-Block stehen: gleiche Spezifitaet wie die Animationsregeln dort,
+   die spaetere Regel gewinnt. Der Tageswechsel funktioniert weiter, nur ohne Bewegung. */
+@media (prefers-reduced-motion: reduce) {
+  .tt-grid.tt-from-right > [data-tt-wd],
+  .tt-grid.tt-from-left > [data-tt-wd],
+  .tt-grid.tt-edge-left > [data-tt-wd],
+  .tt-grid.tt-edge-right > [data-tt-wd] { animation:none; }
 }
