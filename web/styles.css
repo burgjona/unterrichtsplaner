@@ -1489,7 +1489,11 @@ body.cmd-open { overflow:hidden; }
 .wiz-nav .btn { flex:0 0 auto; }
 /* Einzelne Bedienelemente, die im Assistenten an einem anderen Schritt gebraucht werden
    als in der Vollansicht (z. B. der KI-Stundenvorschlag beim Ideenfeld). */
-.wiz-extra { display:flex; flex-wrap:wrap; gap:10px; margin-top:12px; }
+.wiz-extra { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-top:12px; }
+.wiz-extra-note { flex:0 0 100%; margin:0; }
+/* Umgehaengte Formularzeilen (z. B. die To-do-Zeile) brauchen die volle Breite,
+   umgehaengte Knoepfe nicht. */
+.wiz-extra > .row { flex:1 1 100%; margin:0; }
 
 /* U35 mobil: die Schrittleiste scrollt in sich selbst (kein Seiten-Scroll), die
    Navigation wird zur Doppelspalte. Im Assistenten zeigt jeder Schritt ohnehin nur
@@ -1506,4 +1510,37 @@ body.cmd-open { overflow:hidden; }
   #stunde.wizard-on [data-mob-collapse] .card-collapse { display:none; }
   #stunde.wizard-on [data-mob-collapse].is-collapsed .card-collapse-body { display:block; }
   #stunde.wizard-on [data-mob-collapse].is-collapsed { padding-bottom:18px; }
+}
+
+/* U35b: Fokusmodus. Der Assistent legt sich als eigene Flaeche ueber die App, statt in
+   einem zweiten DOM-Baum zu leben — #stundeWizard bleibt dieselbe Box mit denselben
+   Karten darin, sie wird nur fixiert. Deshalb ueberlebt der Fokusmodus jeden Schritt-
+   wechsel und aendert nichts an Autosave, IDs oder Rueckweg in die Vollansicht.
+   z-index 50: ueber Inhalt, Sidebar (25) und Bottom-Nav (15), unter Modals (100),
+   Kommandopalette (200) und Toasts (300) — Nachfragen und Meldungen bleiben sichtbar. */
+.plan-focus-btn { display:none; }
+#stunde.wizard-on .plan-mode .plan-focus-btn { display:inline-block; }
+
+#stundeWizard.wiz-focus {
+  position:fixed; inset:0; z-index:50; margin:0;
+  overflow-y:auto; -webkit-overflow-scrolling:touch;
+  background:var(--bg); padding:20px 22px 44px;
+}
+/* Auf breiten Schirmen nicht ueber die ganze Flaeche laufen lassen — eine ruhige Spalte
+   liest sich besser als eine 2000px breite Phasentabelle. */
+#stundeWizard.wiz-focus > * { max-width:1000px; margin-left:auto; margin-right:auto; }
+body.plan-focus { overflow:hidden; }
+
+.wiz-focus-bar {
+  display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+  margin-bottom:14px; padding-bottom:10px; border-bottom:1px solid var(--line);
+}
+.wiz-focus-title { flex:1 1 auto; min-width:0; color:var(--muted); font-weight:var(--fw-heavy); font-size:13px; }
+
+/* U35b mobil: im Fokusmodus verschwindet auch die untere Navigationsleiste — sie liegt
+   sonst ueber der Schritt-Navigation und ist genau die Ablenkung, die der Modus loswerden
+   soll. Ueber "Fokus beenden" oben ist der Rueckweg da. */
+@media (max-width: 920px) {
+  body.plan-focus .bottom-nav { display:none; }
+  #stundeWizard.wiz-focus { padding:16px 14px 34px; }
 }

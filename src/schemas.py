@@ -642,6 +642,7 @@ class TodoCreate(Base):
     text: str
     source: str = "manuell"
     hefter_lesson_id: Optional[int] = None
+    lesson_id: Optional[int] = None      # Planungs-To-do zu einer Stunde (Migration 065)
 
 
 class TodoUpdate(Base):
@@ -655,6 +656,7 @@ class TodoOut(Base):
     source: str
     done: bool
     hefter_lesson_id: Optional[int] = None
+    lesson_id: Optional[int] = None
     archived_at: Optional[str] = None
     created_at: str
     updated_at: str

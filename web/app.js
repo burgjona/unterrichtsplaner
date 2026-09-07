@@ -2668,9 +2668,16 @@ function renderTodos() {
     const isHefter = t.hefterLessonId != null;
     const srcClass = isHefter ? "hefter" : t.source;
     const srcLabel = isHefter ? "Hefter" : t.source;
+    // Planungs-To-do zu einer Stunde: Text verlinkt die Stunde, dahinter steht, welche es
+    // ist – "AB kopieren" allein sagt auf der Startseite sonst nichts. Wurde die Stunde
+    // gelöscht, bleibt das To-do als gewöhnlicher Eintrag ohne Link stehen.
+    const lesson = t.lessonId != null ? state.lessons.find((x) => x.id === t.lessonId) : null;
     const textCell = isHefter
       ? `<a href="#" class="todo-hefter-link" data-hefter-lesson="${t.hefterLessonId}" style="flex:1">${esc(t.text)}</a>`
-      : `<span style="flex:1">${esc(t.text)}</span>`;
+      : lesson
+        ? `<span style="flex:1"><a href="#" class="todo-hefter-link" data-todo-lesson="${lesson.id}">${esc(t.text)}</a>` +
+          `<span class="muted small"> · ${esc(lesson.title || "Stunde")}</span></span>`
+        : `<span style="flex:1">${esc(t.text)}</span>`;
     div.innerHTML =
       `<input type="checkbox" ${t.done ? "checked" : ""} data-todo="${t.id}"/>` +
       `<span class="todo-src ${srcClass}">${esc(srcLabel)}</span>` +
@@ -2694,6 +2701,13 @@ function renderTodos() {
     a.onclick = (e) => {
       e.preventDefault();
       const l = state.lessons.find((x) => x.id === Number(a.dataset.hefterLesson));
+      if (l) openLessonModal(l);
+    };
+  });
+  list.querySelectorAll("[data-todo-lesson]").forEach((a) => {
+    a.onclick = (e) => {
+      e.preventDefault();
+      const l = state.lessons.find((x) => x.id === Number(a.dataset.todoLesson));
       if (l) openLessonModal(l);
     };
   });
@@ -6242,6 +6256,7 @@ function showView(view) {
   // Verlässt man die Klassen-Ansicht mit offenem Bearbeiten-Modus, den Update-Modus
   // zurücksetzen – sonst würde ein späteres "Klasse speichern" versehentlich updaten.
   if (view !== "klassen" && editingClassId) resetClassForm();
+  if (view !== "stunde") setPlanFocus(false, false);   // U35b: Vollbild nicht mit in andere Ansichten nehmen
   if (view === "stunde") planWizardApplyContext(lessonFormOpenedAsNew);   // U35
   if (view === "settings") loadSettings();
   if (view === "kalender") { ensureGoogleStatus(); maybeAutoSyncOnOpen(); }  // U21/U24: Status + Auto-Sync (A)
@@ -7049,14 +7064,21 @@ function wireEvents() {
   });
 
   $("lessonTodoInput").addEventListener("keydown", async (e) => {
-    if (e.key === "Enter" && e.target.value.trim()) {
-      try {
-        await SyncEngine.create("todos", { text: e.target.value.trim(), source: "manuell" });
-        e.target.value = "";
-        await refresh();
-        toast("To-Do hinzugefügt.");
-      } catch (err) { toast(err.message, false); }
+    if (e.key !== "Enter" || !e.target.value.trim()) return;
+    // Das To-do hängt an dieser Stunde (Migration 065) – dafür braucht es ihre id. Der
+    // Autosave legt sie an, sobald ein Titel steht; vorher gibt es keine Stunde, an die
+    // es hängen könnte. Ausstehenden Autosave deshalb zuerst durchschreiben.
+    await flushLessonAutosave();
+    if (!editingLessonId) {
+      toast("Bitte zuerst ein Thema für die Stunde eintragen – das To-do hängt an ihr.", false);
+      return;
     }
+    try {
+      await SyncEngine.create("todos", { text: e.target.value.trim(), source: "manuell", lessonId: editingLessonId });
+      e.target.value = "";
+      await refresh();
+      toast("To-Do zur Stunde hinzugefügt.");
+    } catch (err) { toast(err.message, false); }
   });
 
   $("saveApiKey").onclick = async () => {
@@ -7476,29 +7498,35 @@ SyncEngine.onChange(async (entityType) => {
    (wizHome), damit die Rueckgabe unabhaengig von der Reihenfolge exakt stimmt. */
 
 const PLAN_MODE_KEYS = { new: "ldb_plan_mode_new", edit: "ldb_plan_mode_edit" };
+const PLAN_FOCUS_KEY = "ldb_plan_focus";
 const PLAN_MODE_DEFAULT = { new: "wizard", edit: "full" };   // vom Projektleiter so festgelegt
 
 // filled(): Schritt inhaltlich bearbeitet → Haken in der Schrittleiste.
 // warn():   Hinweis (nie blockierend) → gelbe Markierung + Text im Schrittkopf.
 const WIZ_STEPS = [
   {
-    title: "Idee & Impulse",
-    cards: ["ideen"], move: ["aiPlanBtn"],
-    hint: "Optionaler Einstieg: lose Gedanken, Impulse, Materialideen. Aus dem Ideenfeld erzeugt die KI auf Wunsch einen kompletten Stundenvorschlag (Titel, Klafki, Meyer-Ampel, Phasen) – die folgenden Schritte dienen dann dem Prüfen und Anpassen.",
-    filled: () => !!$("lessonIdeas").value.trim(),
-    warn: () => null,
-  },
-  {
     title: "Rahmen der Stunde",
     cards: ["stammdaten"],
-    hint: "Thema, Fach, Klasse, Stundentyp, Datum und Dauer. Mit Datum erscheint die Stunde automatisch im Kalender; über Lernbereich und Sequenzplan hängt sie an der Jahresplanung.",
+    hint: "Zuerst der Rahmen: Thema, Fach, Klasse, Stundentyp, Datum und Dauer. Mit Datum erscheint die Stunde automatisch im Kalender; über Lernbereich und Sequenzplan hängt sie an der Jahresplanung – „Aus Sequenzplan übernehmen“ bringt Titel und Grobziel gleich mit.",
     filled: () => !!$("lessonTitle").value.trim(),
     warn: () => ($("lessonTitle").value.trim() ? null : "Ohne Titel/Thema lässt sich die Stunde nicht speichern."),
   },
   {
+    title: "Idee & Impulse",
+    cards: ["ideen"], move: ["aiPlanBtn"],
+    hint: "Lose Gedanken, Impulse, Materialideen zu dieser Stunde – optional. Zusammen mit dem Rahmen aus Schritt 1 erzeugt die KI daraus auf Wunsch einen kompletten Stundenvorschlag.",
+    // Der KI-Stundenvorschlag steht bewusst genau hier: er BRAUCHT Ideenfeld, Fach,
+    // Klassenstufe, Stundentyp und Dauer (siehe aiLessonSuggest()) und FÜLLT Phasentabelle,
+    // Klafki und Meyer-Ampel, also die Schritte danach. Weiter vorn liefe er mit den
+    // Vorgabewerten, weiter hinten überschriebe er die eigene Arbeit.
+    moveNote: "Nutzt Ideenfeld und Rahmen und füllt Phasentabelle, Klafki-Reflexion und Meyer-Ampel – am besten jetzt, bevor du diese Schritte selbst ausfüllst.",
+    filled: () => !!$("lessonIdeas").value.trim(),
+    warn: () => null,
+  },
+  {
     title: "Ziele der Stunde",
     cards: ["lernziele"],
-    hint: "Was sollen die Schüler:innen am Ende können? Aus Schülersicht formulieren – Bloom-Stufe und Phasenzuordnung ergänzen die Ziele nach unten hin.",
+    hint: "Was sollen die Schüler:innen am Ende können? Aus Schülersicht formulieren. Phasenzuordnung und „✨ Lernziele vorschlagen“ arbeiten mit den gespeicherten Phasen – beides gelingt besser, wenn der Verlauf (Schritt 4) schon steht; über die Schrittleiste kommst du jederzeit hierher zurück.",
     filled: () => lessonZiele.some((z) => (z.text || "").trim()),
     warn: () => {
       const mitText = lessonZiele.filter((z) => (z.text || "").trim());
@@ -7534,15 +7562,15 @@ const WIZ_STEPS = [
   {
     title: "Tafel & Hefter",
     cards: ["tafelbild", "hefter"],
-    hint: "Was während der Stunde an die Tafel kommt – und was am Ende tatsächlich im Hefter der Schüler:innen steht.",
+    hint: "Was während der Stunde an die Tafel kommt. Der Heftereintrag hält fest, was die Schüler:innen tatsächlich geschrieben haben – den trägst du üblicherweise erst nach der Stunde nach.",
     filled: () => !!($("tafelbildEingabe").value.trim() || $("tafelbildNotiz").value.trim()
       || $("hefteintrag").value.trim() || (lessonTafelbild.bloecke || []).length || lessonTafelbildBildId),
     warn: () => null,
   },
   {
     title: "Reflexion & Abschluss",
-    cards: ["reflexion"],
-    hint: "Zum Schluss prüfen, ob die geplante Stunde didaktisch (Klafki) und methodisch (Meyer) trägt – und die Stunde speichern.",
+    cards: ["reflexion"], move: ["lessonTodoRow"], moveFirst: true,
+    hint: "Zum Schluss prüfen, ob die geplante Stunde didaktisch (Klafki) und methodisch (Meyer) trägt – und die Stunde speichern. Was bis dahin noch vorzubereiten ist, kommt als To-do auf die Startseite.",
     filled: () => ["klafki1", "klafki2", "klafki3", "klafki4", "klafki5"].some((id) => $(id).value.trim())
       || readMeyerGrid("meyerPlanGrid").some((v) => v),
     warn: () => null,
@@ -7655,8 +7683,17 @@ function wizRenderStep() {
   if (extras.length) {
     const box = document.createElement("div");
     box.className = "wiz-extra";
+    if (step.moveNote) {
+      const note = document.createElement("p");
+      note.className = "muted small wiz-extra-note";
+      note.textContent = step.moveNote;
+      box.appendChild(note);
+    }
     extras.forEach((el) => { box.appendChild(el); wizMoved.push(el); });
-    host.appendChild(box);
+    // moveFirst, wo die Karte des Schritts mit einer Aktion endet (Reflexion → "Stunde
+    // speichern"): der Speichern-Knopf soll das Letzte im Schritt bleiben.
+    if (step.moveFirst) host.insertBefore(box, host.firstChild);
+    else host.appendChild(box);
   }
   $("wizCount").textContent = `Schritt ${wizStep + 1} von ${WIZ_STEPS.length}`;
   $("wizTitle").textContent = step.title;
@@ -7677,8 +7714,11 @@ function wizGoTo(i, scroll) {
   const btn = $("wizSteps").querySelector(`[data-wiz-go="${i}"]`);
   if (btn && btn.scrollIntoView) btn.scrollIntoView({ inline: "center", block: "nearest" });
   if (scroll !== false) {
+    // Im Fokusmodus ist der Assistent selbst der Scroll-Container (position:fixed) —
+    // scrollIntoView auf sich selbst bewirkt dort nichts.
     const top = $("stundeWizard");
-    if (top && top.scrollIntoView) top.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (wizFocus) top.scrollTop = 0;
+    else if (top && top.scrollIntoView) top.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 }
 
@@ -7693,6 +7733,24 @@ function storePlanMode(ctx, mode) {
 // Autosave legt die Stunde im Hintergrund an und wuerde den Kontext sonst mitten in der
 // Planung einer neuen Stunde auf "edit" kippen.
 function planWizardContext() { return lessonFormOpenedAsNew ? "new" : "edit"; }
+
+// Fokusmodus: derselbe Assistent, nur bildschirmfuellend. Gilt nur im Assistenten —
+// in der Vollansicht gaebe es nichts zu fokussieren, dort wird er still abgeschaltet.
+let wizFocus = false;
+function setPlanFocus(on, remember) {
+  if (!$("stundeWizard")) return;
+  wizFocus = !!on && wizOn;
+  $("stundeWizard").classList.toggle("wiz-focus", wizFocus);
+  document.body.classList.toggle("plan-focus", wizFocus);
+  $("wizFocusBar").classList.toggle("hidden", !wizFocus);
+  $("planModeFocus").classList.toggle("active", wizFocus);
+  $("planModeFocus").setAttribute("aria-pressed", String(wizFocus));
+  if (wizFocus) $("stundeWizard").scrollTop = 0;
+  if (remember) { try { localStorage.setItem(PLAN_FOCUS_KEY, wizFocus ? "1" : "0"); } catch (e) { /* egal */ } }
+}
+function readPlanFocus() {
+  try { return localStorage.getItem(PLAN_FOCUS_KEY) === "1"; } catch (e) { return false; }
+}
 
 function setPlanMode(mode, remember) {
   if (!$("stundeWizard")) return;
@@ -7712,12 +7770,13 @@ function setPlanMode(mode, remember) {
     const status = $("lessonSaveStatus");
     if (status) $("wizNavNote").parentNode.insertBefore(status, $("wizNext"));
     const hint = $("editHint");
-    if (hint) $("stundeWizard").insertBefore(hint, $("stundeWizard").firstChild);
+    if (hint) $("stundeWizard").insertBefore(hint, $("wizSteps"));
   } else {
     wizClearHost();
     wizSendHome($("lessonSaveStatus"));
     wizSendHome($("editHint"));
   }
+  setPlanFocus(wizOn && readPlanFocus(), false);
   if (remember) storePlanMode(planWizardContext(), mode);
 }
 
@@ -7741,4 +7800,14 @@ function initPlanWizard() {
   $("planModeFull").onclick = () => setPlanMode("full", true);
   $("wizPrev").onclick = () => wizGoTo(wizStep - 1);
   $("wizNext").onclick = () => wizGoTo(wizStep + 1);
+  $("planModeFocus").onclick = () => setPlanFocus(!wizFocus, true);
+  $("wizFocusExit").onclick = () => setPlanFocus(false, true);
+  // Esc verlaesst den Fokusmodus — aber nur, wenn nichts darueber liegt: ein offener
+  // Dialog oder der Bildschirmschoner haben ihre eigenen Esc-Handler und gehen vor.
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape" || !wizFocus) return;
+    if (document.querySelector("#modalRoot .modal-overlay")) return;
+    if ($("screensaver") && !$("screensaver").classList.contains("hidden")) return;
+    setPlanFocus(false, true);
+  });
 }

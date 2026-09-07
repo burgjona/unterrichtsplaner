@@ -31,3 +31,18 @@ def test_hefter_todo_dedup_by_lesson(client, auth):
     # zweite Anlage für dieselbe Stunde ist idempotent, kein 500
     b = client.post("/api/todos", json=payload)
     assert b.status_code == 201 and b.json()["id"] == a.json()["id"]
+
+
+def test_todo_kann_an_stunde_haengen(client, auth):
+    """Planungs-To-dos aus der Unterrichtsplanung hängen an der Stunde (Migration 065)."""
+    les = client.post("/api/lessons", json={"title": "Kurzgeschichte", "subject": "Deutsch", "grade": 8}).json()
+    a = client.post("/api/todos", json={"text": "AB kopieren", "lessonId": les["id"]})
+    assert a.status_code == 201 and a.json()["lessonId"] == les["id"]
+    # Mehrere To-dos zur selben Stunde sind erlaubt – anders als beim Hefter-To-do.
+    b = client.post("/api/todos", json={"text": "Hörbeispiel suchen", "lessonId": les["id"]})
+    assert b.status_code == 201 and b.json()["id"] != a.json()["id"]
+    assert {t["id"] for t in client.get("/api/todos").json()} == {a.json()["id"], b.json()["id"]}
+
+
+def test_todo_ohne_stunde_bleibt_moeglich(client, auth):
+    assert client.post("/api/todos", json={"text": "Elternbrief"}).json()["lessonId"] is None
