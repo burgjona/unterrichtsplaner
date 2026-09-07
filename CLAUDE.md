@@ -41,6 +41,10 @@ Dev-Preview: `.claude/launch.json` (uvicorn auf 8097). Pflicht-ENV ab M2: `APP_S
   die nur angemeldet). Auth = serverseitige Session, HttpOnly-Cookie `ldb_session`.
 - **Umlaute (ä/ö/ü/ß) überall erhalten** — UI, DB, Dateinamen, Exporte; nie transliterieren.
   Download-Header: ASCII-Fallback + RFC-5987 `filename*`.
+- **Unterrichtsplanung hat zwei Ansichten**: Vollansicht und geführter Assistent (`WIZ_STEPS`
+  in `web/app.js`). Der Assistent baut kein zweites Formular, sondern hängt dieselben Karten
+  in `#wizCards` um und zurück — jede neue Karte in `#stunde` braucht daher
+  `data-wizard-card="…"` und einen Eintrag in `WIZ_STEPS`, sonst fehlt sie dort.
 - **Mobile-CSS nur in `@media`-Blöcken** (Breakpoints 1080/920/600); Desktop-Layout nie
   verändern; kein horizontales Scrollen.
 - **Secrets nie im Klartext committen**: ENV-Variablen; Anthropic-API-Key AES-256-GCM in

@@ -1419,3 +1419,91 @@ body.cmd-open { overflow:hidden; }
   .tt-grid.tt-edge-left > [data-tt-wd],
   .tt-grid.tt-edge-right > [data-tt-wd] { animation:none; }
 }
+
+/* ===== U35: Geführter Planungsassistent (Unterrichtsplanung) ======================
+   Rein additiv. Der Assistent baut KEINE zweite Oberflaeche, sondern haengt dieselben
+   .card-Bloecke schrittweise in #wizCards um — deshalb braucht es hier nur die Huelle
+   (Umschalter, Schrittleiste, Kopf, Navigation) und ein paar Sichtbarkeitsregeln.
+   Mobile Anpassungen ausschliesslich in den @media-Bloecken darunter. */
+.plan-mode { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:0 0 14px; }
+.plan-mode-label { color:var(--muted); font-size:13px; font-weight:var(--fw-bold); }
+.plan-mode-btn {
+  border:1px solid var(--line); background:var(--surface); color:var(--primary-dark);
+  padding:8px 16px; border-radius:999px; cursor:pointer;
+  font-family:inherit; font-weight:var(--fw-heavy); font-size:14px;
+}
+.plan-mode-btn:hover { background:var(--surface-2); }
+.plan-mode-btn.active { background:var(--primary); color:#fff; border-color:var(--primary); }
+
+/* Im Assistenten bleiben die beiden Spalten (leer) und der Ideenfeld-Hinweis stehen —
+   beides wuerde nur stoeren, also ausblenden. */
+#stunde.wizard-on > .v2col { display:none; }
+#stunde.wizard-on > .ai-box { display:none; }
+
+.wizard { margin-bottom:14px; }
+.wiz-steps {
+  list-style:none; margin:0 0 14px; padding:0 0 4px;
+  display:flex; gap:8px; overflow-x:auto; -webkit-overflow-scrolling:touch;
+}
+.wiz-steps > li { flex:0 0 auto; }
+.wiz-step-btn {
+  display:flex; align-items:center; gap:8px; white-space:nowrap; cursor:pointer;
+  border:1px solid var(--line); background:var(--surface); color:var(--muted);
+  border-radius:999px; padding:7px 14px 7px 7px;
+  font-family:inherit; font-size:13px; font-weight:var(--fw-bold);
+}
+.wiz-step-btn:hover { background:var(--surface-2); }
+.wiz-step-num {
+  width:23px; height:23px; border-radius:50%; flex-shrink:0;
+  display:flex; align-items:center; justify-content:center;
+  background:var(--surface-2); color:var(--primary-dark);
+  font-size:12px; font-weight:var(--fw-heavy);
+}
+.wiz-step-btn.is-done { color:var(--primary-dark); }
+.wiz-step-btn.is-done .wiz-step-num { background:var(--badge-ok-bg); color:var(--badge-ok-text); }
+.wiz-step-btn.has-warn .wiz-step-num { background:var(--badge-warn-bg); color:var(--badge-warn-text); }
+.wiz-step-btn.is-current {
+  background:var(--primary); color:#fff; border-color:var(--primary);
+}
+.wiz-step-btn.is-current .wiz-step-num { background:rgba(255,255,255,0.26); color:#fff; }
+
+.wiz-head { margin:0 0 12px; }
+.wiz-count {
+  display:inline-block; margin-bottom:6px; padding:3px 10px; border-radius:999px;
+  background:var(--surface-2); color:var(--primary-dark);
+  font-size:12px; font-weight:var(--fw-heavy); letter-spacing:.02em;
+}
+.wiz-head h3 { margin:0 0 4px; }
+.wiz-head p { margin:0; }
+.wiz-warn {
+  margin-top:8px !important; padding:8px 12px; border-radius:var(--radius-sm);
+  background:var(--note-bg); border:1px solid var(--note-border); color:var(--note-text);
+  font-size:13.5px; font-weight:var(--fw-bold);
+}
+
+.wiz-nav {
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  margin-top:14px; padding-top:12px; border-top:1px solid var(--line);
+}
+.wiz-nav-note { flex:1 1 auto; min-width:0; color:var(--muted); font-size:13px; }
+.wiz-nav .btn { flex:0 0 auto; }
+/* Einzelne Bedienelemente, die im Assistenten an einem anderen Schritt gebraucht werden
+   als in der Vollansicht (z. B. der KI-Stundenvorschlag beim Ideenfeld). */
+.wiz-extra { display:flex; flex-wrap:wrap; gap:10px; margin-top:12px; }
+
+/* U35 mobil: die Schrittleiste scrollt in sich selbst (kein Seiten-Scroll), die
+   Navigation wird zur Doppelspalte. Im Assistenten zeigt jeder Schritt ohnehin nur
+   seine eigenen Karten — die mobile Einklapp-Mechanik wuerde den Schritt leer
+   erscheinen lassen und wird darum hier aufgehoben. */
+@media (max-width: 600px) {
+  .plan-mode { gap:6px; }
+  .plan-mode-label { flex:0 0 100%; }
+  .plan-mode-btn { flex:1 1 calc(50% - 3px); padding:9px 10px; font-size:13.5px; }
+  .wiz-steps { margin-bottom:12px; gap:6px; }
+  .wiz-step-btn { font-size:12.5px; padding:6px 12px 6px 6px; }
+  .wiz-nav-note { flex:0 0 100%; order:3; }
+  .wiz-nav .btn { flex:1 1 calc(50% - 5px); }
+  #stunde.wizard-on [data-mob-collapse] .card-collapse { display:none; }
+  #stunde.wizard-on [data-mob-collapse].is-collapsed .card-collapse-body { display:block; }
+  #stunde.wizard-on [data-mob-collapse].is-collapsed { padding-bottom:18px; }
+}

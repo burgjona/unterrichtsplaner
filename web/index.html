@@ -575,9 +575,35 @@
       </div>
       <div id="stundeTiles"></div>
 
+      <!-- U35: Geführter Planungsassistent. Es gibt KEIN zweites Formular — der Assistent
+           hängt dieselben Karten aus .v2col schrittweise in #wizCards um. Dadurch bleiben
+           alle Feld-IDs, der Autosave (Event-Delegation auf #stunde), die KI-Buttons und
+           die Offline-Synchronisation unverändert gültig. -->
+      <div class="plan-mode" role="group" aria-label="Ansicht der Unterrichtsplanung">
+        <span class="plan-mode-label">Ansicht:</span>
+        <button type="button" class="plan-mode-btn" id="planModeWizard" aria-pressed="false">Geführter Assistent</button>
+        <button type="button" class="plan-mode-btn active" id="planModeFull" aria-pressed="true">Vollansicht</button>
+      </div>
+
+      <div id="stundeWizard" class="wizard hidden">
+        <ol class="wiz-steps" id="wizSteps"></ol>
+        <div class="wiz-head">
+          <span class="wiz-count" id="wizCount"></span>
+          <h3 id="wizTitle"></h3>
+          <p class="muted small" id="wizHint"></p>
+          <p class="wiz-warn hidden" id="wizWarn"></p>
+        </div>
+        <div id="wizCards"></div>
+        <div class="wiz-nav">
+          <button type="button" class="btn secondary" id="wizPrev">← Zurück</button>
+          <span class="wiz-nav-note" id="wizNavNote"></span>
+          <button type="button" class="btn" id="wizNext">Weiter →</button>
+        </div>
+      </div>
+
       <div class="v2col">
       <div class="vcol">
-      <div class="card ord-4">
+      <div class="card ord-4" data-wizard-card="stammdaten">
         <h3>Unterrichtsplanung</h3>
         <div id="editHint" class="note-box hidden" style="margin-bottom:10px;">
           Bearbeite: <strong id="editHintTitle"></strong>
@@ -631,7 +657,7 @@
         </div>
       </div>
 
-      <div class="card ord-5">
+      <div class="card ord-5" data-wizard-card="lernziele">
         <h3>Lernziele (SMART, Bloom-Taxonomie)</h3>
         <p class="muted small">Grobziel(e) und Feinziele der Stunde. Feinziele lassen sich einer Phase zuordnen – so ist nachweisbar, an welcher Stelle der Stunde welches Ziel erreicht wird (ASUV-Nachweis). Faustregel: pro 45 Min. 1 Grobziel + mind. 2 Feinziele.</p>
         <div id="lernzieleList"></div>
@@ -641,7 +667,7 @@
         </div>
       </div>
 
-      <div class="card ord-6">
+      <div class="card ord-6" data-wizard-card="phasen">
         <h3>Phasentabelle</h3>
         <p class="muted small">Die angegebene Stundendauer (45 oder 90 Min.) wird exakt verplant. Phasen lassen sich ergänzen und benennen – nach einer Sicherung darf eine weitere Erarbeitung folgen (Erarbeitung II, Sicherung II …). Die römische Nummerierung erscheint automatisch, sobald eine Bezeichnung mehrfach vorkommt.</p>
         <div id="phases"></div>
@@ -651,7 +677,7 @@
         </div>
       </div>
 
-      <div class="card ord-10" data-mob-collapse>
+      <div class="card ord-10" data-mob-collapse data-wizard-card="reflexion">
         <h3>Abschließende didaktisch-methodische Reflexion (Klafki &amp; Meyer)</h3>
         <p class="muted small">Bewusst am Ende: Erst die Stunde konkret planen, dann prüfen, ob sie didaktisch und methodisch trägt.</p>
         <div class="phase" data-local-undo-block="klafki">
@@ -686,11 +712,11 @@
       </div>
 
       <div class="vcol">
-      <div class="card ord-2">
+      <div class="card ord-2" data-wizard-card="ideen">
         <h3>Ideenfeld</h3>
         <textarea id="lessonIdeas" rows="3" placeholder="z. B. Balladen szenisch erschließen, Hörbeispiel als Einstieg, Gruppenarbeit mit Standbild ..."></textarea>
       </div>
-      <div class="card ord-3">
+      <div class="card ord-3" data-wizard-card="material">
         <h3>Zusätzliches Material</h3>
         <p class="muted small">Für Vertretungsstunden oder Einzelfälle: Lehrplan-Ausschnitte oder Materialien anderer Fächer (z. B. Mathe, Physik) hochladen, die als Grundlage für diese Stunde dienen sollen. Wird beim Speichern der Stunde verknüpft.</p>
         <div id="lessonMaterials" class="file-list" style="margin-bottom:8px;"></div>
@@ -700,7 +726,7 @@
         </div>
         <button class="btn small" id="lessonMatUpload" style="margin-top:6px;">Hochladen &amp; verknüpfen</button>
       </div>
-      <div class="card ord-7" data-mob-collapse>
+      <div class="card ord-7" data-mob-collapse data-wizard-card="bibox">
         <h3>Lehrbuch-Referenz (BiBox)</h3>
         <p class="muted small">Reine Referenz, kein Upload von Verlagsmaterial (aus Lizenzgründen).</p>
         <div class="row-3">
@@ -709,7 +735,7 @@
           <div><label for="biboxNotiz">Notiz</label><input id="biboxNotiz" placeholder="z. B. Aufgabe 3 als Einstieg nutzen" /></div>
         </div>
       </div>
-      <div class="card ord-8" data-mob-collapse>
+      <div class="card ord-8" data-mob-collapse data-wizard-card="tafelbild">
         <h3>Tafelbild</h3>
         <p class="muted small">Trage ein, was während der Stunde an die Tafel soll – die KI schlägt daraus ein gegliedertes Tafelbild vor.</p>
         <label for="tafelbildEingabe">Was soll an die Tafel? (Freitext)</label>
@@ -732,7 +758,7 @@
           <textarea id="tafelbildNotiz" placeholder="Eigene Ergänzungen zum Tafelbild ..."></textarea>
         </div>
       </div>
-      <div class="card ord-9">
+      <div class="card ord-9" data-wizard-card="hefter">
         <h3>Heftereintrag der SuS</h3>
         <p class="muted small">Was die Schüler:innen tatsächlich in ihren Hefter geschrieben haben – bewusst getrennt vom Tafelbild. Übergreifend sichtbar in der Klassen-Detailansicht unter „Hefter der SuS".</p>
         <textarea id="hefteintrag" placeholder="z. B. Merkmale der Kurzgeschichte, Hausaufgabe S. 44 Nr. 3, AB „Erste Eindrücke" eingeklebt ..."></textarea>

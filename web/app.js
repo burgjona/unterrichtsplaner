@@ -587,6 +587,7 @@ function clearLessonForm() {
   pendingCalendarEntryLink = null;
   updateSozialformMonotonyHint();   // Klasse gerade zurückgesetzt → blendet den Hinweis aus
   resetLocalUndo();   // andere/neue Stunde geladen – alte Block-Snapshots (Phasen, Klafki, Lernziele) wären falsch.
+  planWizardOnFormReset();   // U35: Assistent beginnt wieder bei Schritt 1
 }
 
 // U30: Aus dem Termin-Bearbeiten-Fenster heraus in die Unterrichtsplanung springen und
@@ -610,6 +611,7 @@ function planLessonFromCalendarEntry(e) {
   updateLessonLbOptions(null);
   updateSozialformMonotonyHint();
   pendingCalendarEntryLink = e.id;
+  planWizardApplyContext(true);   // U35
 }
 
 /* ---------- Bearbeitungsmodus Unterrichtsplanung ---------- */
@@ -637,6 +639,7 @@ function lessonSetStatus(text) {
 }
 
 function scheduleLessonAutosave() {
+  planWizardRefresh();   // U35: Haken/Hinweise der Schrittleiste mitziehen
   if (!$("lessonTitle").value.trim()) {
     if (lessonAutosaveTimer) { clearTimeout(lessonAutosaveTimer); lessonAutosaveTimer = null; }
     lessonSetStatus("");
@@ -804,6 +807,7 @@ function loadLessonIntoForm(l) {
   updateLessonLbOptions(l.lernbereichId ?? null);
   updateLessonSeqOptions();
   loadLessonMaterials(l.id);
+  planWizardApplyContext(false);   // U35: Bearbeiten öffnet standardmäßig die Vollansicht
 }
 
 // Stunde duplizieren: alle Felder wie beim Bearbeiten übernehmen, aber ohne die bestehende
@@ -4920,7 +4924,7 @@ async function saveLesson() {
     await applyPendingLessonLinks(saved, body);
     const wasNew = lessonFormOpenedAsNew;
     resetLessonEditState();
-    clearLessonForm(); await refresh();
+    clearLessonForm(); planWizardApplyContext(true); await refresh();   // U35: leeres Formular = neue Stunde
     toast(wasNew ? "Stunde gespeichert." : "Stunde aktualisiert.");
   } catch (e) { toast(e.message, false); }
 }
@@ -6238,6 +6242,7 @@ function showView(view) {
   // Verlässt man die Klassen-Ansicht mit offenem Bearbeiten-Modus, den Update-Modus
   // zurücksetzen – sonst würde ein späteres "Klasse speichern" versehentlich updaten.
   if (view !== "klassen" && editingClassId) resetClassForm();
+  if (view === "stunde") planWizardApplyContext(lessonFormOpenedAsNew);   // U35
   if (view === "settings") loadSettings();
   if (view === "kalender") { ensureGoogleStatus(); maybeAutoSyncOnOpen(); }  // U21/U24: Status + Auto-Sync (A)
   if (view === "stundenplan") ttShow();  // U28: vormals eigener Klick-Listener in stundenplan.js
@@ -6853,7 +6858,7 @@ function wireEvents() {
   $("spNewBtn").onclick = () => getSeatPlanModule().then((m) => m.initSeatPlan());
   $("spAiBtn").onclick = () => getSeatPlanModule().then((m) => m.aiArrangeSeats());
   $("saveLesson").onclick = saveLesson;
-  $("cancelEditBtn").onclick = () => { resetLessonEditState(); clearLessonForm(); toast("Formular geleert – neue Stunde."); };
+  $("cancelEditBtn").onclick = () => { resetLessonEditState(); clearLessonForm(); planWizardApplyContext(true); toast("Formular geleert – neue Stunde."); };
   // Autosave-Trigger per Delegation statt Einzel-Listener je Feld (Formular ist groß und Phasen/
   // Lernziele werden dynamisch nachgerendert). Ideenfeld/Material/To-do-Eingabe ausgenommen –
   // die gehören nicht zum lessons-Datensatz, den saveLesson()/buildLessonBody() speichert.
@@ -7284,6 +7289,7 @@ function initMobileCollapse() {
 async function init() {
   wireEvents();
   initMobileCollapse();
+  initPlanWizard();   // U35: gefuehrter Planungsassistent (nach dem Karten-Umbau oben)
   initOfflineSupport();  // U23: Service Worker + Offline-Banner
   try {
     await startApp();  // vorhandene Session?
@@ -7458,3 +7464,281 @@ SyncEngine.onChange(async (entityType) => {
   await renderWeekOverview();
   renderCalendar();
 });
+
+/* ===== U35: Geführter Planungsassistent (Unterrichtsplanung) ========================
+   Der Assistent ist KEIN zweites Formular. Er haengt dieselben Karten aus #stunde
+   schrittweise in #wizCards um und schickt sie danach an ihren Platz zurueck; die
+   nicht sichtbaren Karten bleiben dabei im DOM (.v2col ist im Assistenten nur per CSS
+   ausgeblendet). Damit gelten alle Feld-IDs, der delegierte Autosave, die KI-Buttons,
+   buildLessonBody() und die Offline-Synchronisation unveraendert weiter — es gibt
+   keinen zweiten Datenpfad, der auseinanderlaufen koennte.
+   Der Platz einer Karte wird beim ersten Start durch einen Kommentarknoten markiert
+   (wizHome), damit die Rueckgabe unabhaengig von der Reihenfolge exakt stimmt. */
+
+const PLAN_MODE_KEYS = { new: "ldb_plan_mode_new", edit: "ldb_plan_mode_edit" };
+const PLAN_MODE_DEFAULT = { new: "wizard", edit: "full" };   // vom Projektleiter so festgelegt
+
+// filled(): Schritt inhaltlich bearbeitet → Haken in der Schrittleiste.
+// warn():   Hinweis (nie blockierend) → gelbe Markierung + Text im Schrittkopf.
+const WIZ_STEPS = [
+  {
+    title: "Idee & Impulse",
+    cards: ["ideen"], move: ["aiPlanBtn"],
+    hint: "Optionaler Einstieg: lose Gedanken, Impulse, Materialideen. Aus dem Ideenfeld erzeugt die KI auf Wunsch einen kompletten Stundenvorschlag (Titel, Klafki, Meyer-Ampel, Phasen) – die folgenden Schritte dienen dann dem Prüfen und Anpassen.",
+    filled: () => !!$("lessonIdeas").value.trim(),
+    warn: () => null,
+  },
+  {
+    title: "Rahmen der Stunde",
+    cards: ["stammdaten"],
+    hint: "Thema, Fach, Klasse, Stundentyp, Datum und Dauer. Mit Datum erscheint die Stunde automatisch im Kalender; über Lernbereich und Sequenzplan hängt sie an der Jahresplanung.",
+    filled: () => !!$("lessonTitle").value.trim(),
+    warn: () => ($("lessonTitle").value.trim() ? null : "Ohne Titel/Thema lässt sich die Stunde nicht speichern."),
+  },
+  {
+    title: "Ziele der Stunde",
+    cards: ["lernziele"],
+    hint: "Was sollen die Schüler:innen am Ende können? Aus Schülersicht formulieren – Bloom-Stufe und Phasenzuordnung ergänzen die Ziele nach unten hin.",
+    filled: () => lessonZiele.some((z) => (z.text || "").trim()),
+    warn: () => {
+      const mitText = lessonZiele.filter((z) => (z.text || "").trim());
+      if (!mitText.length) return null;
+      if (!mitText.some((z) => z.kind === "grob")) return "Noch kein Grobziel formuliert – bisher nur Feinziele.";
+      if (mitText.filter((z) => z.kind === "fein").length < 2) return "Weniger als zwei Feinziele – für den ASUV-Nachweis meist zu wenig.";
+      return null;
+    },
+  },
+  {
+    title: "Verlauf der Stunde",
+    cards: ["phasen"],
+    hint: "Der Ablauf in Phasen: Zeit, Sozialform, Methode, Medien sowie Lehrer- und Schülertätigkeit. Aus dieser Tabelle entsteht später die ASUV-Verlaufsplanung.",
+    filled: () => { const p = wizPhaseSum(); return p.sum > 0; },
+    warn: () => {
+      const { sum, duration } = wizPhaseSum();
+      if (!sum) return null;
+      if (sum === duration) return null;
+      return sum < duration
+        ? `Noch ${duration - sum} Min. zu verplanen (${sum} von ${duration} Min.).`
+        : `${sum - duration} Min. zu viel verplant (${sum} von ${duration} Min.).`;
+    },
+  },
+  {
+    title: "Material & Lehrbuch",
+    cards: ["material", "bibox"],
+    hint: "Zusätzliche Dateien für diese Stunde (z. B. Lehrplanausschnitte, Material anderer Fächer) und die Lehrbuch-Referenz. Beides ist optional.",
+    filled: () => ["biboxWerk", "biboxSeite", "biboxNotiz"].some((id) => $(id).value.trim())
+      || !!$("lessonMaterials").querySelector(".file-chip")
+      || !!pendingLessonMaterialFile,
+    warn: () => null,
+  },
+  {
+    title: "Tafel & Hefter",
+    cards: ["tafelbild", "hefter"],
+    hint: "Was während der Stunde an die Tafel kommt – und was am Ende tatsächlich im Hefter der Schüler:innen steht.",
+    filled: () => !!($("tafelbildEingabe").value.trim() || $("tafelbildNotiz").value.trim()
+      || $("hefteintrag").value.trim() || (lessonTafelbild.bloecke || []).length || lessonTafelbildBildId),
+    warn: () => null,
+  },
+  {
+    title: "Reflexion & Abschluss",
+    cards: ["reflexion"],
+    hint: "Zum Schluss prüfen, ob die geplante Stunde didaktisch (Klafki) und methodisch (Meyer) trägt – und die Stunde speichern.",
+    filled: () => ["klafki1", "klafki2", "klafki3", "klafki4", "klafki5"].some((id) => $(id).value.trim())
+      || readMeyerGrid("meyerPlanGrid").some((v) => v),
+    warn: () => null,
+  },
+];
+
+let wizOn = false;
+let wizStep = 0;
+let wizMoved = [];              // aktuell nach #wizCards umgehaengte Elemente
+const wizHome = new Map();      // Element → Kommentarknoten an seinem urspruenglichen Platz
+let wizHomeReady = false;
+
+// Summe der Phasenminuten ohne Seiteneffekte auf die Fehleranzeige der Phasentabelle
+// (validatePhaseTimes() schreibt zusaetzlich in #phaseTimeError und markiert Felder rot).
+function wizPhaseSum() {
+  syncPhasesFromDom();
+  return {
+    sum: lessonPhases.reduce((acc, p) => acc + (Number(p.minutes) || 0), 0),
+    duration: Number($("lessonDuration").value) || 45,
+  };
+}
+
+// Solange gar nichts eingetragen ist, sind Hinweise nur Laerm.
+function wizFormTouched() {
+  return !!(editingLessonId || $("lessonTitle").value.trim() || $("lessonIdeas").value.trim()
+    || lessonZiele.length);
+}
+function wizWarnOf(step) {
+  if (!wizFormTouched()) return null;
+  try { return step.warn ? step.warn() : null; } catch (e) { return null; }
+}
+function wizFilledOf(step) {
+  try { return step.filled ? !!step.filled() : false; } catch (e) { return false; }
+}
+
+function wizStepElements(step) {
+  const els = [];
+  (step.cards || []).forEach((key) => {
+    const el = document.querySelector(`#stunde [data-wizard-card="${key}"]`);
+    if (el) els.push(el);
+  });
+  (step.move || []).forEach((id) => { const el = $(id); if (el) els.push(el); });
+  return els;
+}
+
+function wizCaptureHome() {
+  if (wizHomeReady) return;
+  const all = WIZ_STEPS.flatMap(wizStepElements)
+    .concat([$("lessonSaveStatus"), $("editHint")].filter(Boolean));
+  all.forEach((el) => {
+    if (wizHome.has(el) || !el.parentNode) return;
+    const ph = document.createComment("wiz-home");
+    el.parentNode.insertBefore(ph, el);
+    wizHome.set(el, ph);
+  });
+  wizHomeReady = true;
+}
+function wizSendHome(el) {
+  const ph = wizHome.get(el);
+  if (ph && ph.parentNode) ph.parentNode.insertBefore(el, ph);
+}
+function wizClearHost() {
+  wizMoved.forEach(wizSendHome);
+  wizMoved = [];
+  const host = $("wizCards");
+  if (host) host.querySelectorAll(".wiz-extra").forEach((b) => b.remove());
+}
+
+function wizRenderRail() {
+  const rail = $("wizSteps");
+  if (!rail || rail.children.length === WIZ_STEPS.length) return;
+  rail.innerHTML = WIZ_STEPS.map((s, i) =>
+    `<li><button type="button" class="wiz-step-btn" data-wiz-go="${i}">` +
+    `<span class="wiz-step-num">${i + 1}</span><span>${esc(s.title)}</span></button></li>`).join("");
+  rail.querySelectorAll("[data-wiz-go]").forEach((btn) =>
+    (btn.onclick = () => wizGoTo(Number(btn.dataset.wizGo))));
+}
+
+function planWizardRefresh() {
+  if (!wizOn || !$("wizSteps")) return;
+  WIZ_STEPS.forEach((s, i) => {
+    const btn = $("wizSteps").querySelector(`[data-wiz-go="${i}"]`);
+    if (!btn) return;
+    const warn = wizWarnOf(s);
+    const done = wizFilledOf(s);
+    btn.classList.toggle("is-current", i === wizStep);
+    btn.classList.toggle("is-done", done && !warn);
+    btn.classList.toggle("has-warn", !!warn);
+    btn.querySelector(".wiz-step-num").textContent = warn ? "!" : (done ? "✓" : String(i + 1));
+    btn.title = warn || "";
+    if (i === wizStep) btn.setAttribute("aria-current", "step");
+    else btn.removeAttribute("aria-current");
+  });
+  const warn = wizWarnOf(WIZ_STEPS[wizStep]);
+  $("wizWarn").textContent = warn || "";
+  $("wizWarn").classList.toggle("hidden", !warn);
+}
+
+function wizRenderStep() {
+  const host = $("wizCards");
+  if (!host) return;
+  wizClearHost();
+  wizRenderRail();
+  const step = WIZ_STEPS[wizStep];
+  (step.cards || []).forEach((key) => {
+    const el = document.querySelector(`#stunde [data-wizard-card="${key}"]`);
+    if (el) { host.appendChild(el); wizMoved.push(el); }
+  });
+  const extras = (step.move || []).map((id) => $(id)).filter(Boolean);
+  if (extras.length) {
+    const box = document.createElement("div");
+    box.className = "wiz-extra";
+    extras.forEach((el) => { box.appendChild(el); wizMoved.push(el); });
+    host.appendChild(box);
+  }
+  $("wizCount").textContent = `Schritt ${wizStep + 1} von ${WIZ_STEPS.length}`;
+  $("wizTitle").textContent = step.title;
+  $("wizHint").textContent = step.hint;
+  const last = wizStep === WIZ_STEPS.length - 1;
+  $("wizPrev").disabled = wizStep === 0;
+  $("wizNext").classList.toggle("hidden", last);
+  $("wizNavNote").textContent = last
+    ? "Letzter Schritt – mit „Stunde speichern“ abschließen."
+    : "Eingaben werden laufend automatisch gesichert.";
+  planWizardRefresh();
+}
+
+function wizGoTo(i, scroll) {
+  if (i < 0 || i >= WIZ_STEPS.length) return;
+  wizStep = i;
+  wizRenderStep();
+  const btn = $("wizSteps").querySelector(`[data-wiz-go="${i}"]`);
+  if (btn && btn.scrollIntoView) btn.scrollIntoView({ inline: "center", block: "nearest" });
+  if (scroll !== false) {
+    const top = $("stundeWizard");
+    if (top && top.scrollIntoView) top.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+}
+
+function readPlanMode(ctx) {
+  try { return localStorage.getItem(PLAN_MODE_KEYS[ctx]) || PLAN_MODE_DEFAULT[ctx]; }
+  catch (e) { return PLAN_MODE_DEFAULT[ctx]; }
+}
+function storePlanMode(ctx, mode) {
+  try { localStorage.setItem(PLAN_MODE_KEYS[ctx], mode); } catch (e) { /* Storage evtl. blockiert */ }
+}
+// Kontext ist, WIE das Formular geoeffnet wurde – nicht, ob schon eine id existiert: der
+// Autosave legt die Stunde im Hintergrund an und wuerde den Kontext sonst mitten in der
+// Planung einer neuen Stunde auf "edit" kippen.
+function planWizardContext() { return lessonFormOpenedAsNew ? "new" : "edit"; }
+
+function setPlanMode(mode, remember) {
+  if (!$("stundeWizard")) return;
+  wizOn = mode === "wizard";
+  $("stunde").classList.toggle("wizard-on", wizOn);
+  $("stundeWizard").classList.toggle("hidden", !wizOn);
+  $("planModeWizard").classList.toggle("active", wizOn);
+  $("planModeWizard").setAttribute("aria-pressed", String(wizOn));
+  $("planModeFull").classList.toggle("active", !wizOn);
+  $("planModeFull").setAttribute("aria-pressed", String(!wizOn));
+  if (wizOn) {
+    wizCaptureHome();
+    wizRenderStep();
+    // Zwei Elemente gehoeren im Assistenten in JEDEN Schritt statt in ihre Karte:
+    // die Autosave-Anzeige (steckt sonst in der Reflexionskarte, also im letzten Schritt)
+    // und der Bearbeiten-Hinweis samt "Stunde loeschen" (sonst nur im Rahmen-Schritt).
+    const status = $("lessonSaveStatus");
+    if (status) $("wizNavNote").parentNode.insertBefore(status, $("wizNext"));
+    const hint = $("editHint");
+    if (hint) $("stundeWizard").insertBefore(hint, $("stundeWizard").firstChild);
+  } else {
+    wizClearHost();
+    wizSendHome($("lessonSaveStatus"));
+    wizSendHome($("editHint"));
+  }
+  if (remember) storePlanMode(planWizardContext(), mode);
+}
+
+// Neue Stunde → Assistent, Bearbeiten → Vollansicht (jeweils ueberschrieben von der
+// zuletzt getroffenen Wahl im selben Kontext).
+function planWizardApplyContext(isNew) {
+  if (!$("stundeWizard")) return;
+  const ctx = isNew ? "new" : "edit";
+  setPlanMode(readPlanMode(ctx), false);
+}
+// Formular geleert (neue Stunde): wieder bei Schritt 1 beginnen.
+function planWizardOnFormReset() {
+  wizStep = 0;
+  if (wizOn) wizRenderStep();
+}
+
+function initPlanWizard() {
+  if (!$("stundeWizard")) return;
+  wizRenderRail();
+  $("planModeWizard").onclick = () => setPlanMode("wizard", true);
+  $("planModeFull").onclick = () => setPlanMode("full", true);
+  $("wizPrev").onclick = () => wizGoTo(wizStep - 1);
+  $("wizNext").onclick = () => wizGoTo(wizStep + 1);
+}
