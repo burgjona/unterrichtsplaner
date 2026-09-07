@@ -583,13 +583,15 @@
         <span class="plan-mode-label">Ansicht:</span>
         <button type="button" class="plan-mode-btn" id="planModeWizard" aria-pressed="false">Geführter Assistent</button>
         <button type="button" class="plan-mode-btn active" id="planModeFull" aria-pressed="true">Vollansicht</button>
-        <button type="button" class="plan-mode-btn plan-focus-btn" id="planModeFocus" aria-pressed="false" title="Alles ausblenden, was nicht zur Planung dieser Stunde gehört">Fokus</button>
       </div>
 
+      <!-- U35b: Der Assistent ist immer im Fokusmodus (bildschirmfüllend) — kein eigener
+           Umschalter mehr. "Vollansicht" hier ist der einzige Weg zurück, solange der
+           Assistent die Seite überdeckt. -->
       <div id="stundeWizard" class="wizard hidden">
-        <div class="wiz-focus-bar hidden" id="wizFocusBar">
-          <span class="wiz-focus-title">Fokus · Unterrichtsplanung</span>
-          <button type="button" class="btn small secondary" id="wizFocusExit">Fokus beenden (Esc)</button>
+        <div class="wiz-focus-bar" id="wizFocusBar">
+          <span class="wiz-focus-title">Geführter Assistent</span>
+          <button type="button" class="btn small secondary" id="wizFocusExit">Vollansicht (Esc)</button>
         </div>
         <ol class="wiz-steps" id="wizSteps"></ol>
         <div class="wiz-head">

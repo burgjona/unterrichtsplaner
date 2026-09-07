@@ -7498,7 +7498,6 @@ SyncEngine.onChange(async (entityType) => {
    (wizHome), damit die Rueckgabe unabhaengig von der Reihenfolge exakt stimmt. */
 
 const PLAN_MODE_KEYS = { new: "ldb_plan_mode_new", edit: "ldb_plan_mode_edit" };
-const PLAN_FOCUS_KEY = "ldb_plan_focus";
 const PLAN_MODE_DEFAULT = { new: "wizard", edit: "full" };   // vom Projektleiter so festgelegt
 
 // filled(): Schritt inhaltlich bearbeitet → Haken in der Schrittleiste.
@@ -7713,13 +7712,10 @@ function wizGoTo(i, scroll) {
   wizRenderStep();
   const btn = $("wizSteps").querySelector(`[data-wiz-go="${i}"]`);
   if (btn && btn.scrollIntoView) btn.scrollIntoView({ inline: "center", block: "nearest" });
-  if (scroll !== false) {
-    // Im Fokusmodus ist der Assistent selbst der Scroll-Container (position:fixed) —
-    // scrollIntoView auf sich selbst bewirkt dort nichts.
-    const top = $("stundeWizard");
-    if (wizFocus) top.scrollTop = 0;
-    else if (top && top.scrollIntoView) top.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
+  // Der Assistent ist immer im Fokusmodus und damit selbst der Scroll-Container
+  // (position:fixed) — scrollIntoView auf sich selbst bewirkt dort nichts, stattdessen
+  // direkt nach oben springen.
+  if (scroll !== false) $("stundeWizard").scrollTop = 0;
 }
 
 function readPlanMode(ctx) {
@@ -7734,29 +7730,16 @@ function storePlanMode(ctx, mode) {
 // Planung einer neuen Stunde auf "edit" kippen.
 function planWizardContext() { return lessonFormOpenedAsNew ? "new" : "edit"; }
 
-// Fokusmodus: derselbe Assistent, nur bildschirmfuellend. Gilt nur im Assistenten —
-// in der Vollansicht gaebe es nichts zu fokussieren, dort wird er still abgeschaltet.
-let wizFocus = false;
-function setPlanFocus(on, remember) {
-  if (!$("stundeWizard")) return;
-  wizFocus = !!on && wizOn;
-  $("stundeWizard").classList.toggle("wiz-focus", wizFocus);
-  document.body.classList.toggle("plan-focus", wizFocus);
-  $("wizFocusBar").classList.toggle("hidden", !wizFocus);
-  $("planModeFocus").classList.toggle("active", wizFocus);
-  $("planModeFocus").setAttribute("aria-pressed", String(wizFocus));
-  if (wizFocus) $("stundeWizard").scrollTop = 0;
-  if (remember) { try { localStorage.setItem(PLAN_FOCUS_KEY, wizFocus ? "1" : "0"); } catch (e) { /* egal */ } }
-}
-function readPlanFocus() {
-  try { return localStorage.getItem(PLAN_FOCUS_KEY) === "1"; } catch (e) { return false; }
-}
-
 function setPlanMode(mode, remember) {
   if (!$("stundeWizard")) return;
   wizOn = mode === "wizard";
   $("stunde").classList.toggle("wizard-on", wizOn);
   $("stundeWizard").classList.toggle("hidden", !wizOn);
+  // Der Assistent ist immer im Fokusmodus (bildschirmfuellend) — kein eigener Umschalter
+  // mehr dafuer, wiz-focus und wizard-on laufen deshalb synchron. In der Vollansicht gibt
+  // es nichts zu fokussieren.
+  $("stundeWizard").classList.toggle("wiz-focus", wizOn);
+  document.body.classList.toggle("plan-focus", wizOn);
   $("planModeWizard").classList.toggle("active", wizOn);
   $("planModeWizard").setAttribute("aria-pressed", String(wizOn));
   $("planModeFull").classList.toggle("active", !wizOn);
@@ -7764,6 +7747,7 @@ function setPlanMode(mode, remember) {
   if (wizOn) {
     wizCaptureHome();
     wizRenderStep();
+    $("stundeWizard").scrollTop = 0;
     // Zwei Elemente gehoeren im Assistenten in JEDEN Schritt statt in ihre Karte:
     // die Autosave-Anzeige (steckt sonst in der Reflexionskarte, also im letzten Schritt)
     // und der Bearbeiten-Hinweis samt "Stunde loeschen" (sonst nur im Rahmen-Schritt).
@@ -7776,7 +7760,6 @@ function setPlanMode(mode, remember) {
     wizSendHome($("lessonSaveStatus"));
     wizSendHome($("editHint"));
   }
-  setPlanFocus(wizOn && readPlanFocus(), false);
   if (remember) storePlanMode(planWizardContext(), mode);
 }
 
@@ -7800,14 +7783,14 @@ function initPlanWizard() {
   $("planModeFull").onclick = () => setPlanMode("full", true);
   $("wizPrev").onclick = () => wizGoTo(wizStep - 1);
   $("wizNext").onclick = () => wizGoTo(wizStep + 1);
-  $("planModeFocus").onclick = () => setPlanFocus(!wizFocus, true);
-  $("wizFocusExit").onclick = () => setPlanFocus(false, true);
-  // Esc verlaesst den Fokusmodus — aber nur, wenn nichts darueber liegt: ein offener
-  // Dialog oder der Bildschirmschoner haben ihre eigenen Esc-Handler und gehen vor.
+  $("wizFocusExit").onclick = () => setPlanMode("full", true);
+  // Esc verlaesst den (immer aktiven) Fokusmodus des Assistenten — aber nur, wenn nichts
+  // darueber liegt: ein offener Dialog oder der Bildschirmschoner haben ihre eigenen
+  // Esc-Handler und gehen vor.
   document.addEventListener("keydown", (e) => {
-    if (e.key !== "Escape" || !wizFocus) return;
+    if (e.key !== "Escape" || !wizOn) return;
     if (document.querySelector("#modalRoot .modal-overlay")) return;
     if ($("screensaver") && !$("screensaver").classList.contains("hidden")) return;
-    setPlanFocus(false, true);
+    setPlanMode("full", true);
   });
 }

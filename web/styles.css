@@ -1512,23 +1512,23 @@ body.cmd-open { overflow:hidden; }
   #stunde.wizard-on [data-mob-collapse].is-collapsed { padding-bottom:18px; }
 }
 
-/* U35b: Fokusmodus. Der Assistent legt sich als eigene Flaeche ueber die App, statt in
-   einem zweiten DOM-Baum zu leben — #stundeWizard bleibt dieselbe Box mit denselben
-   Karten darin, sie wird nur fixiert. Deshalb ueberlebt der Fokusmodus jeden Schritt-
+/* U35b: Der Assistent ist IMMER im Fokusmodus — kein eigener Umschalter, wizard-on und
+   wiz-focus laufen synchron (siehe setPlanMode). Er legt sich als eigene Flaeche ueber die
+   App, statt in einem zweiten DOM-Baum zu leben — #stundeWizard bleibt dieselbe Box mit
+   denselben Karten darin, sie wird nur fixiert. Deshalb ueberlebt der Modus jeden Schritt-
    wechsel und aendert nichts an Autosave, IDs oder Rueckweg in die Vollansicht.
    z-index 50: ueber Inhalt, Sidebar (25) und Bottom-Nav (15), unter Modals (100),
    Kommandopalette (200) und Toasts (300) — Nachfragen und Meldungen bleiben sichtbar. */
-.plan-focus-btn { display:none; }
-#stunde.wizard-on .plan-mode .plan-focus-btn { display:inline-block; }
-
 #stundeWizard.wiz-focus {
   position:fixed; inset:0; z-index:50; margin:0;
   overflow-y:auto; -webkit-overflow-scrolling:touch;
   background:var(--bg); padding:20px 22px 44px;
 }
 /* Auf breiten Schirmen nicht ueber die ganze Flaeche laufen lassen — eine ruhige Spalte
-   liest sich besser als eine 2000px breite Phasentabelle. */
-#stundeWizard.wiz-focus > * { max-width:1000px; margin-left:auto; margin-right:auto; }
+   liest sich besser als eine 2000px breite Phasentabelle. 1200px statt frueher 1000px:
+   bei 7 Schritten in der Leiste sonst Horizontal-Scrollbar schon auf gaengigen
+   Laptop-Breiten (~1240px), obwohl der restliche Platz ungenutzt blieb. */
+#stundeWizard.wiz-focus > * { max-width:1200px; margin-left:auto; margin-right:auto; }
 body.plan-focus { overflow:hidden; }
 
 .wiz-focus-bar {
@@ -1539,8 +1539,19 @@ body.plan-focus { overflow:hidden; }
 
 /* U35b mobil: im Fokusmodus verschwindet auch die untere Navigationsleiste — sie liegt
    sonst ueber der Schritt-Navigation und ist genau die Ablenkung, die der Modus loswerden
-   soll. Ueber "Fokus beenden" oben ist der Rueckweg da. */
+   soll. Ueber "Vollansicht" oben ist der Rueckweg da. */
 @media (max-width: 920px) {
   body.plan-focus .bottom-nav { display:none; }
   #stundeWizard.wiz-focus { padding:16px 14px 34px; }
+}
+
+/* U35c: <select> erhaelt die vertikale padding-Vorgabe in manchen Browsern (v. a. Safari)
+   nicht vollstaendig zugestanden und wirkt dadurch flacher als <input> mit derselben
+   Angabe — betrifft die Formularfelder der Unterrichtsplanung (Vollansicht + Assistent
+   gleichermaßen, da dieselben Elemente nur umgehaengt werden). Explizite Hoehe auf beiden
+   Feldarten erzwingt Gleichstand unabhaengig vom Browser. .phase-kind-select bleibt bewusst
+   aussen vor — ein kompakter Inline-Select neben dem Phasennamen, kein Zeilenfeld. */
+#stunde input:not([type="file"]),
+#stunde select:not(.phase-kind-select) {
+  height: 48px;
 }
