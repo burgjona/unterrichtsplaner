@@ -1091,6 +1091,20 @@ body.cmd-open { overflow:hidden; }
   .cal-tt-daytoggle { font-size:9px; padding:1px 4px; }
 }
 
+/* Abwesenheit (Krank/Frei/…): markiert nur den Tag – der Stundenplan darunter bleibt
+   sichtbar und unverändert. Farbe wie die Kalender-Kategorie „Abwesenheit". */
+.cal-absence-flag {
+  display:block; width:100%; margin-bottom:3px; padding:1px 5px;
+  border:1px solid #7c3aed; border-radius:6px;
+  background:color-mix(in srgb, #7c3aed 18%, var(--surface));
+  color:#7c3aed; font-size:10px; font-weight:var(--fw-bold); line-height:1.5;
+  cursor:pointer; text-align:left;
+}
+.cal-absence-flag:hover { background:color-mix(in srgb, #7c3aed 30%, var(--surface)); }
+@media (max-width: 600px) {
+  .cal-absence-flag { font-size:9px; padding:1px 4px; }
+}
+
 /* U28: Stoffplan-Datepicker-Popover mit grau hinterlegten Ferien/Feiertagen */
 .date-picker-input { cursor:pointer; background:var(--surface); }
 .date-picker-popover {

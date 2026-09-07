@@ -29,6 +29,7 @@ from ..schemas import (
     TropenSlotCreate, TropenSlotOut, TropenSlotUpdate,
     TropentagOut, TropentagUpdate,
 )
+from .absences import KIND_LABELS as ABSENCE_KIND_LABELS
 
 router = APIRouter(prefix="/stundenplan", tags=["stundenplan"])
 
@@ -899,8 +900,24 @@ def resolved(
         "SELECT date FROM tropentage WHERE user_id = ? AND date IN (?,?,?,?,?)",
         (user_id, *week_dates),
     ).fetchall()}
+    # Abwesenheiten (Krank/Frei/…): markieren den Tag nur – der Stundenplan bleibt inhaltlich
+    # unverändert (verschoben wird ausschließlich die Sequenzplanung, s. routers/absences.py).
+    absence_by_date = {}
+    for a in conn.execute(
+        "SELECT start_date, end_date, kind FROM absences WHERE user_id = ? "
+        "AND start_date <= ? AND end_date >= ?",
+        (user_id, week_dates[-1], week_dates[0]),
+    ).fetchall():
+        for iso in week_dates:
+            if a["start_date"] <= iso <= a["end_date"]:
+                absence_by_date[iso] = a["kind"]
     days = [
-        TimetableResolvedDay(date=week_dates[wd], weekday=wd, is_tropentag=week_dates[wd] in tropen_dates, items=[])
+        TimetableResolvedDay(
+            date=week_dates[wd], weekday=wd, is_tropentag=week_dates[wd] in tropen_dates,
+            absence_kind=absence_by_date.get(week_dates[wd]),
+            absence_label=ABSENCE_KIND_LABELS.get(absence_by_date.get(week_dates[wd])),
+            items=[],
+        )
         for wd in range(5)
     ]
     if plan is None:                                 # dank Seeding praktisch unerreichbar

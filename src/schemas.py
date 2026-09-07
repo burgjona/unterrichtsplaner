@@ -1255,6 +1255,9 @@ class TimetableResolvedDay(Base):
     date: str
     weekday: int
     is_tropentag: bool = False   # Tropenplan (verkürzter Unterricht) gilt an diesem Tag
+    # Abwesenheit an diesem Tag: der Plan selbst bleibt unverändert, der Tag wird nur markiert.
+    absence_kind: Optional[str] = None
+    absence_label: Optional[str] = None
     items: List[TimetableResolvedItem] = Field(default_factory=list)
 
 
@@ -1382,3 +1385,78 @@ class SchulmanagerChangesOut(Base):
     ausfall: List[SchulmanagerChangeOut] = Field(default_factory=list)
     aufsicht_neu: List[SchulmanagerChangeOut] = Field(default_factory=list)
     aufsicht_geaendert: List[SchulmanagerChangeOut] = Field(default_factory=list)
+
+
+# ---------- Abwesenheiten (Krank/Frei/Fortbildung/Exkursion/Kur/Dienstreise) ----------
+AbsenceKind = Literal["krank", "frei", "fortbildung", "exkursion", "kur", "dienstreise"]
+
+
+class AbsenceRange(Base):
+    """Nur der Zeitraum – für die Vorschau, bevor die Abwesenheit überhaupt existiert."""
+    start_date: str = Field(pattern=_DATE_RE)
+    end_date: str = Field(pattern=_DATE_RE)
+
+
+class AbsenceCreate(AbsenceRange):
+    kind: AbsenceKind
+    note: Optional[str] = None
+
+
+class AbsenceUpdate(Base):
+    start_date: Optional[str] = Field(default=None, pattern=_DATE_RE)
+    end_date: Optional[str] = Field(default=None, pattern=_DATE_RE)
+    kind: Optional[AbsenceKind] = None
+    note: Optional[str] = None
+
+
+class AbsenceOut(Base):
+    id: int
+    start_date: str
+    end_date: str
+    kind: AbsenceKind
+    kind_label: str
+    note: Optional[str] = None
+    shifted_count: int = 0          # tatsächlich verschobene Sequenzstunden
+    created_at: str
+    updated_at: str
+
+
+class AbsenceWarning(Base):
+    """Leistungsüberprüfung (Klassenarbeit/komplexe Arbeit/LK/Referat), die mitverschoben wird."""
+    class_name: str
+    title: str
+    art: str
+    old_date: str
+    new_date: Optional[str] = None   # None = kein Platz mehr im Schuljahr
+
+
+class AbsenceClassImpact(Base):
+    class_id: int
+    class_name: str
+    subject: str
+    shifted: int                     # Anzahl verschobener Sequenzstunden
+    first_date: str                  # frühester betroffener Termin (alt)
+    last_old_date: str               # spätester betroffener Termin (alt)
+    last_new_date: Optional[str] = None   # spätester Termin nach der Verschiebung
+    overflow: int = 0                # Stunden ohne Platz mehr im Schuljahr
+
+
+class AbsencePreviewOut(Base):
+    start_date: str
+    end_date: str
+    school_days: int                 # Mo–Fr im Zeitraum, ohne Ferien/Feiertage
+    shifted: int
+    overflow: int
+    classes: List[AbsenceClassImpact] = Field(default_factory=list)
+    warnings: List[AbsenceWarning] = Field(default_factory=list)
+
+
+class AbsenceApplyOut(Base):
+    absence: AbsenceOut
+    result: AbsencePreviewOut
+
+
+class AbsenceDeleteOut(Base):
+    """Ergebnis des automatischen Zurückrollens."""
+    restored: int
+    kept: int                        # seither von Hand geändert → unangetastet gelassen

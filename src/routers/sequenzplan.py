@@ -298,14 +298,22 @@ def _week_type_for(iso_week: int, week_a_parity: str) -> str:
     return "A" if parity == week_a_parity else "B"
 
 
-def _next_class_slot(conn, user_id: int, class_id: int, after_date_iso: str, max_days: int = 90):
-    """Nächster laut Stundenplan realer Unterrichtstermin dieser Klasse nach after_date_iso
-    (Ferien übersprungen, A/B-Wochen berücksichtigt). Ignoriert Tropentage/Vertretungen
-    (Einzeltermin-Sonderfälle) – best effort für die optionale Kalenderverschiebung.
-    Liefert {"date": iso, "time": "HH:MM", "span_slots": int} oder None, falls nichts gefunden
-    wurde. span_slots > 1 markiert eine laut Stundenplan echte Doppelstunde an diesem Tag –
-    Aufrufer, die Sequenzstunden-Karten terminieren, sollen dafür zwei Karten auf dasselbe
-    Datum legen statt nur eine einzelne."""
+def absence_ranges(conn, user_id: int):
+    """Eingetragene Abwesenheitszeiträume als [(start_iso, end_iso), ...] – werden bei der
+    Terminsuche wie Ferien übersprungen (der Stundenplan selbst bleibt unverändert)."""
+    return [(r["start_date"], r["end_date"]) for r in conn.execute(
+        "SELECT start_date, end_date FROM absences WHERE user_id = ?", (user_id,)
+    ).fetchall()]
+
+
+def next_teaching_day(conn, user_id: int, class_id: int, after_date_iso: str,
+                      max_days: int = 90, extra_blocked=None):
+    """Nächster laut Stundenplan realer Unterrichtstag dieser Klasse nach after_date_iso, mit
+    allen Slots dieses Tages (Ferien, Feiertage und Abwesenheiten übersprungen, A/B-Wochen
+    berücksichtigt). Ignoriert Tropentage/Vertretungen (Einzeltermin-Sonderfälle) – best effort.
+    Liefert {"date": iso, "slots": [{"time": "HH:MM", "span_slots": int}, ...]} oder None.
+    extra_blocked erlaubt zusätzliche, noch nicht gespeicherte Sperrzeiträume (Vorschau einer
+    noch nicht angelegten Abwesenheit)."""
     try:
         start = date.fromisoformat(after_date_iso[:10])
     except (ValueError, TypeError):
@@ -313,6 +321,7 @@ def _next_class_slot(conn, user_id: int, class_id: int, after_date_iso: str, max
     ferien = [(r["start_date"], r["end_date"]) for r in conn.execute(
         "SELECT start_date, end_date FROM school_dates WHERE user_id = ?", (user_id,)
     ).fetchall()]
+    blocked = ferien + absence_ranges(conn, user_id) + list(extra_blocked or [])
     prow = conn.execute(
         "SELECT week_a_parity FROM timetable_settings WHERE user_id = ?", (user_id,)
     ).fetchone()
@@ -321,8 +330,8 @@ def _next_class_slot(conn, user_id: int, class_id: int, after_date_iso: str, max
     day = start + timedelta(days=1)
     for _ in range(max_days):
         if day.weekday() < 5:
-            in_ferien = any(s <= day.isoformat() <= e for s, e in ferien)
-            if not in_ferien:
+            iso = day.isoformat()
+            if not any(s <= iso <= e for s, e in blocked):
                 monday = day - timedelta(days=day.weekday())
                 iso_week = monday.isocalendar()[1]
                 week_type = _week_type_for(iso_week, week_a_parity)
@@ -332,18 +341,32 @@ def _next_class_slot(conn, user_id: int, class_id: int, after_date_iso: str, max
                     (user_id, monday.isoformat()),
                 ).fetchone()
                 if plan:
-                    entry = conn.execute(
+                    entries = conn.execute(
                         "SELECT s.start_time, e.span_slots FROM timetable_entries e "
                         "JOIN timetable_slots s ON s.id = e.slot_id "
                         "WHERE e.plan_id = ? AND e.user_id = ? AND e.class_id = ? AND e.weekday = ? "
-                        "AND e.week_type IN ('both', ?) ORDER BY s.position, e.id LIMIT 1",
+                        "AND e.week_type IN ('both', ?) ORDER BY s.position, e.id",
                         (plan["id"], user_id, class_id, day.weekday(), week_type),
-                    ).fetchone()
-                    if entry:
-                        return {"date": day.isoformat(), "time": entry["start_time"],
-                                "span_slots": entry["span_slots"]}
+                    ).fetchall()
+                    if entries:
+                        return {"date": iso, "slots": [
+                            {"time": e["start_time"], "span_slots": e["span_slots"]} for e in entries
+                        ]}
         day += timedelta(days=1)
     return None
+
+
+def _next_class_slot(conn, user_id: int, class_id: int, after_date_iso: str, max_days: int = 90):
+    """Erster Slot des nächsten Unterrichtstags der Klasse (siehe next_teaching_day).
+    Liefert {"date": iso, "time": "HH:MM", "span_slots": int} oder None. span_slots > 1
+    markiert eine laut Stundenplan echte Doppelstunde an diesem Tag – Aufrufer, die
+    Sequenzstunden-Karten terminieren, sollen dafür zwei Karten auf dasselbe Datum legen
+    statt nur eine einzelne."""
+    day = next_teaching_day(conn, user_id, class_id, after_date_iso, max_days)
+    if day is None:
+        return None
+    first = day["slots"][0]
+    return {"date": day["date"], "time": first["time"], "span_slots": first["span_slots"]}
 
 
 def _cascade_shift(conn, user_id, block_id, threshold, count, with_calendar) -> None:

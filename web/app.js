@@ -3419,7 +3419,7 @@ function calTtApplyToCells(data) {
     if (!cell) return;
     // Re-Anwendung (z. B. nach Tropentag-Toggle) räumt zuerst die vorherige Injektion weg —
     // sonst verdoppeln sich Toggle-Chip und Strip bei jedem erneuten calTtApplyToCells-Aufruf.
-    cell.querySelectorAll(".cal-tt-daytoggle, .cal-tt-strip").forEach((el) => el.remove());
+    cell.querySelectorAll(".cal-tt-daytoggle, .cal-tt-strip, .cal-absence-flag").forEach((el) => el.remove());
     const dayNum = cell.querySelector(".cal-daynum");
 
     const toggle = document.createElement("button");
@@ -3431,6 +3431,17 @@ function calTtApplyToCells(data) {
       : "Diesen Tag als Tropentag markieren (verkürzter Unterricht)";
     toggle.onclick = (ev) => { ev.stopPropagation(); calTtToggleTropentag(day.date, !day.isTropentag); };
     cell.insertBefore(toggle, dayNum ? dayNum.nextSibling : cell.firstChild);
+    // Abwesenheit: nur eine Markierung – der Stundenplan des Tages bleibt sichtbar und
+    // inhaltlich unverändert (verschoben wird ausschließlich die Sequenzplanung).
+    if (day.absenceKind) {
+      const flag = document.createElement("button");
+      flag.type = "button";
+      flag.className = "cal-absence-flag";
+      flag.textContent = day.absenceLabel || "Abwesend";
+      flag.title = "Abwesenheit bearbeiten oder entfernen";
+      flag.onclick = (ev) => { ev.stopPropagation(); openAbsenceModal(day.date); };
+      cell.insertBefore(flag, dayNum ? dayNum.nextSibling : cell.firstChild);
+    }
 
     if (!Array.isArray(day.items) || !day.items.length) return;
     const strip = document.createElement("div");
@@ -3615,6 +3626,154 @@ function openTimetableSlotModal(dStr, item) {
   $("modalOverlay").onclick = (e) => { if (e.target.id === "modalOverlay") closeModal(); };
   $("modalCloseBtn").onclick = closeModal;
   $("ttPlanNowBtn").onclick = () => planLessonFromTimetableItem(dStr, item);
+}
+
+/* ---------- Abwesenheiten (Krank/Frei/Fortbildung/Exkursion/Kur/Dienstreise) ----------
+   Der Stundenplan bleibt unverändert – eingetragen wird nur, dass ich an dem Tag/Zeitraum
+   fehle; verschoben wird ausschließlich die Sequenzplanung (Server: routers/absences.py).
+   Ablauf: Formular → Vorschau (was würde sich verschieben?) → Bestätigen. Löschen rollt
+   die Verschiebung automatisch zurück. */
+const ABSENCE_KINDS = [
+  ["krank", "Krank"], ["frei", "Frei"], ["fortbildung", "Fortbildung"],
+  ["exkursion", "Exkursion"], ["kur", "Kur"], ["dienstreise", "Dienstreise"],
+];
+
+function openAbsenceModal(startIso) {
+  const today = startIso || isoDate(new Date());
+  $("modalRoot").innerHTML =
+    `<div class="modal-overlay" id="modalOverlay"><div class="modal-box" style="max-width:640px;">
+      <button class="modal-close" id="modalCloseBtn">Schließen</button>
+      <h2>Abwesenheit</h2>
+      <p class="muted small">Der Stundenplan bleibt unverändert – die betroffenen Stunden der
+        Sequenzplanung rücken nach hinten.</p>
+      <div class="row">
+        <div><label for="absStart">Von</label><input id="absStart" type="date" value="${esc(today)}" /></div>
+        <div><label for="absEnd">Bis</label><input id="absEnd" type="date" value="${esc(today)}" /></div>
+      </div>
+      <div class="row" style="margin-top:8px;">
+        <div><label for="absKind">Art</label><select id="absKind">${
+          ABSENCE_KINDS.map(([v, l]) => `<option value="${v}">${esc(l)}</option>`).join("")
+        }</select></div>
+        <div><label for="absNote">Notiz (optional)</label><input id="absNote" placeholder="z. B. Fortbildung Medienbildung" /></div>
+      </div>
+      <div style="margin-top:10px; display:flex; gap:8px;">
+        <button class="btn" id="absPreviewBtn">Vorschau</button>
+      </div>
+      <div id="absPreview" style="margin-top:10px;"></div>
+      <div class="modal-section"><h3>Eingetragene Abwesenheiten</h3><div id="absList"></div></div>
+    </div></div>`;
+  $("modalOverlay").onclick = (e) => { if (e.target.id === "modalOverlay") closeModal(); };
+  $("modalCloseBtn").onclick = closeModal;
+  $("absPreviewBtn").onclick = absPreview;
+  $("absStart").onchange = () => {
+    if ($("absEnd").value < $("absStart").value) $("absEnd").value = $("absStart").value;
+    $("absPreview").innerHTML = "";
+  };
+  $("absEnd").onchange = () => { $("absPreview").innerHTML = ""; };
+  renderAbsenceList();
+}
+
+// Vorschau: zeigt vor dem Übernehmen, was sich verschiebt (Server rechnet, schreibt nichts).
+async function absPreview() {
+  const box = $("absPreview");
+  const startDate = $("absStart").value, endDate = $("absEnd").value;
+  if (!startDate || !endDate) { toast("Bitte Zeitraum angeben.", false); return; }
+  box.innerHTML = '<p class="muted small">Berechne …</p>';
+  let p;
+  try { p = await API.post("/absences/preview", { startDate, endDate }); }
+  catch (e) { box.innerHTML = `<p class="muted small">${esc(e.message)}</p>`; return; }
+
+  const rows = p.classes.map((c) => `<tr>
+      <td>${esc(c.className)} <span class="muted small">${esc(c.subject)}</span></td>
+      <td>${c.shifted}${c.overflow ? ` <span class="bad">+${c.overflow} ohne Platz</span>` : ""}</td>
+      <td>${esc(deDate(c.firstDate))}</td>
+      <td>${c.lastNewDate ? esc(deDate(c.lastOldDate)) + " → " + esc(deDate(c.lastNewDate)) : "–"}</td>
+    </tr>`).join("");
+  const warn = p.warnings.length
+    ? `<div class="note-box" style="margin-top:8px;"><strong>Achtung – Leistungsüberprüfung betroffen:</strong><ul>${
+        p.warnings.map((w) => `<li>${esc(w.art)} „${esc(w.title)}" (${esc(w.className)}): ${
+          esc(deDate(w.oldDate))}${w.newDate ? " → " + esc(deDate(w.newDate)) : " – kein Platz mehr im Schuljahr"}</li>`).join("")
+      }</ul></div>`
+    : "";
+  const overflow = p.overflow
+    ? `<div class="note-box" style="margin-top:8px;">${p.overflow} Stunde(n) finden bis zum Schuljahresende
+        keinen Termin mehr und bleiben stehen.</div>`
+    : "";
+  box.innerHTML = `
+    <p class="small"><strong>${p.schoolDays}</strong> Unterrichtstag(e) im Zeitraum ·
+      <strong>${p.shifted}</strong> Stunde(n) werden verschoben.</p>
+    ${p.classes.length ? `<div class="table-scroll"><table><thead><tr>
+        <th>Klasse</th><th>Stunden</th><th>ab</th><th>letzter Termin</th>
+      </tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="muted small">Keine terminierten Stunden betroffen.</p>'}
+    ${warn}${overflow}
+    <div style="margin-top:10px; display:flex; gap:8px;">
+      <button class="btn" id="absApplyBtn">Übernehmen</button>
+      <button class="btn secondary" id="absAbortBtn">Abbrechen</button>
+    </div>`;
+  $("absApplyBtn").onclick = absApply;
+  $("absAbortBtn").onclick = () => { box.innerHTML = ""; };
+}
+
+async function absApply() {
+  const btn = $("absApplyBtn");
+  btn.disabled = true;
+  try {
+    const r = await API.post("/absences", {
+      startDate: $("absStart").value, endDate: $("absEnd").value,
+      kind: $("absKind").value, note: $("absNote").value.trim() || null,
+    });
+    toast(r.result.shifted
+      ? `Abwesenheit eingetragen – ${r.result.shifted} Stunde(n) verschoben.`
+      : "Abwesenheit eingetragen.");
+    $("absPreview").innerHTML = "";
+    $("absNote").value = "";
+    await afterAbsenceChange();
+  } catch (e) { btn.disabled = false; toast(e.message, false); }
+}
+
+async function renderAbsenceList() {
+  const box = $("absList");
+  if (!box) return;
+  let rows = [];
+  try { rows = await API.get("/absences"); }
+  catch (e) { box.innerHTML = `<p class="muted small">${esc(e.message)}</p>`; return; }
+  if (!rows.length) { box.innerHTML = '<p class="muted small">Noch keine Abwesenheit eingetragen.</p>'; return; }
+  box.innerHTML = rows.map((a) => {
+    const span = a.startDate === a.endDate
+      ? deDate(a.startDate)
+      : `${deDate(a.startDate)} – ${deDate(a.endDate)}`;
+    return `<div class="file-chip">
+      <span><strong>${esc(a.kindLabel)}</strong> · ${esc(span)}${
+        a.note ? " · " + esc(a.note) : ""}${
+        a.shiftedCount ? ` <span class="muted small">(${a.shiftedCount} Stunde(n) verschoben)</span>` : ""}</span>
+      <button class="btn small danger" data-abs-del="${a.id}" aria-label="Abwesenheit entfernen">✕</button>
+    </div>`;
+  }).join("");
+  box.querySelectorAll("[data-abs-del]").forEach((b) => {
+    b.onclick = () => deleteAbsence(Number(b.dataset.absDel));
+  });
+}
+
+async function deleteAbsence(id) {
+  if (!confirm("Abwesenheit entfernen? Die verschobenen Stunden rücken wieder auf ihre ursprünglichen Termine.")) return;
+  try {
+    const r = await API.del(`/absences/${id}`);
+    toast(r.kept
+      ? `${r.restored} Stunde(n) zurückgesetzt, ${r.kept} von Hand geänderte belassen.`
+      : `Abwesenheit entfernt – ${r.restored} Stunde(n) zurückgesetzt.`);
+    await afterAbsenceChange();
+  } catch (e) { toast(e.message, false); }
+}
+
+// Nach jeder Änderung: Der Server hat direkt geschrieben (Kalendereintrag, verschobene
+// Stunden) — ein Sync-Pull zieht das in den lokalen Store, dessen onChange-Handler dann
+// Kalender, Wochenübersicht und Tagesliste neu aufbauen. Die Stundenplan-Ebene hat einen
+// eigenen Cache (calTtCache), der hier verworfen werden muss.
+async function afterAbsenceChange() {
+  calTtCache.clear();
+  await renderAbsenceList();
+  try { await SyncEngine.pull(); } catch (e) { /* offline: Anzeige holt beim nächsten Sync auf */ }
+  renderCalendar();
 }
 
 // U15: Kalender auf ein Datum springen lassen und den Tag kurz farblich hervorheben.
@@ -6792,6 +6951,7 @@ function wireEvents() {
   };
   // U22: Termin-Popover öffnen/schließen; Werkzeug-Seitenleiste ein-/ausklappen.
   $("calNewEntryBtn").onclick = () => openCalEntryPanel(isoDate(new Date()));
+  $("calAbsenceBtn").onclick = () => openAbsenceModal(calSelectedDate || isoDate(new Date()));
   $("calEntryCancel").onclick = closeCalEntryPanel;
   $("calSideToggle").onclick = () => $("calLayout").classList.toggle("side-collapsed");
   $("addCatBtn").onclick = addCategory;
