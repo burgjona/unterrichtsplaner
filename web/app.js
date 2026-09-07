@@ -6256,7 +6256,14 @@ function showView(view) {
   // Verlässt man die Klassen-Ansicht mit offenem Bearbeiten-Modus, den Update-Modus
   // zurücksetzen – sonst würde ein späteres "Klasse speichern" versehentlich updaten.
   if (view !== "klassen" && editingClassId) resetClassForm();
-  if (view !== "stunde") setPlanFocus(false, false);   // U35b: Vollbild nicht mit in andere Ansichten nehmen
+  // U35b: setPlanFocus() gibt es seit dem letzten Umbau nicht mehr (Fokus läuft synchron
+  // mit dem Assistenten-Modus, siehe setPlanMode) — dieser Aufruf zeigte auf eine
+  // gelöschte Funktion und ließ JEDEN Ansichtswechsel (auch beim Login) mit einem
+  // ReferenceError abbrechen. Richtig ist hier setPlanMode("full", false): wizOn bleibt
+  // sonst beim Verlassen von "stunde" fälschlich true (die #stunde-Karte ist zwar
+  // versteckt, aber der globale Esc-Handler und der Autosave-Status prüfen wizOn
+  // ansichtsübergreifend) und body.plan-focus (overflow:hidden) haftet auf anderen Seiten.
+  if (view !== "stunde") setPlanMode("full", false);
   if (view === "stunde") planWizardApplyContext(lessonFormOpenedAsNew);   // U35
   if (view === "settings") loadSettings();
   if (view === "kalender") { ensureGoogleStatus(); maybeAutoSyncOnOpen(); }  // U21/U24: Status + Auto-Sync (A)
