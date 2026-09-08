@@ -1,8 +1,8 @@
 """Vollsicherung zum Herunterladen: konsistenter DB-Snapshot + optional die Materialdateien.
 
-Zweck (Sicherheitsrunde U28): jederzeit aus dem Browser ein vollstaendiges, garantiert
-oeffenbares Backup ziehen zu koennen - ohne SSH-Zugang zur NAS. Ergaenzt (ersetzt nicht)
-die automatische Sicherung ueber Hyper Backup, siehe DEPLOY.md.
+Zweck (Sicherheitsrunde U28): jederzeit aus dem Browser ein vollständiges, garantiert
+öffenbares Backup ziehen zu können - ohne SSH-Zugang zur NAS. Ergänzt (ersetzt nicht)
+die automatische Sicherung über Hyper Backup, siehe DEPLOY.md.
 
 Kein Nutzer-Scoping der Daten: die Sicherung umfasst bauartbedingt die ganze Datei.
 Das ist zulaessig, weil die App per Briefing genau ein Konto kennt (Registrierung sperrt
@@ -26,7 +26,7 @@ router = APIRouter(prefix="/backup", tags=["backup"])
 
 
 def _work_root(db_path: str) -> str:
-    """Arbeitsverzeichnis moeglichst neben der DB waehlen: dort liegt das Daten-Volume
+    """Arbeitsverzeichnis möglichst neben der DB wählen: dort liegt das Daten-Volume
     mit echtem Plattenplatz - /tmp im Container ist knapp, sobald storage/ mitgesichert wird."""
     if db_path and db_path != ":memory:":
         parent = os.path.dirname(os.path.abspath(db_path))
@@ -55,12 +55,12 @@ def download_backup(
         shutil.rmtree(work_dir, ignore_errors=True)
         raise
 
-    ascii_fb = "".join(c if c.isascii() else "_" for c in fname)  # ASCII-Fallback fuer den Header
+    ascii_fb = "".join(c if c.isascii() else "_" for c in fname)  # ASCII-Fallback für den Header
     disposition = (f"attachment; filename=\"{ascii_fb}\"; "
                    f"filename*=UTF-8''{urllib.parse.quote(fname)}")  # RFC 5987
     return FileResponse(
         zip_path, media_type="application/zip",
         headers={"Content-Disposition": disposition},
-        # Erst nach dem Ausliefern aufraeumen - sonst zieht FileResponse ins Leere.
+        # Erst nach dem Ausliefern aufräumen - sonst zieht FileResponse ins Leere.
         background=BackgroundTask(shutil.rmtree, work_dir, ignore_errors=True),
     )
