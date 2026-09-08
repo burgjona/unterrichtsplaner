@@ -56,12 +56,19 @@ def get_settings(conn: sqlite3.Connection = Depends(get_db), user_id: int = Depe
 
 @router.post("/clear-cache", status_code=204)
 def clear_cache(user_id: int = Depends(get_user_id)):
-    """Weist den Browser per Clear-Site-Data-Header an, HTTP-Cache + Service-Worker/
-    Cache-Storage für diese Origin zu leeren. Rein clientseitiges Löschen (caches.delete,
-    registration.unregister) erreicht den normalen HTTP-Disk-Cache nicht — dieser Header
-    ist der einzige zuverlässige, browserübergreifende Weg dafür (fehlte bislang, deshalb
-    wirkte der Button in Chrome nicht, in Edge zufällig schon)."""
-    return Response(status_code=204, headers={"Clear-Site-Data": '"cache", "storage"'})
+    """Weist den Browser per Clear-Site-Data-Header an, den HTTP-Cache dieser Origin zu
+    leeren. Rein clientseitiges Löschen (caches.delete, registration.unregister) erreicht
+    den normalen HTTP-Disk-Cache nicht — dieser Header ist der einzige zuverlässige,
+    browserübergreifende Weg dafür (fehlte bislang, deshalb wirkte der Button in Chrome
+    nicht, in Edge zufällig schon).
+
+    NUR "cache", bewusst nicht "storage": "storage" löscht auch IndexedDB — und dort liegt
+    die _mutationQueue der Offline-Sync-Engine mit noch nicht gesendeten Änderungen. Wer
+    nach einer Offline-Phase den Cache-Button drückt (genau dann zeigt die App ja gern
+    alten Stand), hätte sonst seine offline erfasste Planung verloren. Cache-Storage und
+    Service-Worker-Registrierung räumt der Client-Code ohnehin selbst ab; für den
+    HTTP-Disk-Cache genügt "cache"."""
+    return Response(status_code=204, headers={"Clear-Site-Data": '"cache"'})
 
 
 @router.put("/api-key", response_model=SettingsOut)
