@@ -13,14 +13,13 @@ import shutil
 import sqlite3
 import tempfile
 import urllib.parse
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 
 from ..deps import get_db, get_storage_root, get_user_id
-from ..lib.backup import build_backup_zip
+from ..lib.backup import backup_filename, build_backup_zip
 
 router = APIRouter(prefix="/backup", tags=["backup"])
 
@@ -45,7 +44,7 @@ def download_backup(
 ):
     """Liefert die Sicherung als ZIP (data.db, manifest.json, optional storage/)."""
     work_dir = tempfile.mkdtemp(prefix="ldb-backup-", dir=_work_root(request.app.state.db_path))
-    fname = f"lehrer-dashboard-backup-{datetime.now().strftime('%Y-%m-%d_%H%M')}.zip"
+    fname = backup_filename()
     zip_path = os.path.join(work_dir, fname)
     try:
         build_backup_zip(conn, zip_path, storage_root=storage_root,

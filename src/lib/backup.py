@@ -19,6 +19,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
+BACKUP_PREFIX = "lehrer-dashboard-backup-"
+
+
+def backup_filename(when: datetime | None = None) -> str:
+    """Einheitlicher Dateiname für Download und Automatik - die Aufräumroutine
+    erkennt eigene Sicherungen an diesem Präfix und fasst nichts anderes an."""
+    return f"{BACKUP_PREFIX}{(when or datetime.now()).strftime('%Y-%m-%d_%H%M')}.zip"
+
+
 def snapshot_db(conn: sqlite3.Connection, dest: str) -> str:
     """Schreibt einen konsistenten Snapshot der offenen DB nach dest.
 

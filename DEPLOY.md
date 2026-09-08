@@ -109,6 +109,54 @@ Sicherung gleichzeitig. RAID ersetzt kein Backup – es schützt nur vor einer d
 4. Container starten. Migrationen laufen automatisch; ist die Sicherung älter als der
    Programmstand, bringt der Start das Schema selbsttätig nach.
 
+### Nächtlich automatisch sichern (Aufgabenplaner)
+
+Eine Sicherung, die man von Hand anstoßen muss, wird im Schulalltag vergessen. Der
+Aufgabenplaner erledigt sie nachts von selbst.
+
+**Einmalig einrichten:** *Systemsteuerung → Aufgabenplaner → Erstellen → Geplante Aufgabe
+→ Benutzerdefiniertes Skript*.
+
+| Feld | Wert |
+|---|---|
+| Aufgabe | `Lehrer-Dashboard sichern` |
+| Benutzer | `root` (nötig für `docker`) |
+| Zeitplan | täglich, z. B. 03:00 Uhr |
+| Benutzerdefiniertes Skript | siehe unten |
+
+Unter *Einstellungen* zusätzlich **„Ausgabedetails per E-Mail senden"** aktivieren und
+**„Nur bei abnormaler Beendigung"** wählen. Ohne das merkt man wochenlang nicht, wenn die
+Sicherung scheitert — der häufigste Grund, warum Backups im Ernstfall fehlen.
+
+```bash
+#!/bin/bash
+set -euo pipefail
+
+ZIEL="/volume1/Backups/Lehrer-Dashboard"   # Ordner in einer DSM-Freigabe, ggf. anpassen
+mkdir -p "$ZIEL"
+
+# 1. Sicherung im Container erzeugen. Sie landet im Daten-Volume (dort ist Plattenplatz);
+#    --behalte 1 hält das Volume schlank, die Aufbewahrung passiert auf der Freigabe.
+docker exec lehrer-dashboard python -m src.backup_cli /data/_backup --behalte 1
+
+# 2. auf die Freigabe holen (kein Bind-Mount nötig, deshalb ACL-unempfindlich)
+docker cp lehrer-dashboard:/data/_backup/. "$ZIEL/"
+
+# 3. auf der Freigabe aufräumen: älter als 14 Tage fliegt raus.
+#    -maxdepth 1 und das Namensmuster stellen sicher, dass nur eigene Sicherungen
+#    betroffen sind - andere Dateien im Ordner bleiben unangetastet.
+find "$ZIEL" -maxdepth 1 -name 'lehrer-dashboard-backup-*.zip' -mtime +14 -delete
+```
+
+Für ein reines Datenbank-Backup (viel kleiner und schneller, ohne die Materialdateien)
+in Zeile 1 `--ohne-materialien` ergänzen.
+
+**Wichtig:** Den Zielordner in *Hyper Backup* aufnehmen, damit die Sicherungen die NAS
+verlassen. Solange sie nur dort liegen, trifft ein Defekt Original und Kopie zugleich.
+
+**Von Hand testen:** Das Skript im Aufgabenplaner markieren und *Ausführen* klicken, danach
+in File Station nachsehen, ob im Zielordner eine ZIP-Datei liegt.
+
 ### Regelmäßig prüfen
 Ein Backup, das nie zurückgespielt wurde, ist eine Vermutung. Einmal pro Halbjahr eine
 Sicherung testweise in eine Zweitinstanz einspielen und schauen, ob die Planung vollständig ist.
