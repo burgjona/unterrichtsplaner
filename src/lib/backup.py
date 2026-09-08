@@ -1,13 +1,13 @@
 """Konsistente Sicherung von Datenbank und Materialablage.
 
-Warum nicht einfach data.db kopieren: die DB laeuft im WAL-Modus (db.connect),
-d.h. frisch geschriebene Seiten stehen noch in data.db-wal. Eine blosse Dateikopie
-kann deshalb einen unvollstaendigen Stand erwischen. `VACUUM INTO` schreibt
+Warum nicht einfach data.db kopieren: die DB läuft im WAL-Modus (db.connect),
+d.h. frisch geschriebene Seiten stehen noch in data.db-wal. Eine bloße Dateikopie
+kann deshalb einen unvollständigen Stand erwischen. `VACUUM INTO` schreibt
 stattdessen im laufenden Betrieb eine in sich geschlossene, defragmentierte
-Einzeldatei; sqlite3.Connection.backup() dient als Rueckfallebene fuer sehr alte
+Einzeldatei; sqlite3.Connection.backup() dient als Rückfallebene für sehr alte
 SQLite-Versionen (VACUUM INTO gibt es erst ab 3.27).
 
-Keine Router-Logik hier - das haelt die Funktionen testbar.
+Keine Router-Logik hier - das hält die Funktionen testbar.
 """
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ def snapshot_db(conn: sqlite3.Connection, dest: str) -> str:
 
 def build_manifest(conn: sqlite3.Connection, *, app_version: str, include_storage: bool,
                    storage_files: int) -> dict:
-    """Beschreibt den Sicherungsstand - entscheidend, um beim Zurueckspielen zu
+    """Beschreibt den Sicherungsstand - entscheidend, um beim Zurückspielen zu
     erkennen, ob Backup und Programmstand zusammenpassen (Migrationen!)."""
     try:
         migrations = [r[0] for r in conn.execute(
@@ -57,7 +57,7 @@ def build_manifest(conn: sqlite3.Connection, *, app_version: str, include_storag
         "storageFileCount": storage_files,
         "restoreHint": (
             "data.db in das Volume ldb_data legen (Container gestoppt), storage/ nach "
-            "ldb_storage. Vorher vorhandene data.db-wal und data.db-shm loeschen."
+            "ldb_storage. Vorher vorhandene data.db-wal und data.db-shm löschen."
         ),
     }
 

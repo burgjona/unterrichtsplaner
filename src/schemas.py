@@ -72,6 +72,11 @@ class UserCreate(Base):
     avatar_path: Optional[str] = None
 
 
+class PasswordChangeIn(Base):
+    current_password: str
+    new_password: str
+
+
 class UserUpdate(Base):
     email: Optional[str] = None
     display_name: Optional[str] = None

@@ -1097,6 +1097,13 @@
         <h3>Konto</h3>
         <p class="muted small">Angemeldet als <strong id="settingsUser">–</strong>.</p>
         <button class="btn secondary" id="logoutBtn">Abmelden</button>
+
+        <h4 style="margin-top:18px;">Passwort &auml;ndern</h4>
+        <p class="muted small">Beim Wechsel werden alle anderen angemeldeten Ger&auml;te abgemeldet &ndash; dieses hier bleibt angemeldet. F&uuml;r die Sicherheit z&auml;hlt vor allem die L&auml;nge: eine Folge aus vier zuf&auml;lligen W&ouml;rtern ist st&auml;rker als &bdquo;Xy7!q&ldquo; und leichter zu merken.</p>
+        <div><label for="pwCurrent">Aktuelles Passwort</label><input id="pwCurrent" type="password" autocomplete="current-password" /></div>
+        <div style="margin-top:8px;"><label for="pwNew">Neues Passwort</label><input id="pwNew" type="password" autocomplete="new-password" /></div>
+        <div style="margin-top:8px;"><label for="pwRepeat">Neues Passwort wiederholen</label><input id="pwRepeat" type="password" autocomplete="new-password" /></div>
+        <div style="margin-top:10px;"><button class="btn" id="changePasswordBtn">Passwort &auml;ndern</button></div>
       </div>
       <div class="card ord-6" id="logoCard">
         <h3>Logo (Favicon &amp; App-Icon)</h3>

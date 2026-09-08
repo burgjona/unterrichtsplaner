@@ -7126,7 +7126,26 @@ function wireEvents() {
     location.reload();
   };
 
-  // U28: Vollsicherung herunterladen. Bewusst ueber ein a[download] statt fetch+Blob –
+  // U28: Passwort ändern. Die Wiederholung wird hier geprüft (der Server kennt sie
+  // nicht) - so fällt ein Vertipper auf, bevor das Passwort gewechselt ist.
+  $("changePasswordBtn").onclick = async () => {
+    const current = $("pwCurrent").value;
+    const next = $("pwNew").value;
+    if (next !== $("pwRepeat").value) {
+      toast("Die beiden neuen Passwörter stimmen nicht überein.", false);
+      return;
+    }
+    try {
+      const res = await API.post("/auth/password", { currentPassword: current, newPassword: next });
+      $("pwCurrent").value = $("pwNew").value = $("pwRepeat").value = "";
+      const n = res && res.loggedOutDevices;
+      toast(n ? `Passwort geändert. ${n} andere Sitzung(en) abgemeldet.` : "Passwort geändert.");
+    } catch (e) {
+      toast(e.message, false);
+    }
+  };
+
+  // U28: Vollsicherung herunterladen. Bewusst über ein a[download] statt fetch+Blob –
   // so streamt der Browser direkt auf die Platte (mit Materialdateien kann das ZIP sehr
   // gross werden) und zeigt den Fortschritt in seiner eigenen Download-Leiste.
   $("backupDownloadBtn").onclick = () => {

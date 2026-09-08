@@ -31,6 +31,21 @@ def verify_password(stored_hash: str, password: str) -> bool:
         return False
 
 
+# Hash eines Zufallswerts, nur als Zeitfresser. Einmalig beim Import erzeugt, damit
+# der Vergleich bei unbekannter E-Mail genauso lange dauert wie bei bekannter.
+_DUMMY_HASH = _ph.hash(secrets.token_urlsafe(32))
+
+
+def dummy_verify(password: str) -> bool:
+    """Verbrennt dieselbe Rechenzeit wie verify_password, ohne etwas zu pruefen.
+    Verhindert, dass die Antwortzeit verraet, ob eine E-Mail registriert ist."""
+    try:
+        _ph.verify(_DUMMY_HASH, password)
+    except (VerifyMismatchError, InvalidHashError):
+        pass
+    return False
+
+
 def generate_token(nbytes: int = 32) -> str:
     return secrets.token_urlsafe(nbytes)
 
