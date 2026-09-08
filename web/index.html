@@ -1119,6 +1119,13 @@
         <div style="margin-top:10px;"><button class="btn" id="saveSchoolYear">Schuljahr anlegen</button></div>
         <div id="schoolYearList" class="file-list" style="margin-top:12px;"></div>
       </div>
+      <div class="card ord-11">
+        <h3>Datensicherung</h3>
+        <p class="muted small">L&auml;dt eine vollst&auml;ndige Sicherung als ZIP herunter: Datenbank (Planung, Klassen, Materialverweise) und auf Wunsch die abgelegten Dateien. Die Datenbank wird dabei im laufenden Betrieb konsistent kopiert.</p>
+        <label class="small" style="display:flex; align-items:center; gap:8px; margin-top:8px;"><input type="checkbox" id="backupIncludeStorage" style="width:auto;" checked /> Materialdateien mitsichern</label>
+        <div style="margin-top:10px;"><button class="btn" id="backupDownloadBtn">Sicherung herunterladen</button></div>
+        <p class="muted small" id="backupHint" style="margin-top:10px;">Bewahre die Sicherung auch au&szlig;erhalb der NAS auf &ndash; sonst trifft ein Defekt Original und Kopie zugleich.</p>
+      </div>
       <div class="card ord-1">
         <h3>App-Cache</h3>
         <p class="muted small">Erzwingt den neuesten Stand, falls die App (z. B. als eingebettete/installierte Version) alte Inhalte zeigt. Lädt die Seite danach automatisch neu.</p>

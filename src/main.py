@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from .config import settings
 from .db import init_db
 from .routers import (
-    absences, ai, asuv, auth, branding, calendar, calendar_categories, classes, lehrplan,
+    absences, ai, asuv, auth, backup, branding, calendar, calendar_categories, classes, lehrplan,
     lernbereiche, lessons, materials, notes, planning, reflections, school_years, schulmanager,
     search, seating, sequenzplan, settings as settings_router, stoffplan, students, stundenplan,
     sync, todos, users,
@@ -32,7 +32,7 @@ def create_app(db_path: str = None, storage_root: str = None) -> FastAPI:
                    lessons, calendar, calendar_categories, materials, reflections, todos,
                    notes, planning, stoffplan, sequenzplan, students, seating, asuv, ai, search,
                    lehrplan,
-                   stundenplan, absences, sync, schulmanager):
+                   stundenplan, absences, sync, schulmanager, backup):
         app.include_router(module.router, prefix="/api")
 
     # Branding-Routen (Favicon/Manifest, teils Root-Level) VOR dem StaticFiles-Mount.

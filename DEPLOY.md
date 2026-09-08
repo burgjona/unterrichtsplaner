@@ -31,8 +31,8 @@ docker compose logs -f app        # erwartet: Seed "62 Lernbereiche", dann uvico
   Freigabe-ACLs, die das Schreiben in per File Station angelegte Bind-Mount-Ordner selbst für
   root blockieren (`unable to open database file`). Es müssen **keine** Host-Ordner vorab
   angelegt werden.
-- **Backup:** Beide Volumes über *Hyper Backup* (schließt `/volume1/@docker` ein) oder per
-  `docker cp lehrer-dashboard:/data ./backup-data` bzw. `…:/storage ./backup-storage` sichern.
+- **Backup:** Bevorzugt über die App selbst (siehe *Datensicherung* unten). Zusätzlich beide
+  Volumes über *Hyper Backup* (schließt `/volume1/@docker` ein) sichern.
 - **Materialien direkt browsebar (optional, später):** Wer die Dateien in File Station sehen
   will, legt eine echte DSM-Freigabe an, setzt darauf Schreibrechte und mountet sie statt
   `ldb_storage` als Bind-Mount (`- /volume1/<freigabe>:/storage`).
@@ -58,7 +58,7 @@ docker compose logs -f app        # erwartet: Seed "62 Lernbereiche", dann uvico
 - **`APP_SECRET_KEY` sichern & dauerhaft konstant halten** – bei Verlust ist ein gespeicherter
   API-Key nicht mehr entschlüsselbar (dann im UI neu eingeben).
 - **`COOKIE_SECURE=1`** ist gesetzt – Login-Cookies gehen nur über HTTPS (durch Cloudflare gegeben).
-- **Backups:** `./data/data.db` (Konto, Planung) und `./storage` (Dateien) sichern.
+- **Backups:** siehe Abschnitt *Datensicherung*.
 - **Update:** `git pull` → `docker compose build && docker compose up -d`. Migrationen laufen
   automatisch beim Start (Tabelle `schema_migrations`), der Seed ist idempotent.
 - **Deploy-Zeitstempel + Commit (Einstellungen-Seite):** Damit "Letztes NAS-Update" im UI
@@ -78,3 +78,37 @@ docker compose logs -f app        # erwartet: Seed "62 Lernbereiche", dann uvico
   (Pfad ggf. anpassen — Beispiel aus dem bestehenden Skript.)
 - **FTS5:** Das `python:3.12-slim`-Image bringt FTS5 mit; falls nicht, bricht der Start mit klarer
   Meldung ab (`src/db.py::assert_fts5`).
+
+## Datensicherung
+
+### Sicherung ziehen
+**Einstellungen → Datensicherung → „Sicherung herunterladen"**. Das ZIP enthält:
+
+| Datei | Inhalt |
+|---|---|
+| `data.db` | die komplette Datenbank – Konto, Planung, Klassen, Stundenplan, Notizen |
+| `storage/…` | die abgelegten Materialdateien (abwählbar, falls das ZIP sonst zu groß wird) |
+| `manifest.json` | Zeitpunkt, App-Version und Migrationsstand der Sicherung |
+
+Die Datenbank wird per `VACUUM INTO` gesichert, nicht bloß kopiert: das erzeugt im laufenden
+Betrieb einen in sich geschlossenen Stand. Eine reine Dateikopie von `data.db` kann dagegen
+unvollständig sein, weil frische Schreibvorgänge im WAL (`data.db-wal`) stehen – das fällt
+erst beim Zurückspielen auf.
+
+**Wichtig: die Sicherung außerhalb der NAS aufbewahren.** Liegt die einzige Kopie auf demselben
+Gerät, trifft ein Defekt, ein Verschlüsselungstrojaner oder ein Bedienfehler Original und
+Sicherung gleichzeitig. RAID ersetzt kein Backup – es schützt nur vor einer defekten Platte.
+
+### Zurückspielen
+1. Container stoppen (Container Manager → Projekt → **Stoppen**).
+2. `data.db` aus dem ZIP in das Volume `ldb_data` legen, `storage/` nach `ldb_storage`.
+   Ohne SSH geht das über File Station unter `/volume1/@docker/volumes/<projekt>_ldb_data/_data/`
+   (versteckte Ordner in File Station einblenden).
+3. Eventuell vorhandene `data.db-wal` und `data.db-shm` **löschen** – sie gehören zum alten
+   Stand und würden die zurückgespielte Datei verfälschen.
+4. Container starten. Migrationen laufen automatisch; ist die Sicherung älter als der
+   Programmstand, bringt der Start das Schema selbsttätig nach.
+
+### Regelmäßig prüfen
+Ein Backup, das nie zurückgespielt wurde, ist eine Vermutung. Einmal pro Halbjahr eine
+Sicherung testweise in eine Zweitinstanz einspielen und schauen, ob die Planung vollständig ist.

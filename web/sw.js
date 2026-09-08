@@ -91,6 +91,10 @@ self.addEventListener("fetch", (event) => {
   // Nur eigene Origin bedienen (keine externen Ressourcen abfangen).
   if (url.origin !== self.location.origin) return;
 
+  // Downloads NIE abfangen: die Sicherung (/api/backup) kann sehr gross sein und wuerde
+  // sonst komplett in den Cache-Storage des Browsers wandern. Direkt ans Netz durchreichen.
+  if (url.pathname === "/api/backup") return;
+
   // Navigations-Requests: Netz-First, offline → gecachte /index.html (App-Shell).
   if (req.mode === "navigate") {
     event.respondWith(networkFirst(req, SHELL_CACHE, "/index.html"));

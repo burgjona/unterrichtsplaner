@@ -7126,6 +7126,20 @@ function wireEvents() {
     location.reload();
   };
 
+  // U28: Vollsicherung herunterladen. Bewusst ueber ein a[download] statt fetch+Blob –
+  // so streamt der Browser direkt auf die Platte (mit Materialdateien kann das ZIP sehr
+  // gross werden) und zeigt den Fortschritt in seiner eigenen Download-Leiste.
+  $("backupDownloadBtn").onclick = () => {
+    const withStorage = $("backupIncludeStorage").checked;
+    const a = document.createElement("a");
+    a.href = "/api/backup?includeStorage=" + (withStorage ? "true" : "false");
+    a.download = "";           // Dateiname kommt aus Content-Disposition
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    toast("Sicherung wird erstellt – der Download startet gleich.");
+  };
+
   // Branding: Profilbild & Logo (M12/U10)
   $("avatarUploadBtn").onclick = () => $("avatarFileInput").click();
   $("avatarFileInput").addEventListener("change", (e) => {
