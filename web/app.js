@@ -4678,6 +4678,10 @@ function openLessonModal(l) {
        <button class="btn small danger" id="modalTbImgRemove" style="margin-bottom:10px;">Bild entfernen</button>`
     : "";
   const tbEmpty = (!tbBoard && !tbImg) ? '<p class="muted small">Kein Tafelbild geplant.</p>' : "";
+  // Auch das KI-generierte Tafelbild muss wieder wegkönnen — ohne Umweg über das Formular.
+  const tbBoardRemove = tbBoard
+    ? '<button class="btn small danger" id="modalTbBoardRemove" style="margin-bottom:10px;">Tafelbild entfernen</button>'
+    : "";
   $("modalRoot").innerHTML =
     `<div class="modal-overlay" id="modalOverlay"><div class="modal-box">
       <button class="modal-close" id="modalCloseBtn">Schließen</button>
@@ -4691,7 +4695,7 @@ function openLessonModal(l) {
       <div id="modalMoveSlots"></div>
       <div class="modal-section"><h3>Tafelbild</h3>
         ${tbImg}
-        ${tbBoard ? `<div class="tafelbild-board">${tbBoard}</div>` : ""}
+        ${tbBoard ? `<div class="tafelbild-board">${tbBoard}</div>${tbBoardRemove}` : ""}
         ${tbEmpty}
         <label class="small" style="display:block; margin-top:10px;">Notizen</label>
         <textarea id="modalTbNotiz" style="width:100%; min-height:60px;" placeholder="Eigene Ergänzungen zum Tafelbild ...">${esc(l.tafelbildNotiz || "")}</textarea>
@@ -4699,6 +4703,10 @@ function openLessonModal(l) {
           <input type="file" id="modalTbImgFile" accept="image/*" />
           <button class="btn small" id="modalTbImgUpload" style="margin-top:6px;">Eigenes Bild hochladen</button>
         </div>
+      </div>
+      <div class="modal-section"><h3>Heftereintrag</h3>
+        <p class="muted small" style="margin-top:0;">Was die SuS in dieser Stunde ins Heft geschrieben haben.</p>
+        <textarea id="modalHefteintrag" style="width:100%; min-height:80px;" placeholder="— noch kein Eintrag —">${esc(l.hefteintrag || "")}</textarea>
       </div>
       <div class="modal-section"><h3>Lernziele</h3>${zieleHtml}</div>
       <div class="modal-section"><h3>Phasentabelle</h3>${phases}</div>
@@ -4741,10 +4749,12 @@ function openLessonModal(l) {
     catch (e) { toast(e.message, false); }
   };
 }
-// Tafelbild-Sektion im Stunden-Detail-Modal: Notizen direkt editierbar (debounced Autosave),
-// eigenes Bild hochladen/entfernen. Änderungen laufen über den Offline-Sync wie im Formular;
-// ist dieselbe Stunde gerade im Bearbeiten-Formular offen, wird dessen Vorschau mitgezogen.
+// Tafelbild-Sektion im Stunden-Detail-Modal: Notizen und Heftereintrag direkt editierbar
+// (debounced Autosave), Tafelbild (auch das KI-generierte) und eigenes Bild entfernbar.
+// Änderungen laufen über den Offline-Sync wie im Formular; ist dieselbe Stunde gerade im
+// Bearbeiten-Formular offen, wird dessen Vorschau mitgezogen.
 let _modalTbNotizTimer = null;
+let _modalHefterTimer = null;
 function wireModalTafelbild(l) {
   const ta = $("modalTbNotiz");
   if (ta) {
@@ -4759,6 +4769,37 @@ function wireModalTafelbild(l) {
       }, 900);
     });
   }
+  // Heftereintrag: gleiche Mechanik wie die Hefter-Tabelle der Klassendetailseite.
+  const he = $("modalHefteintrag");
+  if (he) {
+    he.addEventListener("input", () => {
+      if (_modalHefterTimer) clearTimeout(_modalHefterTimer);
+      _modalHefterTimer = setTimeout(async () => {
+        try {
+          await SyncEngine.update("lessons", l.id, { hefteintrag: he.value });
+          l.hefteintrag = he.value;
+          const inState = state.lessons.find((x) => x.id === l.id);
+          if (inState && inState !== l) inState.hefteintrag = he.value;
+          if (editingLessonId === l.id && $("hefteintrag")) $("hefteintrag").value = he.value;
+          renderHefterReminders();
+        } catch (e) { toast(e.message, false); }
+      }, 900);
+    });
+  }
+  const rmBoard = $("modalTbBoardRemove");
+  if (rmBoard) rmBoard.onclick = async () => {
+    if (!window.confirm("Das geplante Tafelbild wirklich entfernen?")) return;
+    const leer = { titel: "", bloecke: [] };
+    try {
+      await SyncEngine.update("lessons", l.id, { tafelbild: leer });
+      l.tafelbild = leer;
+      const inState = state.lessons.find((x) => x.id === l.id);
+      if (inState && inState !== l) inState.tafelbild = leer;
+      if (editingLessonId === l.id) { lessonTafelbild = { titel: "", bloecke: [] }; renderTafelbild(); }
+      toast("Tafelbild entfernt.");
+      openLessonModal(l);
+    } catch (e) { toast(e.message, false); }
+  };
   const up = $("modalTbImgUpload");
   if (up) up.onclick = async () => {
     const f = $("modalTbImgFile").files[0];
