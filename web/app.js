@@ -4794,6 +4794,17 @@ function openLessonModal(l) {
 // (debounced Autosave), Tafelbild (auch das KI-generierte) und eigenes Bild entfernbar.
 // Änderungen laufen über den Offline-Sync wie im Formular; ist dieselbe Stunde gerade im
 // Bearbeiten-Formular offen, wird dessen Vorschau mitgezogen.
+// Ein Heftereintrag ist meist mehrzeilig (Merksatz, Beispiele, Hausaufgabe). Damit die
+// Gliederung sichtbar bleibt, wächst das Feld mit dem Inhalt, statt ihn in einen festen
+// Kasten zu sperren, in dem man scrollen muss.
+function autoGrowTextarea(el, minPx = 80, maxPx = 600) {
+  if (!el) return;
+  el.style.height = "auto";
+  const rahmen = el.offsetHeight - el.clientHeight;   // Rand bei box-sizing: border-box
+  const hoehe = Math.max(minPx, Math.min(maxPx, el.scrollHeight + rahmen));
+  el.style.height = hoehe + "px";                     // ab maxPx scrollt das Feld wieder
+}
+
 let _modalTbNotizTimer = null;
 let _modalHefterTimer = null;
 function wireModalTafelbild(l) {
@@ -4813,7 +4824,9 @@ function wireModalTafelbild(l) {
   // Heftereintrag: gleiche Mechanik wie die Hefter-Tabelle der Klassendetailseite.
   const he = $("modalHefteintrag");
   if (he) {
+    autoGrowTextarea(he);
     he.addEventListener("input", () => {
+      autoGrowTextarea(he);
       if (_modalHefterTimer) clearTimeout(_modalHefterTimer);
       _modalHefterTimer = setTimeout(async () => {
         try {
