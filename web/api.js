@@ -11,6 +11,20 @@ const API = (() => {
       throw err;
     }
   }
+  /* FastAPI liefert bei 422 eine Liste von Pydantic-Fehlerobjekten statt eines Satzes.
+     Roh durchgereicht landet dann JSON im Toast ("[{\"type\":\"value_error\", ...}]") -- hier
+     stattdessen die eigentlichen Meldungen herausziehen. Das "Value error, "-Praefix, das
+     Pydantic vor eigene ValueError-Texte setzt, faellt dabei weg. */
+  function detailText(detail) {
+    if (typeof detail === "string") return detail;
+    if (Array.isArray(detail)) {
+      const msgs = detail
+        .map((d) => (d && typeof d.msg === "string" ? d.msg.replace(/^Value error,\s*/, "") : null))
+        .filter(Boolean);
+      if (msgs.length) return msgs.join(" · ");
+    }
+    return JSON.stringify(detail);
+  }
   async function req(method, path, body) {
     const opts = { method, credentials: "include", headers: {} };
     if (body !== undefined) {
@@ -41,9 +55,7 @@ const API = (() => {
     const data = parseJson(text, res.status);
     if (!res.ok) {
       let detail = res.statusText;
-      if (data && data.detail) {
-        detail = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail);
-      }
+      if (data && data.detail) detail = detailText(data.detail);
       const err = new Error(detail);
       err.status = res.status;
       throw err;
@@ -63,7 +75,7 @@ const API = (() => {
     const data = parseJson(text, res.status);
     if (!res.ok) {
       let detail = res.statusText;
-      if (data && data.detail) detail = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail);
+      if (data && data.detail) detail = detailText(data.detail);
       const err = new Error(detail); err.status = res.status; throw err;
     }
     return data;

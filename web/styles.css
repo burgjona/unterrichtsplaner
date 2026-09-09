@@ -1555,3 +1555,83 @@ body.plan-focus { overflow:hidden; }
 #stunde select:not(.phase-kind-select) {
   height: 48px;
 }
+
+/* ---------- Notenmodul (docs/konzept_noten.md) ----------
+   Die Matrix ist naturgemaess breit (eine Spalte je Leistung) und scrollt deshalb
+   horizontal in ihrem EIGENEN Container — die Seite selbst nie. Schuelername und
+   Durchschnitte bleiben beim Scrollen an den Raendern stehen. */
+.noten-matrix-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+/* Inhaltsbreite statt width:100%: bei wenigen Leistungen wuerden die Ueberschriften sonst
+   auf ein paar Zeichen zusammengequetscht, waehrend die Durchschnittsspalten den Rest
+   der Kartenbreite schlucken. Der Wrapper scrollt, sobald es wirklich breit wird. */
+.noten-matrix { width:auto; table-layout:auto; border-collapse:collapse; }
+.noten-matrix th, .noten-matrix td { border-bottom:1px solid var(--line); padding:6px 8px; vertical-align:middle; }
+.noten-matrix thead th { text-align:left; font-size:12px; color:var(--primary-dark); vertical-align:bottom; }
+.noten-matrix tbody tr:hover { background:var(--surface-2); }
+
+.noten-matrix th.noten-name {
+  text-align:left; font-weight:var(--fw-heavy); white-space:nowrap;
+  position:sticky; left:0; z-index:2; background:var(--surface);
+}
+.noten-matrix tbody tr:hover th.noten-name { background:var(--surface-2); }
+.noten-matrix thead th.noten-name { z-index:3; }
+
+.noten-col { min-width:132px; max-width:190px; }
+/* Die Themes setzen text-transform:uppercase auf Tabellenkoepfe. Hier bewusst zurueckgenommen:
+   Grossschreibung macht aus "gross" ein "GROSS" und aus dem Titel einer Leistung eine Zeile
+   ohne Umlaut-Feinheiten -- Bezeichnungen sollen genau so stehen, wie sie eingegeben wurden. */
+.noten-col-title, .noten-col-meta, .noten-badge, .noten-matrix th.noten-name {
+  text-transform:none; letter-spacing:normal;
+}
+.noten-col-title { font-weight:var(--fw-heavy); white-space:normal; word-break:normal; overflow-wrap:break-word; }
+.noten-col-meta { font-size:11px; color:var(--muted); font-weight:400; margin-top:2px; white-space:normal; }
+.noten-col-actions { margin-top:4px; display:flex; gap:4px; }
+
+.noten-badge { display:inline-block; padding:1px 6px; border-radius:999px; font-size:10px; font-weight:var(--fw-heavy); }
+.noten-badge.gross { background:var(--badge-warn-bg); color:var(--badge-warn-text); }
+.noten-badge.klein { background:var(--badge-ok-bg); color:var(--badge-ok-text); }
+
+.noten-icon {
+  width:24px; height:24px; padding:0; line-height:1; border-radius:6px; cursor:pointer;
+  border:1px solid var(--line); background:var(--surface); color:var(--muted); font-size:12px;
+}
+.noten-icon:hover { border-color:var(--primary); color:var(--primary-dark); }
+.noten-icon.bad:hover { border-color:var(--bad); color:var(--bad); }
+
+.noten-cell-td { width:118px; }
+.noten-cell { width:100%; min-width:56px; padding:7px 8px; text-align:center; font-weight:var(--fw-heavy); }
+.noten-cell.invalid { border-color:var(--bad); background:var(--badge-bad-bg); }
+/* Eine Note mit Hinweis bekommt eine Ecke — der Hinweis selbst steht im title-Tooltip. */
+.noten-cell-td.has-comment { position:relative; }
+.noten-cell-td.has-comment::after {
+  content:""; position:absolute; top:2px; right:2px; width:0; height:0;
+  border-top:6px solid var(--primary); border-left:6px solid transparent; pointer-events:none;
+}
+
+.noten-matrix td.noten-avg, .noten-matrix th.noten-avg {
+  text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums;
+  background:var(--surface-2); min-width:64px;
+}
+.noten-matrix td.noten-avg.gesamt, .noten-matrix th.noten-avg.gesamt {
+  font-weight:var(--fw-heavy); color:var(--primary-dark);
+}
+
+.noten-quick { display:grid; gap:6px; }
+.noten-quick-row { display:grid; grid-template-columns: minmax(0,1fr) 96px minmax(0,1.2fr); gap:8px; align-items:center; }
+.noten-quick-name { font-weight:var(--fw-heavy); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.noten-quick-input { text-align:center; font-weight:var(--fw-heavy); }
+
+@media (max-width: 920px) {
+  /* Der klebende Namensspalten-Rand kostet auf schmalen Geraeten zu viel Breite;
+     stattdessen scrollt die Matrix als Ganzes. */
+  .noten-matrix th.noten-name { position:static; }
+  .noten-col { min-width:104px; }
+  .noten-cell-td { width:96px; }
+}
+
+@media (max-width: 600px) {
+  /* Hinweisfeld unter Name + Note, damit in einer Zeile nichts unter ~44px faellt. */
+  .noten-quick-row { grid-template-columns: minmax(0,1fr) 88px; }
+  .noten-quick-comment { grid-column:1 / -1; }
+  .noten-matrix th, .noten-matrix td { padding:5px 6px; }
+}

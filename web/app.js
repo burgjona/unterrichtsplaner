@@ -2745,6 +2745,7 @@ function renderClassSelects() {
     state.schoolYears.map((s) => `<option value="${s.id}">${esc(s.label)}</option>`).join("");
   // Nur neu laden, wenn die jeweiligen Module schon aktiv sind (kein Nachladen erzwingen) –
   // sonst würde jeder Datenrefresh sie eager laden, egal welche View gerade offen ist.
+  if (_notenModuleInstance) _notenModuleInstance.onDataRefresh();
   if (_stoffplanModuleInstance) _stoffplanModuleInstance.loadPlanNotes();
   if (_sequenzplanModuleInstance) {
     _sequenzplanModuleInstance.renderSeqClassSelect();
@@ -6155,6 +6156,7 @@ function praesentFullscreen() {
 const titles = {
   heute: ["Schulalltag heute", "Dein Tag auf einen Blick."],
   klassen: ["Klassen", "Klassen und Parallelgruppen anlegen und verwalten."],
+  noten: ["Noten", "Leistungen je Klasse und Halbjahr, Noten mit Tendenz und gewichtete Durchschnitte."],
   "klasse-detail": ["Klassendetails", "Stammdaten, Stunden und Schülerliste einer Klasse."],
   kalender: ["Planungskalender", "Monat, Woche und Lernbereichs-Zeitleiste."],
   praesentation: ["Schüleransicht", "Präsentationsmodus für Beamer/Tafel – Jahresplan, Lernbereich, heutiger Ablauf."],
@@ -6315,6 +6317,7 @@ function showView(view) {
     m.renderSeqClassSelect(); m.renderSeqBlockSelect(); m.loadSeqCardsFromServer();
   });
   if (view === "praesentation") renderPraesentation();
+  if (view === "noten") getNotenModule().then((m) => m.renderNoten());
   if (view === "notizen") getNotizenModule().then((m) => m.renderNotizen());
   if (view === "material") renderArchivPanel(archivTab);
   closeMobileNav();
@@ -7304,6 +7307,18 @@ async function updateSyncConflictBadge() {
   btn.classList.toggle("hidden", total === 0);
   const label = $("syncConflictBtnLabel");
   if (label) label.textContent = `Sync-Probleme (${total})`;
+}
+
+let _notenModulePromise = null;
+let _notenModuleInstance = null;
+function getNotenModule() {
+  if (!_notenModulePromise) {
+    _notenModulePromise = import("./noten.js").then((mod) => {
+      _notenModuleInstance = mod.createNotenModule({ $, esc, API, toast, state, deDate });
+      return _notenModuleInstance;
+    });
+  }
+  return _notenModulePromise;
 }
 
 let _notizenModulePromise = null;

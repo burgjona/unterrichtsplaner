@@ -26,6 +26,7 @@ const SHELL_ASSETS = [
   "/stundenplan.js",
   "/sitzplan.js",
   "/notizen.js",
+  "/noten.js",
   "/sync-conflicts.js",
   "/stoffplan.js",
   "/sequenzplan.js",
