@@ -1467,3 +1467,181 @@ class AbsenceDeleteOut(Base):
     """Ergebnis des automatischen Zurückrollens."""
     restored: int
     kept: int                        # seither von Hand geändert → unangetastet gelassen
+
+
+# ---------- Noten (Notenmodul, siehe docs/konzept_noten.md) ----------
+GRADE_KINDS = (
+    "Leistungskontrolle", "Komplexe Leistung", "Klassenarbeit", "Referat",
+    "Präsentation", "mündliche Leistung", "Hausaufgabe", "Stundenleistung",
+)
+
+
+def _parse_note_value(v):
+    """Nimmt Zahl ('2.25') wie Tendenzschreibweise ('2-') entgegen; leer → None."""
+    from .lib.noten import parse_note
+    try:
+        return parse_note(v)
+    except ValueError as exc:
+        raise ValueError(str(exc))
+
+
+class GradeItemCreate(Base):
+    title: str
+    kind: str
+    size: str = "klein"
+    date: str
+    term: Optional[str] = None       # None → aus dem Datum vorbelegt
+    note: Optional[str] = None
+    lesson_id: Optional[int] = None
+
+    @field_validator("kind")
+    @classmethod
+    def _kind(cls, v):
+        if v not in GRADE_KINDS:
+            raise ValueError(f"Unbekannter Anlass '{v}'.")
+        return v
+
+    @field_validator("size")
+    @classmethod
+    def _size(cls, v):
+        if v not in ("gross", "klein"):
+            raise ValueError("size muss 'gross' oder 'klein' sein.")
+        return v
+
+    @field_validator("term")
+    @classmethod
+    def _term(cls, v):
+        if v is not None and v not in ("HJ1", "HJ2"):
+            raise ValueError("term muss 'HJ1' oder 'HJ2' sein.")
+        return v
+
+
+class GradeItemSyncCreate(GradeItemCreate):
+    class_id: int
+
+
+class GradeItemUpdate(Base):
+    title: Optional[str] = None
+    kind: Optional[str] = None
+    size: Optional[str] = None
+    date: Optional[str] = None
+    term: Optional[str] = None
+    note: Optional[str] = None
+    lesson_id: Optional[int] = None
+
+    _kind = field_validator("kind")(GradeItemCreate._kind.__func__)
+    _size = field_validator("size")(GradeItemCreate._size.__func__)
+    _term = field_validator("term")(GradeItemCreate._term.__func__)
+
+
+class GradeItemOut(Base):
+    id: int
+    class_id: int
+    title: str
+    kind: str
+    size: str
+    date: str
+    term: str
+    note: Optional[str] = None
+    lesson_id: Optional[int] = None
+    created_at: str
+    updated_at: str
+
+
+class GradeIn(Base):
+    """Note einer Zelle. value nimmt Zahl oder Tendenzform ('2-') entgegen."""
+    value: Optional[float] = None
+    comment: Optional[str] = None
+
+    @field_validator("value", mode="before")
+    @classmethod
+    def _value(cls, v):
+        return _parse_note_value(v)
+
+
+class GradeBulkEntry(GradeIn):
+    student_id: int
+
+
+class GradeBulkIn(Base):
+    grades: List[GradeBulkEntry] = Field(default_factory=list)
+
+
+class GradeSyncCreate(GradeIn):
+    item_id: int
+    student_id: int
+
+
+class GradeOut(Base):
+    id: int
+    item_id: int
+    student_id: int
+    value: Optional[float] = None
+    label: str = ""                  # Anzeigeform, z. B. "2-"
+    comment: Optional[str] = None
+    created_at: str
+    updated_at: str
+
+
+class StudentGradeSummary(Base):
+    """Durchschnitte eines Schülers im gewählten Halbjahr."""
+    student_id: int
+    avg_gross: Optional[float] = None
+    avg_klein: Optional[float] = None
+    avg_gesamt: Optional[float] = None
+    suggested_term_grade: Optional[float] = None
+    term_grade: Optional[float] = None        # von Hand gesetzt, sonst None
+    term_grade_comment: Optional[str] = None
+
+
+class GradeMatrixStudent(Base):
+    id: int
+    name: str
+    sort_order: int
+
+
+class GradeMatrixOut(Base):
+    """Alles, was die Notenansicht einer Klasse für ein Halbjahr braucht."""
+    class_id: int
+    term: str
+    gross_anteil: int
+    students: List[GradeMatrixStudent] = Field(default_factory=list)
+    items: List[GradeItemOut] = Field(default_factory=list)
+    grades: List[GradeOut] = Field(default_factory=list)
+    summaries: List[StudentGradeSummary] = Field(default_factory=list)
+
+
+class TermGradeIn(Base):
+    value: Optional[float] = None    # None → von Hand gesetzte Note wieder entfernen
+    comment: Optional[str] = None
+
+    @field_validator("value", mode="before")
+    @classmethod
+    def _value(cls, v):
+        return _parse_note_value(v)
+
+
+class TermGradeSyncCreate(TermGradeIn):
+    student_id: int
+    term: str
+
+
+class TermGradeOut(Base):
+    id: int
+    class_id: int
+    student_id: int
+    term: str
+    value: float
+    label: str = ""
+    comment: Optional[str] = None
+    created_at: str
+    updated_at: str
+
+
+class GewichtungIn(Base):
+    gross_anteil: int
+
+
+class GewichtungOut(Base):
+    class_id: int
+    gross_anteil: int

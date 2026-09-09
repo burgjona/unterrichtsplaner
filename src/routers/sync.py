@@ -23,6 +23,7 @@ from . import calendar as calendar_router
 from . import calendar_categories as calendar_categories_router
 from . import classes as classes_router
 from . import lessons as lessons_router
+from . import noten as noten_router
 from . import notes as notes_router
 from . import planning as planning_router
 from . import reflections as reflections_router
@@ -57,6 +58,9 @@ ENTITY_REGISTRY = {
     "sequenz_stunden": sequenzplan_router.SYNC_HANDLER,
     "seat_plans": seating_router.SYNC_HANDLER,
     "tropenplan_slots": stundenplan_router.SYNC_HANDLER_TROPENPLAN_SLOTS,
+    "grade_items": noten_router.SYNC_HANDLER_GRADE_ITEMS,
+    "grades": noten_router.SYNC_HANDLER_GRADES,
+    "term_grades": noten_router.SYNC_HANDLER_TERM_GRADES,
 }
 
 PAGE_SIZE = 500
