@@ -1700,6 +1700,7 @@ function renderClassDetailHefter() {
     ta.placeholder = "— noch kein Eintrag —";
     ta.value = l.hefteintrag || "";
     ta.addEventListener("input", () => {
+      autoGrowTextarea(ta, 44, 400);
       if (_cdHefterTimers[l.id]) clearTimeout(_cdHefterTimers[l.id]);
       _cdHefterTimers[l.id] = setTimeout(async () => {
         try {
@@ -1716,6 +1717,7 @@ function renderClassDetailHefter() {
       if (les) openLessonModal(les);
     };
     tb.appendChild(tr);
+    autoGrowTextarea(ta, 44, 400);   // erst nach dem Einhaengen in die Tabelle — vorher misst es 0
   });
 }
 
@@ -4799,6 +4801,19 @@ function openLessonModal(l) {
 // Kasten zu sperren, in dem man scrollen muss.
 function autoGrowTextarea(el, minPx = 80, maxPx = 600) {
   if (!el) return;
+  // Breitenwechsel beobachten: beim Direkteinstieg wird die Klassenseite gerendert, bevor sie
+  // ihre echte Breite hat — eine zu frueh gemessene Hoehe muss dann korrigiert werden. Der
+  // ResizeObserver (nicht IntersectionObserver: gefragt ist "hat Layout", nicht "ist im
+  // Sichtfenster" — die Hefter-Tabelle liegt weit unten) meldet jede neue Breite nach.
+  if (!el._growObs && typeof ResizeObserver === "function") {
+    el._growObs = new ResizeObserver(() => {
+      if (!el.clientWidth || el.clientWidth === el._growWidth) return;   // Hoehenwechsel: nichts tun
+      autoGrowTextarea(el, minPx, maxPx);
+    });
+    el._growObs.observe(el);
+  }
+  if (!el.clientWidth) return;          // noch kein Layout — der Observer meldet sich
+  el._growWidth = el.clientWidth;
   el.style.height = "auto";
   const rahmen = el.offsetHeight - el.clientHeight;   // Rand bei box-sizing: border-box
   const hoehe = Math.max(minPx, Math.min(maxPx, el.scrollHeight + rahmen));
@@ -4810,7 +4825,9 @@ let _modalHefterTimer = null;
 function wireModalTafelbild(l) {
   const ta = $("modalTbNotiz");
   if (ta) {
+    autoGrowTextarea(ta);
     ta.addEventListener("input", () => {
+      autoGrowTextarea(ta);
       if (_modalTbNotizTimer) clearTimeout(_modalTbNotizTimer);
       _modalTbNotizTimer = setTimeout(async () => {
         try {
