@@ -228,3 +228,148 @@ def test_noten_sind_sync_faehig(client, klasse):
     assert r.status_code == 200, r.text
     types = {c["entityType"] for c in r.json()["changes"]}
     assert "grade_items" in types and "grades" in types
+
+
+# ---------- Word-Export (Meilenstein 3) ----------
+
+DOCX_MEDIA = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+
+def _docx_text(payload: bytes) -> str:
+    """Sichtbarer Text eines .docx – reicht, um Inhalte zu prüfen, ohne das Layout zu fixieren."""
+    from io import BytesIO
+
+    from docx import Document
+
+    doc = Document(BytesIO(payload))
+    parts = [p.text for p in doc.paragraphs]
+    for table in doc.tables:
+        for row in table.rows:
+            parts.extend(c.text for c in row.cells)
+    return "\n".join(parts)
+
+
+@pytest.fixture
+def noten_daten(client, klasse):
+    """Klasse mit zwei Leistungen (groß + klein) und Noten für den ersten Schüler."""
+    cid, students = klasse
+    gross = _item(client, cid, size="gross", title="Klassenarbeit Balladen")
+    klein = _item(client, cid, size="klein", title="Vortrag Erlkönig", kind="Referat")
+    client.put(f"/api/grade-items/{gross['id']}/students/{students[0]}/grade",
+               json={"value": "2", "comment": "sicherer Aufbau"})
+    client.put(f"/api/grade-items/{klein['id']}/students/{students[0]}/grade",
+               json={"value": "3"})
+    client.put(f"/api/grade-items/{gross['id']}/students/{students[1]}/grade",
+               json={"value": "4"})
+    return cid, students, gross, klein
+
+
+def test_export_matrix(client, noten_daten):
+    cid, students, gross, klein = noten_daten
+    r = client.get(f"/api/classes/{cid}/noten/export/matrix", params={"term": "HJ1"})
+    assert r.status_code == 200, r.text
+    assert r.headers["content-type"] == DOCX_MEDIA
+    text = _docx_text(r.content)
+    assert "Notenübersicht" in text
+    assert "Klassenarbeit Balladen" in text and "Vortrag Erlkönig" in text
+    assert "14.11.2025" in text                    # deutsches Datum, nicht ISO
+    assert "2025-11-14" not in text
+    assert "Änne Müller" in text                   # Umlaute unverändert
+    assert "2,50" in text                          # Ø gesamt des ersten Schülers
+
+
+def test_export_einzelblatt_je_schueler(client, noten_daten):
+    cid, students, gross, klein = noten_daten
+    r = client.get(f"/api/classes/{cid}/noten/export/schueler", params={"term": "HJ1"})
+    assert r.status_code == 200, r.text
+    text = _docx_text(r.content)
+    assert "Änne Müller" in text and "Bert Straßer" in text
+    assert "sicherer Aufbau" in text               # Hinweisfeld der Note
+    assert "Rechnerischer Vorschlag für die Zeugnisnote: 3" in text
+
+
+def test_export_auswertung_einer_leistung(client, noten_daten):
+    cid, students, gross, klein = noten_daten
+    r = client.get(f"/api/grade-items/{gross['id']}/export")
+    assert r.status_code == 200, r.text
+    text = _docx_text(r.content)
+    assert "Klassenarbeit Balladen" in text
+    assert "Notenspiegel" in text
+    assert "Bewertet: 2 von 2" in text
+    assert "Durchschnitt: 3,00" in text            # Noten 2 und 4
+
+
+def test_export_zeugnisnotenliste(client, noten_daten):
+    cid, students, gross, klein = noten_daten
+    client.put(f"/api/classes/{cid}/students/{students[0]}/term-grade",
+               params={"term": "HJ1"}, json={"value": "2", "comment": "deutliche Steigerung"})
+    r = client.get(f"/api/classes/{cid}/noten/export/zeugnis", params={"term": "HJ1"})
+    assert r.status_code == 200, r.text
+    text = _docx_text(r.content)
+    assert "Zeugnisnoten" in text
+    assert "deutliche Steigerung" in text
+    assert "Vorschlag" in text
+
+
+def test_export_dateiname_mit_umlaut(client, noten_daten):
+    cid, _, _, _ = noten_daten
+    r = client.get(f"/api/classes/{cid}/noten/export/matrix", params={"term": "HJ1"})
+    cd = r.headers["content-disposition"]
+    assert "filename*=UTF-8''" in cd
+    assert "Noten%C3%BCbersicht" in cd             # RFC 5987 trägt das ü
+    assert "Noten_bersicht" in cd                  # ASCII-Fallback daneben
+
+
+def test_export_leeres_halbjahr_bleibt_erzeugbar(client, klasse):
+    cid, _ = klasse
+    r = client.get(f"/api/classes/{cid}/noten/export/matrix", params={"term": "HJ2"})
+    assert r.status_code == 200, r.text
+    assert "noch keine Leistung erfasst" in _docx_text(r.content)
+
+
+def test_export_fremde_klasse_404(client, auth):
+    assert client.get("/api/classes/999/noten/export/matrix").status_code == 404
+    assert client.get("/api/grade-items/999/export").status_code == 404
+
+
+def test_notenspiegel_rundet_kaufmaennisch(client, klasse):
+    """2,5 gehört in den Spiegel auf die 3 – Pythons round() würde auf 2 abrunden."""
+    cid, students = klasse
+    item = _item(client, cid)
+    client.put(f"/api/grade-items/{item['id']}/students/{students[0]}/grade", json={"value": "2,5"})
+    text = _docx_text(client.get(f"/api/grade-items/{item['id']}/export").content)
+    zeile = [l for l in text.split("\n")]
+    # Kopfzeile "Note 1..6", darunter "Anzahl" – die 1 muss bei der 3 stehen.
+    idx = zeile.index("Anzahl")
+    assert zeile[idx:idx + 7] == ["Anzahl", "0", "0", "1", "0", "0", "0"]
+
+
+def test_matrix_export_ist_querformat(client, noten_daten):
+    """Die Übersicht braucht Querformat – Seitenmaße UND w:orient.
+
+    Regression: python-docx kennt section.orientation, nicht section.orient. Ein Tippfehler
+    dort legt still ein neues Attribut an, statt die Ausrichtung zu setzen.
+    """
+    from io import BytesIO
+
+    from docx import Document
+    from docx.enum.section import WD_ORIENT
+
+    cid, _, _, _ = noten_daten
+    r = client.get(f"/api/classes/{cid}/noten/export/matrix", params={"term": "HJ1"})
+    section = Document(BytesIO(r.content)).sections[0]
+    assert section.orientation == WD_ORIENT.LANDSCAPE
+    assert section.page_width > section.page_height
+
+
+def test_einzelblatt_hat_eine_seite_je_schueler(client, noten_daten):
+    from io import BytesIO
+
+    from docx import Document
+
+    cid, students, _, _ = noten_daten
+    r = client.get(f"/api/classes/{cid}/noten/export/schueler", params={"term": "HJ1"})
+    doc = Document(BytesIO(r.content))
+    breaks = sum('type="page"' in run._element.xml
+                 for p in doc.paragraphs for run in p.runs)
+    assert breaks == len(students) - 1      # Umbruch zwischen den Blättern, nicht davor

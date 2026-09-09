@@ -12,12 +12,14 @@ ohne DB testbar bleibt.
 Eine leere Zelle bedeutet schlicht "nicht bewertet" und zählt nicht in den Durchschnitt –
 deshalb löscht das Speichern einer leeren Note die Zeile, statt sie mit NULL zu führen.
 """
+import urllib.parse
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from ..deps import get_db, get_user_id, row_or_404
 from ..lib import noten as calc
+from ..lib import noten_export
 from ..schemas import (
     GewichtungIn, GewichtungOut, GradeBulkIn, GradeIn, GradeItemCreate, GradeItemOut,
     GradeItemSyncCreate, GradeItemUpdate, GradeMatrixOut, GradeMatrixStudent, GradeOut,
@@ -42,8 +44,10 @@ def term_from_date(iso_date: str) -> str:
 
 
 def _class_or_404(conn, user_id, cid):
+    # SELECT * statt einzelner Spalten: der Export braucht neben der Gewichtung auch Name,
+    # Fach und Schuljahr für die Kopfzeile der Dokumente.
     row = conn.execute(
-        "SELECT id, noten_gross_anteil FROM classes WHERE id = ? AND user_id = ?", (cid, user_id)
+        "SELECT * FROM classes WHERE id = ? AND user_id = ?", (cid, user_id)
     ).fetchone()
     return row_or_404(row, "Klasse")
 
@@ -289,59 +293,133 @@ def put_gewichtung(cid: int, body: GewichtungIn, conn=Depends(get_db),
 
 # ---------- Notenmatrix (Hauptansicht) ----------
 
-@router.get("/classes/{cid}/noten", response_model=GradeMatrixOut)
-def matrix(cid: int, term: str = Query("HJ1"), conn=Depends(get_db),
-           user_id: int = Depends(get_user_id)):
+def _collect(conn, user_id, cid: int, term: str) -> dict:
+    """Alles, was Ansicht UND Word-Export einer Klasse für ein Halbjahr brauchen.
+
+    Bewusst eine gemeinsame Quelle: sonst driften die Durchschnitte auf dem Bildschirm und
+    die im Ausdruck irgendwann auseinander. Rückgabe in einfachen Strukturen (dict/list),
+    die Pydantic-Modelle baut erst matrix() daraus.
+    """
     cls = _class_or_404(conn, user_id, cid)
     anteil = calc.clamp_anteil(cls["noten_gross_anteil"])
 
-    students = conn.execute(
+    students = [dict(r) for r in conn.execute(
         "SELECT id, name, sort_order FROM students WHERE class_id = ? AND user_id = ? "
         "ORDER BY sort_order, id", (cid, user_id),
-    ).fetchall()
-    item_rows = conn.execute(
+    ).fetchall()]
+    items = [dict(r) for r in conn.execute(
         "SELECT * FROM grade_items WHERE class_id = ? AND user_id = ? AND term = ? "
         "ORDER BY date, id", (cid, user_id, term),
-    ).fetchall()
-    items = [GradeItemOut(**dict(r)) for r in item_rows]
-    size_by_item = {r["id"]: r["size"] for r in item_rows}
+    ).fetchall()]
+    size_by_item = {it["id"]: it["size"] for it in items}
 
-    grades = []
+    grade_rows = []
     if size_by_item:
         placeholders = ",".join("?" for _ in size_by_item)
-        grades = [_grade_out(r) for r in conn.execute(
+        grade_rows = [dict(r) for r in conn.execute(
             f"SELECT * FROM grades WHERE user_id = ? AND item_id IN ({placeholders})",
             (user_id, *size_by_item),
         ).fetchall()]
 
     term_grades = {
-        r["student_id"]: r for r in conn.execute(
+        r["student_id"]: dict(r) for r in conn.execute(
             "SELECT * FROM term_grades WHERE user_id = ? AND class_id = ? AND term = ?",
             (user_id, cid, term),
         ).fetchall()
     }
 
     by_student = {}
-    for g in grades:
-        by_student.setdefault(g.student_id, []).append(
-            {"value": g.value, "size": size_by_item.get(g.item_id)}
+    for g in grade_rows:
+        by_student.setdefault(g["student_id"], []).append(
+            {"value": g["value"], "size": size_by_item.get(g["item_id"])}
         )
 
-    summaries = []
+    summaries = {}
     for s in students:
         summary = calc.summarize(by_student.get(s["id"], []), anteil)
         tg = term_grades.get(s["id"])
-        summaries.append(StudentGradeSummary(
-            student_id=s["id"], **summary,
-            term_grade=tg["value"] if tg else None,
-            term_grade_comment=tg["comment"] if tg else None,
-        ))
+        summary["term_grade"] = tg["value"] if tg else None
+        summary["term_grade_comment"] = tg["comment"] if tg else None
+        summaries[s["id"]] = summary
 
+    year = conn.execute(
+        "SELECT label FROM school_years WHERE id = ?", (cls["school_year_id"],)
+    ).fetchone() if cls["school_year_id"] else None
+
+    return {
+        "class": dict(cls), "school_year": year["label"] if year else None,
+        "term": term, "gross_anteil": anteil,
+        "students": students, "items": items,
+        "grade_rows": grade_rows,
+        "grades": {(g["item_id"], g["student_id"]): g for g in grade_rows},
+        "summaries": summaries,
+    }
+
+
+@router.get("/classes/{cid}/noten", response_model=GradeMatrixOut)
+def matrix(cid: int, term: str = Query("HJ1"), conn=Depends(get_db),
+           user_id: int = Depends(get_user_id)):
+    ctx = _collect(conn, user_id, cid, term)
     return GradeMatrixOut(
-        class_id=cid, term=term, gross_anteil=anteil,
-        students=[GradeMatrixStudent(**dict(s)) for s in students],
-        items=items, grades=grades, summaries=summaries,
+        class_id=cid, term=term, gross_anteil=ctx["gross_anteil"],
+        students=[GradeMatrixStudent(**s) for s in ctx["students"]],
+        items=[GradeItemOut(**it) for it in ctx["items"]],
+        grades=[_grade_out(g) for g in ctx["grade_rows"]],
+        summaries=[StudentGradeSummary(student_id=sid, **summary)
+                   for sid, summary in ctx["summaries"].items()],
     )
+
+
+# ---------- Word-Export (docs/konzept_noten.md, Abschnitt 7) ----------
+
+def _docx_response(data: bytes, filename: str) -> Response:
+    # ASCII-Fallback + RFC 5987, damit Umlaute im Dateinamen erhalten bleiben.
+    ascii_fb = "".join(c if c.isascii() else "_" for c in filename)
+    disposition = (f"attachment; filename=\"{ascii_fb}\"; "
+                   f"filename*=UTF-8''{urllib.parse.quote(filename)}")
+    return Response(
+        content=data,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": disposition},
+    )
+
+
+def _safe(text: str) -> str:
+    """Dateinamens-Baustein: Umlaute bleiben, nur Pfad-/Sonderzeichen fliegen raus."""
+    cleaned = "".join(c if (c.isalnum() or c in " -_") else "_" for c in (text or "")).strip()
+    return cleaned or "Noten"
+
+
+@router.get("/classes/{cid}/noten/export/matrix")
+def export_matrix(cid: int, term: str = Query("HJ1"), conn=Depends(get_db),
+                  user_id: int = Depends(get_user_id)):
+    ctx = _collect(conn, user_id, cid, term)
+    data = noten_export.build_matrix_docx(ctx)
+    return _docx_response(data, f"Notenübersicht_{_safe(ctx['class']['name'])}_{term}.docx")
+
+
+@router.get("/classes/{cid}/noten/export/schueler")
+def export_student_sheets(cid: int, term: str = Query("HJ1"), conn=Depends(get_db),
+                          user_id: int = Depends(get_user_id)):
+    ctx = _collect(conn, user_id, cid, term)
+    data = noten_export.build_student_sheets_docx(ctx)
+    return _docx_response(data, f"Notenblätter_{_safe(ctx['class']['name'])}_{term}.docx")
+
+
+@router.get("/classes/{cid}/noten/export/zeugnis")
+def export_term_grades(cid: int, term: str = Query("HJ1"), conn=Depends(get_db),
+                       user_id: int = Depends(get_user_id)):
+    ctx = _collect(conn, user_id, cid, term)
+    data = noten_export.build_term_docx(ctx)
+    return _docx_response(data, f"Zeugnisnoten_{_safe(ctx['class']['name'])}_{term}.docx")
+
+
+@router.get("/grade-items/{iid}/export")
+def export_item(iid: int, conn=Depends(get_db), user_id: int = Depends(get_user_id)):
+    item = dict(row_or_404(_item_row(conn, user_id, iid), "Leistung"))
+    ctx = _collect(conn, user_id, item["class_id"], item["term"])
+    data = noten_export.build_item_docx(ctx, item)
+    return _docx_response(data, f"Auswertung_{_safe(item['title'])}.docx")
 
 
 # ---------- Sync-Handler-Registry (src/routers/sync.py) ----------

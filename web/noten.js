@@ -132,6 +132,7 @@ export function createNotenModule(ctx) {
         <div class="noten-col-meta">${esc(deDate(it.date))} · ${esc(it.kind)} ${sizeBadge(it.size)}</div>
         <div class="noten-col-actions">
           <button type="button" class="noten-icon" data-edit-item="${it.id}" title="Leistung bearbeiten" aria-label="Leistung „${esc(it.title)}“ bearbeiten">✎</button>
+          <button type="button" class="noten-icon" data-export-item="${it.id}" title="Auswertung als Word-Datei" aria-label="Auswertung von „${esc(it.title)}“ als Word-Datei">⤓</button>
           <button type="button" class="noten-icon bad" data-del-item="${it.id}" title="Leistung löschen" aria-label="Leistung „${esc(it.title)}“ löschen">✕</button>
         </div>
       </th>`).join("");
@@ -168,6 +169,9 @@ export function createNotenModule(ctx) {
     });
     wrap.querySelectorAll("[data-edit-item]").forEach((b) => {
       b.onclick = () => startEditItem(Number(b.dataset.editItem));
+    });
+    wrap.querySelectorAll("[data-export-item]").forEach((b) => {
+      b.onclick = () => download(`/api/grade-items/${b.dataset.exportItem}/export`);
     });
     wrap.querySelectorAll("[data-del-item]").forEach((b) => {
       b.onclick = () => deleteItem(Number(b.dataset.delItem));
@@ -375,6 +379,24 @@ export function createNotenModule(ctx) {
     } catch (e) { toast(e.message, false); }
   }
 
+  /* ---------- Word-Export ---------- */
+
+  // Wie downloadStoffPlanPdf in app.js: der Browser holt die Datei selbst, Session-Cookie
+  // inklusive. Kein fetch+Blob nötig, und der Dateiname aus dem Content-Disposition-Header
+  // (RFC 5987, mit Umlauten) bleibt dabei erhalten.
+  function download(url) {
+    const a = document.createElement("a");
+    a.href = url;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  function exportClassDoc(kind) {
+    if (!classId) { toast("Bitte zuerst eine Klasse wählen.", false); return; }
+    download(`/api/classes/${classId}/noten/export/${kind}?term=${term}`);
+  }
+
   /* ---------- Einstieg ---------- */
 
   let wired = false;
@@ -394,6 +416,9 @@ export function createNotenModule(ctx) {
     $("notenQuickItem").onchange = renderQuickList;
     $("notenQuickSave").onclick = saveQuick;
     $("notenAnteilSave").onclick = saveAnteil;
+    $("notenExportMatrix").onclick = () => exportClassDoc("matrix");
+    $("notenExportSchueler").onclick = () => exportClassDoc("schueler");
+    $("notenExportZeugnis").onclick = () => exportClassDoc("zeugnis");
   }
 
   // Wird bei jedem Öffnen der Ansicht gerufen (showView in app.js).
