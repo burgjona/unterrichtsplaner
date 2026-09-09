@@ -335,6 +335,16 @@
               <div style="margin-top:8px;"><button class="btn small secondary" id="cdStudentBulkBtn">Alle hinzufügen</button></div>
             </div>
           </div>
+
+          <!-- Noten: nur Kennzahlen, die Arbeit passiert in der Ansicht "Noten" -->
+          <div class="card cd-ord-9">
+            <div class="cd-head">
+              <h3>Noten</h3>
+              <button class="btn small" id="cdNotenOpenBtn">Noten öffnen</button>
+            </div>
+            <p class="muted small">Leistungen und Durchschnitte dieser Klasse im laufenden Halbjahr.</p>
+            <div id="cdNoten"></div>
+          </div>
         </div>
       </div>
     </section>
@@ -848,6 +858,21 @@
           <button class="btn" id="notenQuickSave">Noten speichern</button>
           <span id="notenQuickStatus" class="small muted"></span>
         </div>
+      </div>
+
+      <div class="card">
+        <h3>Schülerblatt</h3>
+        <p class="muted small">Alle Noten eines Schülers im gewählten Halbjahr – chronologisch, mit Anlass und Hinweisen. Ein Klick auf einen Namen in der Matrix öffnet ihn ebenfalls hier.</p>
+        <div class="row">
+          <div><label for="notenSheetStudent">Schüler/in</label><select id="notenSheetStudent"></select></div>
+        </div>
+        <div id="notenSheet" style="margin-top:12px;"></div>
+      </div>
+
+      <div class="card">
+        <h3>Zeugnisnoten</h3>
+        <p class="muted small">Der Vorschlag kommt aus dem gewichteten Durchschnitt. Die endgültige Note setzt du selbst; weicht sie ab, wird die Zeile hervorgehoben. Feld leeren nimmt die Note zurück, dann gilt wieder der Vorschlag.</p>
+        <div id="notenTermList" class="noten-term"></div>
       </div>
 
       <div class="card">

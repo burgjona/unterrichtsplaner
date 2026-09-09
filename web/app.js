@@ -1369,7 +1369,8 @@ function cdRenderTiles(lessons) {
     }) +
     _cdTileEl("stoff", "Stoffpläne", "…", { scroll: "cdStoffPlans", go: "Öffnen ↓" }) +
     _cdTileEl("schueler", "Schüler:innen", "…", { scroll: "cdStudentList", go: "Liste ↓" }) +
-    _cdTileEl("sitzplan", "Sitzpläne", "…", { scroll: "spList", go: "Sitzplan ↓" });
+    _cdTileEl("sitzplan", "Sitzpläne", "…", { scroll: "spList", go: "Sitzplan ↓" }) +
+    _cdTileEl("noten", "Ø der Klasse", "…", { scroll: "cdNoten", go: "Noten ↓" });
   box.querySelectorAll("[data-cd-tile]").forEach((el) => {
     const jump = () => {
       const t = $(el.getAttribute("data-cd-scroll"));
@@ -1420,6 +1421,45 @@ function renderClassDetail() {
   renderClassDetailLehrplan();
   renderClassDetailStoffPlans();
   renderClassDetailNotes();
+  renderClassDetailNoten();
+}
+
+/* Kompakte Noten-Kennzahlen im Klassendetail (Notenmodul, M4). Bewusst nur Anzeige –
+   eingetragen wird in der Ansicht "Noten", hierher kommt niemand zum Tippen. Halbjahr aus
+   dem heutigen Datum, wie beim Anlegen einer Leistung (August–Januar = HJ1). */
+function currentTerm() {
+  const m = new Date().getMonth() + 1;
+  return (m >= 8 || m === 1) ? "HJ1" : "HJ2";
+}
+
+async function renderClassDetailNoten() {
+  const box = $("cdNoten");
+  if (!box) return;
+  const cid = detailClassId;
+  const term = currentTerm();
+  const termLabel = term === "HJ1" ? "1. Halbjahr" : "2. Halbjahr";
+  box.innerHTML = '<p class="muted small">Wird geladen …</p>';
+
+  let d;
+  try { d = await API.get(`/classes/${cid}/noten?term=${term}`); }
+  catch (e) { box.innerHTML = `<p class="muted small">${esc(e.message)}</p>`; return; }
+  if (String(detailClassId) !== String(cid)) return;   // inzwischen andere Klasse offen
+
+  const werte = d.summaries.map((s) => s.avgGesamt).filter((v) => v != null);
+  const schnitt = werte.length
+    ? (werte.reduce((a, b) => a + b, 0) / werte.length).toFixed(2).replace(".", ",")
+    : "–";
+  const bewertet = d.summaries.filter((s) => s.avgGesamt != null).length;
+  const offen = d.summaries.filter((s) => s.termGrade == null).length;
+
+  cdSetTile("noten", esc(schnitt));
+  box.innerHTML =
+    `<div class="mini-item"><span>${esc(termLabel)}</span>` +
+    `<span class="muted small">${d.items.length} ${d.items.length === 1 ? "Leistung" : "Leistungen"}</span></div>` +
+    `<div class="mini-item"><span>Ø der Klasse</span><span class="muted small">${esc(schnitt)}</span></div>` +
+    `<div class="mini-item"><span>Mit Noten</span>` +
+    `<span class="muted small">${bewertet} von ${d.students.length}</span></div>` +
+    `<div class="mini-item"><span>Zeugnisnote offen</span><span class="muted small">${offen}</span></div>`;
 }
 
 /* ---------- Lehrplan-Abhakmodul: Ziele der Klassenstufe + Lernbereiche abhaken ----------
@@ -6875,6 +6915,9 @@ function wireEvents() {
   // .nav-btn sind jetzt <a href="#view"> (U28) – Klick/Strg-Klick/Mittelklick übernimmt der Browser nativ,
   // die eigentliche Ansicht wird über den hashchange-Listener (routeFromHash) aktiviert.
   document.querySelectorAll("[data-view-target]").forEach((el) => (el.onclick = () => showView(el.dataset.viewTarget)));
+  // Klasse VOR showView setzen, sonst baut renderNoten() die Ansicht noch mit der alten auf.
+  $("cdNotenOpenBtn").onclick = () =>
+    getNotenModule().then((m) => { m.setClass(detailClassId); showView("noten"); });
   document.querySelectorAll(".bn-item, .mehr-item").forEach((btn) => (btn.onclick = () => showView(btn.dataset.view)));
 
   // Pfeil-Icon je Navigationspunkt: öffnet als Tab im Hintergrund, statt dorthin zu wechseln.

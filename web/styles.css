@@ -663,6 +663,7 @@ a.todo-hefter-link:hover { text-decoration:underline; }
   .cd-col-main, .cd-col-side { display:contents; }
   .cd-ord-1 { order:1; } .cd-ord-2 { order:2; } .cd-ord-3 { order:3; } .cd-ord-4 { order:4; }
   .cd-ord-5 { order:5; } .cd-ord-6 { order:6; } .cd-ord-7 { order:7; } .cd-ord-8 { order:8; }
+  .cd-ord-9 { order:9; }
 }
 
 /* Generische Zwei-Spalten-Ansicht (Desktop): breitere Hauptspalte + schmale Nebenspalte,
@@ -1616,6 +1617,34 @@ body.plan-focus { overflow:hidden; }
   font-weight:var(--fw-heavy); color:var(--primary-dark);
 }
 
+/* Schuelername in der Matrix ist klickbar (oeffnet das Schuelerblatt) -- sieht aber aus
+   wie Text, kein Button-Chrom in einer Datentabelle. */
+.noten-namebtn {
+  background:none; border:0; padding:0; font:inherit; color:inherit; cursor:pointer;
+  text-align:left; text-decoration:underline; text-decoration-style:dotted;
+  text-underline-offset:3px; min-height:0;
+}
+.noten-namebtn:hover { color:var(--primary-dark); text-decoration-style:solid; }
+
+.noten-sheet { width:100%; border-collapse:collapse; }
+.noten-sheet th, .noten-sheet td { border-bottom:1px solid var(--line); padding:6px 8px; text-align:left; }
+.noten-sheet thead th { font-size:12px; color:var(--primary-dark); text-transform:none; letter-spacing:normal; }
+.noten-sheet-note { font-weight:var(--fw-heavy); text-align:center; white-space:nowrap; }
+.noten-sheet-sum { margin:10px 0 0; font-size:13px; }
+
+.noten-term { display:grid; gap:6px; }
+.noten-term-row {
+  display:grid; grid-template-columns: minmax(0,1.4fr) 76px 76px 92px minmax(0,1.6fr);
+  gap:8px; align-items:center;
+}
+.noten-term-head { font-size:12px; color:var(--muted); font-weight:var(--fw-heavy); }
+.noten-term-name { font-weight:var(--fw-heavy); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.noten-term-avg { text-align:center; font-variant-numeric:tabular-nums; }
+.noten-term-input { text-align:center; font-weight:var(--fw-heavy); }
+.noten-term-input.invalid, .noten-cell.invalid { border-color:var(--bad); background:var(--badge-bad-bg); }
+/* Zeugnisnote weicht vom Vorschlag ab -- soll beim Durchsehen sofort auffallen. */
+.noten-term-row.abweichend .noten-term-input { border-color:var(--primary); background:var(--badge-ok-bg); }
+
 .noten-quick { display:grid; gap:6px; }
 .noten-quick-row { display:grid; grid-template-columns: minmax(0,1fr) 96px minmax(0,1.2fr); gap:8px; align-items:center; }
 .noten-quick-name { font-weight:var(--fw-heavy); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -1629,9 +1658,27 @@ body.plan-focus { overflow:hidden; }
   .noten-cell-td { width:96px; }
 }
 
+@media (max-width: 920px) {
+  /* Zeugnisnoten: die Bemerkung braucht eine eigene Zeile, sonst bleiben nur ein paar
+     Zeichen von ihr uebrig. Kopfzeile entfaellt, die Felder tragen aria-label. */
+  .noten-term-row { grid-template-columns: minmax(0,1fr) 64px 64px 84px; }
+  .noten-term-comment { grid-column:1 / -1; }
+  /* Ohne Kopfzeile braucht jede Zahl ihre eigene Beschriftung. */
+  .noten-term-head { display:none; }
+  .noten-term-avg::before {
+    content:attr(data-label) " "; font-size:10px; color:var(--muted); font-weight:400;
+  }
+}
+
 @media (max-width: 600px) {
   /* Hinweisfeld unter Name + Note, damit in einer Zeile nichts unter ~44px faellt. */
   .noten-quick-row { grid-template-columns: minmax(0,1fr) 88px; }
   .noten-quick-comment { grid-column:1 / -1; }
   .noten-matrix th, .noten-matrix td { padding:5px 6px; }
+  /* Auf 375px passen Ø, Vorschlag und Eingabe nicht mehr neben den Namen: Name allein
+     nach oben, die drei Zahlenfelder darunter nebeneinander. */
+  .noten-term-row { grid-template-columns: 1fr 1fr 1fr; row-gap:4px; }
+  .noten-term-name { grid-column:1 / -1; }
+  .noten-term-row { padding-bottom:8px; border-bottom:1px solid var(--line); }
+  .noten-sheet th, .noten-sheet td { padding:5px 6px; font-size:11px; }
 }

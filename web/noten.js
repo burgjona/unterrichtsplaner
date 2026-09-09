@@ -96,6 +96,8 @@ export function createNotenModule(ctx) {
   function render() {
     renderMatrix();
     renderQuickSelect();
+    renderSheetSelect();
+    renderTermList();
     const anteil = $("notenAnteil");
     if (anteil && data) anteil.value = data.grossAnteil;
     const hint = $("notenAnteilHint");
@@ -149,7 +151,7 @@ export function createNotenModule(ctx) {
                  aria-label="Note ${esc(s.name)}, ${esc(it.title)}" /></td>`;
       }).join("");
       return `<tr data-student="${s.id}">
-        <th scope="row" class="noten-name">${esc(s.name)}</th>
+        <th scope="row" class="noten-name"><button type="button" class="noten-namebtn" data-sheet="${s.id}" title="Schülerblatt von ${esc(s.name)} anzeigen">${esc(s.name)}</button></th>
         ${cells}
         <td class="noten-avg">${avg(sum.avgGross)}</td>
         <td class="noten-avg">${avg(sum.avgKlein)}</td>
@@ -169,6 +171,9 @@ export function createNotenModule(ctx) {
     });
     wrap.querySelectorAll("[data-edit-item]").forEach((b) => {
       b.onclick = () => startEditItem(Number(b.dataset.editItem));
+    });
+    wrap.querySelectorAll("[data-sheet]").forEach((b) => {
+      b.onclick = () => showSheet(Number(b.dataset.sheet), true);
     });
     wrap.querySelectorAll("[data-export-item]").forEach((b) => {
       b.onclick = () => download(`/api/grade-items/${b.dataset.exportItem}/export`);
@@ -379,6 +384,137 @@ export function createNotenModule(ctx) {
     } catch (e) { toast(e.message, false); }
   }
 
+  /* ---------- Schülerblatt ---------- */
+
+  function renderSheetSelect() {
+    const sel = $("notenSheetStudent");
+    if (!sel) return;
+    const students = (data && data.students) || [];
+    const prev = sel.value;
+    sel.innerHTML = students.length
+      ? students.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join("")
+      : '<option value="">– keine Schülerliste –</option>';
+    if (prev && students.some((s) => String(s.id) === prev)) sel.value = prev;
+    renderSheet();
+  }
+
+  // scroll=true nur beim Klick aus der Matrix – beim normalen Rendern soll die Seite
+  // nicht ungefragt springen.
+  function showSheet(studentId, scroll) {
+    const sel = $("notenSheetStudent");
+    if (!sel) return;
+    sel.value = String(studentId);
+    renderSheet();
+    if (scroll) sel.closest(".card").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function renderSheet() {
+    const box = $("notenSheet");
+    if (!box) return;
+    const studentId = Number($("notenSheetStudent").value);
+    const student = ((data && data.students) || []).find((s) => s.id === studentId);
+    if (!student) {
+      box.innerHTML = '<p class="muted small">Für diese Klasse ist noch keine Schülerliste angelegt.</p>';
+      return;
+    }
+    const map = gradeMap();
+    const rows = currentItems()
+      .filter((it) => map[it.id + ":" + studentId])
+      .map((it) => {
+        const g = map[it.id + ":" + studentId];
+        return `<tr>
+          <td>${esc(deDate(it.date))}</td>
+          <td>${esc(it.title)}</td>
+          <td>${esc(it.kind)} ${sizeBadge(it.size)}</td>
+          <td class="noten-sheet-note">${esc(g.label)}</td>
+          <td class="muted small">${esc(g.comment || "")}</td>
+        </tr>`;
+      }).join("");
+
+    const sum = summaryFor(studentId);
+    const abweichung = sum.termGrade != null && sum.termGrade !== sum.suggestedTermGrade;
+    const zeugnis = sum.termGrade != null
+      ? `Zeugnisnote <strong>${esc(noteLabel(sum.termGrade))}</strong>` +
+        (abweichung ? ` <span class="muted">(Vorschlag ${esc(noteLabel(sum.suggestedTermGrade))})</span>` : "")
+      : `Vorschlag für die Zeugnisnote: <strong>${esc(noteLabel(sum.suggestedTermGrade))}</strong>`;
+
+    box.innerHTML = (rows
+      ? `<div class="table-scroll-wide"><table class="noten-sheet">
+           <thead><tr><th>Datum</th><th>Leistung</th><th>Anlass</th><th>Note</th><th>Hinweise</th></tr></thead>
+           <tbody>${rows}</tbody></table></div>`
+      : '<p class="muted small">In diesem Halbjahr liegt noch keine Note vor.</p>')
+      + `<p class="noten-sheet-sum">Ø groß ${avg(sum.avgGross)} · Ø klein ${avg(sum.avgKlein)} · `
+      + `<strong>Ø gesamt ${avg(sum.avgGesamt)}</strong> · ${zeugnis}</p>`;
+  }
+
+  // Anzeigeform eines Notenwerts – dieselbe Regel wie format_note() in src/lib/noten.py.
+  // Der Server liefert das Label nur zu gespeicherten Zellen mit; Vorschläge und
+  // Zeugnisnoten kommen als reine Zahl und werden hier formatiert. Ein einfaches Runden
+  // täte es nicht: eine von Hand als "2-" gesetzte Zeugnisnote (2,25) stünde sonst als "2"
+  // da und behauptete etwas anderes, als gespeichert ist.
+  function noteLabel(value) {
+    if (value == null) return "–";
+    const ganz = Math.round(value);
+    const rest = value - ganz;
+    if (ganz >= 1 && ganz <= 6) {
+      if (Math.abs(rest) < 1e-6) return String(ganz);
+      if (Math.abs(rest + 0.25) < 1e-6) return ganz + "+";
+      if (Math.abs(rest - 0.25) < 1e-6) return ganz + "-";
+    }
+    return String(Number(value.toFixed(2))).replace(".", ",");
+  }
+
+  /* ---------- Zeugnisnoten ---------- */
+
+  function renderTermList() {
+    const box = $("notenTermList");
+    if (!box) return;
+    const students = (data && data.students) || [];
+    if (!students.length) {
+      box.innerHTML = '<p class="muted small">Für diese Klasse ist noch keine Schülerliste angelegt.</p>';
+      return;
+    }
+    box.innerHTML = `<div class="noten-term-row noten-term-head">
+        <span>Schüler/in</span><span>Ø gesamt</span><span>Vorschlag</span>
+        <span>Zeugnisnote</span><span>Bemerkung</span>
+      </div>` + students.map((s) => {
+      const sum = summaryFor(s.id);
+      const abweichung = sum.termGrade != null && sum.termGrade !== sum.suggestedTermGrade;
+      return `<div class="noten-term-row${abweichung ? " abweichend" : ""}" data-term-row="${s.id}">
+        <span class="noten-term-name">${esc(s.name)}</span>
+        <span class="noten-term-avg" data-label="Ø">${avg(sum.avgGesamt)}</span>
+        <span class="noten-term-avg" data-label="Vorschlag">${esc(noteLabel(sum.suggestedTermGrade))}</span>
+        <input class="noten-term-input" data-term-value="${s.id}" inputmode="text" autocomplete="off"
+               value="${esc(sum.termGrade != null ? noteLabel(sum.termGrade) : "")}"
+               aria-label="Zeugnisnote ${esc(s.name)}" />
+        <input class="noten-term-comment" data-term-comment="${s.id}"
+               placeholder="Begründung (optional)" value="${esc(sum.termGradeComment || "")}"
+               aria-label="Begründung zur Zeugnisnote ${esc(s.name)}" />
+      </div>`;
+    }).join("");
+
+    box.querySelectorAll("[data-term-value],[data-term-comment]").forEach((inp) => {
+      inp.onchange = () => saveTermGrade(
+        Number(inp.dataset.termValue || inp.dataset.termComment), inp);
+    });
+  }
+
+  async function saveTermGrade(studentId, inp) {
+    const box = $("notenTermList");
+    const value = box.querySelector(`[data-term-value="${studentId}"]`).value.trim();
+    const comment = box.querySelector(`[data-term-comment="${studentId}"]`).value.trim();
+    inp.classList.remove("invalid");
+    try {
+      await API.put(`/classes/${classId}/students/${studentId}/term-grade?term=${term}`,
+                    { value: value === "" ? null : value, comment: comment || null });
+      await load();
+    } catch (e) {
+      inp.classList.add("invalid");
+      inp.focus();
+      toast(e.message, false);
+    }
+  }
+
   /* ---------- Word-Export ---------- */
 
   // Wie downloadStoffPlanPdf in app.js: der Browser holt die Datei selbst, Session-Cookie
@@ -419,6 +555,7 @@ export function createNotenModule(ctx) {
     $("notenExportMatrix").onclick = () => exportClassDoc("matrix");
     $("notenExportSchueler").onclick = () => exportClassDoc("schueler");
     $("notenExportZeugnis").onclick = () => exportClassDoc("zeugnis");
+    $("notenSheetStudent").onchange = renderSheet;
   }
 
   // Wird bei jedem Öffnen der Ansicht gerufen (showView in app.js).
@@ -458,5 +595,10 @@ export function createNotenModule(ctx) {
     if (!had) await load();
   }
 
-  return { renderNoten, onDataRefresh };
+  // Aus dem Klassendetail: Klasse vorwählen, bevor showView("noten") die Ansicht aufbaut.
+  function setClass(cid) {
+    classId = Number(cid) || null;
+  }
+
+  return { renderNoten, onDataRefresh, setClass };
 }
