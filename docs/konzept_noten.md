@@ -92,6 +92,17 @@ Das System schlägt die kaufmännisch gerundete Ganznote aus `Ø gesamt` vor. Di
 Note setzt der Lehrer; weicht sie vom Vorschlag ab, wird das in der Ansicht sichtbar
 markiert und kann im Kommentarfeld begründet werden.
 
+**Grenzfälle** – liegt `Ø gesamt` genau zwischen zwei Ganznoten (2,50 / 3,50 …), gibt es
+keinen Vorschlag, sondern beide Möglichkeiten: „2 oder 3", dazu eine Markierung in der
+Zeugnisnoten-Liste. Dort entscheidet der Lehrer je Schüler; eine Rundungsregel würde eine
+Genauigkeit vortäuschen, die der Durchschnitt nicht hergibt. Die Markierung verschwindet,
+sobald eine Note gesetzt ist.
+
+Aus demselben Grund zählt der **Notenspiegel** im Word-Export solche Halbwerte keinem
+Balken zu, sondern weist sie unter der Tabelle gesondert aus; die Prozentanteile beziehen
+sich dann auf die übrigen Noten. In Durchschnitt und in die Zahl der bewerteten Arbeiten
+gehen sie normal ein.
+
 ## 6. Oberfläche
 
 **Hauptmenüpunkt „Noten"** mit Klassen- und Halbjahresauswahl:

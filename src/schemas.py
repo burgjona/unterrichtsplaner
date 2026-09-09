@@ -1590,6 +1590,7 @@ class StudentGradeSummary(Base):
     avg_klein: Optional[float] = None
     avg_gesamt: Optional[float] = None
     suggested_term_grade: Optional[float] = None
+    term_grade_borderline: bool = False       # Ø genau zwischen zwei Ganznoten (2,50 …)
     term_grade: Optional[float] = None        # von Hand gesetzt, sonst None
     term_grade_comment: Optional[str] = None
 

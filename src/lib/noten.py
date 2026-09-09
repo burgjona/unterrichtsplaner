@@ -104,10 +104,27 @@ def clamp_anteil(gross_anteil) -> int:
 
 
 def suggest_term_grade(gesamt: Optional[float]) -> Optional[float]:
-    """Zeugnisnoten-Vorschlag: kaufmännisch gerundete Ganznote (2,5 → 3)."""
+    """Zeugnisnoten-Vorschlag: kaufmännisch gerundete Ganznote (2,5 → 3).
+
+    Bei einem Grenzfall (siehe is_borderline) ist diese Zahl nur die obere der beiden
+    Möglichkeiten – die Oberfläche zeigt dort „2 oder 3“ statt einer Empfehlung.
+    """
     if gesamt is None:
         return None
     return float(max(1, min(6, int(gesamt + 0.5))))
+
+
+def is_borderline(gesamt: Optional[float]) -> bool:
+    """Liegt der Durchschnitt genau zwischen zwei Ganznoten (2,50 / 3,50 …)?
+
+    Solche Fälle entscheidet der Lehrer je Schüler – die Rundungsregel würde hier eine
+    Genauigkeit vortäuschen, die die Zahl nicht hergibt. Deshalb werden sie markiert
+    statt still aufgerundet.
+    """
+    if gesamt is None:
+        return False
+    lower = int(gesamt)
+    return 1 <= lower <= 5 and abs(gesamt - (lower + 0.5)) < _EPS
 
 
 def summarize(entries: Iterable[dict], gross_anteil: int = DEFAULT_GROSS_ANTEIL) -> dict:
@@ -125,4 +142,5 @@ def summarize(entries: Iterable[dict], gross_anteil: int = DEFAULT_GROSS_ANTEIL)
         "avg_klein": klein,
         "avg_gesamt": gesamt,
         "suggested_term_grade": suggest_term_grade(gesamt),
+        "term_grade_borderline": is_borderline(gesamt),
     }

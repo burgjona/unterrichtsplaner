@@ -285,7 +285,8 @@ def test_export_einzelblatt_je_schueler(client, noten_daten):
     text = _docx_text(r.content)
     assert "Änne Müller" in text and "Bert Straßer" in text
     assert "sicherer Aufbau" in text               # Hinweisfeld der Note
-    assert "Rechnerischer Vorschlag für die Zeugnisnote: 3" in text
+    # gross 2 + klein 3 bei 50:50 ergibt genau 2,50 -- ein Grenzfall, deshalb beide Noten.
+    assert "Rechnerischer Vorschlag für die Zeugnisnote: 2 oder 3" in text
 
 
 def test_export_auswertung_einer_leistung(client, noten_daten):
@@ -332,17 +333,6 @@ def test_export_fremde_klasse_404(client, auth):
     assert client.get("/api/grade-items/999/export").status_code == 404
 
 
-def test_notenspiegel_rundet_kaufmaennisch(client, klasse):
-    """2,5 gehört in den Spiegel auf die 3 – Pythons round() würde auf 2 abrunden."""
-    cid, students = klasse
-    item = _item(client, cid)
-    client.put(f"/api/grade-items/{item['id']}/students/{students[0]}/grade", json={"value": "2,5"})
-    text = _docx_text(client.get(f"/api/grade-items/{item['id']}/export").content)
-    zeile = [l for l in text.split("\n")]
-    # Kopfzeile "Note 1..6", darunter "Anzahl" – die 1 muss bei der 3 stehen.
-    idx = zeile.index("Anzahl")
-    assert zeile[idx:idx + 7] == ["Anzahl", "0", "0", "1", "0", "0", "0"]
-
 
 def test_matrix_export_ist_querformat(client, noten_daten):
     """Die Übersicht braucht Querformat – Seitenmaße UND w:orient.
@@ -373,3 +363,77 @@ def test_einzelblatt_hat_eine_seite_je_schueler(client, noten_daten):
     breaks = sum('type="page"' in run._element.xml
                  for p in doc.paragraphs for run in p.runs)
     assert breaks == len(students) - 1      # Umbruch zwischen den Blättern, nicht davor
+
+
+# ---------- Grenzfälle: Ø genau zwischen zwei Ganznoten ----------
+
+@pytest.mark.parametrize("gesamt,grenzfall", [
+    (2.4, False), (2.49, False), (2.5, True), (2.51, False),
+    (1.5, True), (5.5, True), (6.0, False), (0.75, False), (None, False),
+])
+def test_is_borderline(gesamt, grenzfall):
+    assert calc.is_borderline(gesamt) is grenzfall
+
+
+def test_summarize_meldet_grenzfall(client, klasse):
+    """Eine große 2 und eine kleine 3 bei 50:50 ergeben genau 2,50."""
+    cid, students = klasse
+    gross = _item(client, cid, size="gross")
+    klein = _item(client, cid, size="klein", kind="Hausaufgabe")
+    s = students[0]
+    client.put(f"/api/grade-items/{gross['id']}/students/{s}/grade", json={"value": "2"})
+    client.put(f"/api/grade-items/{klein['id']}/students/{s}/grade", json={"value": "3"})
+
+    m = client.get(f"/api/classes/{cid}/noten", params={"term": "HJ1"}).json()
+    summary = next(x for x in m["summaries"] if x["studentId"] == s)
+    assert summary["avgGesamt"] == 2.5
+    assert summary["termGradeBorderline"] is True
+    # Der Vorschlag bleibt die obere Note – die Oberfläche macht daraus "2 oder 3".
+    assert summary["suggestedTermGrade"] == 3.0
+
+    # Ohne Grenzlage keine Markierung.
+    client.put(f"/api/grade-items/{klein['id']}/students/{s}/grade", json={"value": "3-"})
+    m = client.get(f"/api/classes/{cid}/noten", params={"term": "HJ1"}).json()
+    assert next(x for x in m["summaries"] if x["studentId"] == s)["termGradeBorderline"] is False
+
+
+def test_export_zeigt_beide_moeglichkeiten(client, klasse):
+    cid, students = klasse
+    gross = _item(client, cid, size="gross")
+    klein = _item(client, cid, size="klein", kind="Hausaufgabe")
+    s = students[0]
+    client.put(f"/api/grade-items/{gross['id']}/students/{s}/grade", json={"value": "2"})
+    client.put(f"/api/grade-items/{klein['id']}/students/{s}/grade", json={"value": "3"})
+
+    text = _docx_text(client.get(f"/api/classes/{cid}/noten/export/zeugnis",
+                                 params={"term": "HJ1"}).content)
+    assert "2 oder 3" in text
+    text = _docx_text(client.get(f"/api/classes/{cid}/noten/export/schueler",
+                                 params={"term": "HJ1"}).content)
+    assert "Rechnerischer Vorschlag für die Zeugnisnote: 2 oder 3" in text
+
+
+def test_notenspiegel_weist_halbwerte_gesondert_aus(client, klasse):
+    """2,5 landet in keinem Balken; die Anteile beziehen sich auf die übrigen Noten."""
+    cid, students = klasse
+    item = _item(client, cid)
+    client.put(f"/api/grade-items/{item['id']}/students/{students[0]}/grade", json={"value": "2,5"})
+    client.put(f"/api/grade-items/{item['id']}/students/{students[1]}/grade", json={"value": "3"})
+
+    text = _docx_text(client.get(f"/api/grade-items/{item['id']}/export").content)
+    zeilen = text.split("\n")
+    idx = zeilen.index("Anzahl")
+    assert zeilen[idx:idx + 7] == ["Anzahl", "0", "0", "1", "0", "0", "0"]   # nur die 3
+    anteil = zeilen.index("Anteil")
+    assert zeilen[anteil:anteil + 7] == ["Anteil", "0 %", "0 %", "100 %", "0 %", "0 %", "0 %"]
+    assert "Auf der Grenze: 1 (2,50)" in text
+    assert "Bewertet: 2 von 2" in text        # der Halbwert zählt weiter als bewertet
+    assert "Durchschnitt: 2,75" in text       # und geht in den Durchschnitt ein
+
+
+def test_notenspiegel_ohne_halbwerte_ohne_zusatzzeile(client, klasse):
+    cid, students = klasse
+    item = _item(client, cid)
+    client.put(f"/api/grade-items/{item['id']}/students/{students[0]}/grade", json={"value": "2"})
+    text = _docx_text(client.get(f"/api/grade-items/{item['id']}/export").content)
+    assert "Auf der Grenze" not in text

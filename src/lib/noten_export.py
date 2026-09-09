@@ -37,6 +37,20 @@ def _note(value: Optional[float]) -> str:
     return calc.format_note(value) or "–"
 
 
+def _suggestion(summary: dict) -> str:
+    """Zeugnisnoten-Vorschlag; bei einem Grenzfall beide Möglichkeiten statt einer Zahl.
+
+    Ø 2,50 heißt nicht „3“, sondern „hier musst du dich entscheiden“ – das soll auch im
+    Ausdruck stehen, nicht nur auf dem Bildschirm.
+    """
+    value = summary.get("suggested_term_grade")
+    if value is None:
+        return "–"
+    if summary.get("term_grade_borderline"):
+        return f"{int(value) - 1} oder {int(value)}"
+    return _note(value)
+
+
 def _doc(landscape: bool = False):
     from docx import Document
     from docx.enum.section import WD_ORIENT
@@ -194,7 +208,7 @@ def build_student_sheets_docx(ctx) -> bytes:
         )
         line.runs[0].bold = True
 
-        vorschlag = _note(summary["suggested_term_grade"])
+        vorschlag = _suggestion(summary)
         if summary["term_grade"] is not None:
             text = f"Zeugnisnote: {_note(summary['term_grade'])} (rechnerischer Vorschlag: {vorschlag})"
             if summary.get("term_grade_comment"):
@@ -235,20 +249,35 @@ def build_item_docx(ctx, item) -> bytes:
     doc.add_paragraph("")
     spiegel = doc.add_paragraph("Notenspiegel")
     spiegel.runs[0].bold = True
-    # Auf ganze Noten gerundet -- int(v + 0.5) statt round(), das in Python bei .5
-    # zur GERADEN Zahl rundet (round(2.5) == 2) und den Spiegel verzerren würde.
+
+    # Halbwerte (2,5 / 3,5 …) werden KEINEM Balken zugeschlagen, sondern unter der Tabelle
+    # gesondert ausgewiesen: welche der beiden Noten es wird, entscheidet der Lehrer je
+    # Schüler, das darf eine Klassenstatistik nicht vorwegnehmen.
+    grenz = [v for v in values if calc.is_borderline(v)]
+    zugeordnet = [v for v in values if not calc.is_borderline(v)]
+    # int(v + 0.5) statt round(): Python rundet bei .5 zur GERADEN Zahl (round(2.5) == 2).
+    # Halbwerte sind hier zwar schon aussortiert, die Regel bleibt aber die verlässlichere.
     counts = {n: 0 for n in range(1, 7)}
-    for v in values:
+    for v in zugeordnet:
         counts[max(1, min(6, int(v + 0.5)))] += 1
-    total = len(values)
+    n_zug = len(zugeordnet)
     _table(
         doc,
         ["Note"] + [str(n) for n in range(1, 7)],
         [["Anzahl"] + [str(counts[n]) for n in range(1, 7)],
-         ["Anteil"] + [(f"{counts[n] * 100 / total:.0f} %" if total else "–") for n in range(1, 7)]],
+         ["Anteil"] + [(f"{counts[n] * 100 / n_zug:.0f} %" if n_zug else "–") for n in range(1, 7)]],
     )
+    if grenz:
+        grenzzeile = doc.add_paragraph(
+            f"Auf der Grenze: {len(grenz)} "
+            f"({', '.join(_num(v) for v in sorted(grenz))}) – keinem Balken zugeschlagen, "
+            "da hier die Entscheidung zwischen zwei Noten offen ist. "
+            f"Die Anteile beziehen sich auf die übrigen {n_zug}."
+        )
+        grenzzeile.runs[0].font.size = Pt(8)
     stat = doc.add_paragraph(
-        f"Bewertet: {total} von {len(ctx['students'])} · Durchschnitt: {_num(calc.average(values))}"
+        f"Bewertet: {len(values)} von {len(ctx['students'])} · "
+        f"Durchschnitt: {_num(calc.average(values))}"
     )
     stat.runs[0].font.size = Pt(9)
 
@@ -270,7 +299,7 @@ def build_term_docx(ctx) -> bytes:
         rows.append([
             s["name"],
             _num(summary["avg_gesamt"]),
-            _note(summary["suggested_term_grade"]),
+            _suggestion(summary),
             _note(gesetzt) if gesetzt is not None else "",
             summary.get("term_grade_comment") or "",
         ])

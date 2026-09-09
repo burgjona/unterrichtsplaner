@@ -1644,6 +1644,14 @@ body.plan-focus { overflow:hidden; }
 .noten-term-input.invalid, .noten-cell.invalid { border-color:var(--bad); background:var(--badge-bad-bg); }
 /* Zeugnisnote weicht vom Vorschlag ab -- soll beim Durchsehen sofort auffallen. */
 .noten-term-row.abweichend .noten-term-input { border-color:var(--primary); background:var(--badge-ok-bg); }
+/* Grenzfall: Ø liegt genau zwischen zwei Ganznoten, hier ist eine Entscheidung faellig.
+   Gelb statt gruen -- es ist eine offene Aufgabe, keine getroffene Wahl. */
+.noten-term-row.grenzfall .noten-term-input { border-color:var(--warn); background:var(--badge-warn-bg); }
+.noten-grenz {
+  display:inline-block; padding:1px 6px; border-radius:999px; font-size:10px;
+  font-weight:var(--fw-heavy); background:var(--badge-warn-bg); color:var(--badge-warn-text);
+  text-transform:none; letter-spacing:normal; vertical-align:middle;
+}
 
 .noten-quick { display:grid; gap:6px; }
 .noten-quick-row { display:grid; grid-template-columns: minmax(0,1fr) 96px minmax(0,1.2fr); gap:8px; align-items:center; }

@@ -432,11 +432,13 @@ export function createNotenModule(ctx) {
       }).join("");
 
     const sum = summaryFor(studentId);
-    const abweichung = sum.termGrade != null && sum.termGrade !== sum.suggestedTermGrade;
+    const abweichung = isDeviation(sum);
     const zeugnis = sum.termGrade != null
       ? `Zeugnisnote <strong>${esc(noteLabel(sum.termGrade))}</strong>` +
-        (abweichung ? ` <span class="muted">(Vorschlag ${esc(noteLabel(sum.suggestedTermGrade))})</span>` : "")
-      : `Vorschlag für die Zeugnisnote: <strong>${esc(noteLabel(sum.suggestedTermGrade))}</strong>`;
+        (abweichung ? ` <span class="muted">(Vorschlag ${esc(suggestionLabel(sum))})</span>` : "")
+      : `Vorschlag für die Zeugnisnote: <strong>${esc(suggestionLabel(sum))}</strong>`
+        + (sum.termGradeBorderline
+            ? ' <span class="noten-grenz">Grenzfall – bitte entscheiden</span>' : "");
 
     box.innerHTML = (rows
       ? `<div class="table-scroll-wide"><table class="noten-sheet">
@@ -452,6 +454,26 @@ export function createNotenModule(ctx) {
   // Zeugnisnoten kommen als reine Zahl und werden hier formatiert. Ein einfaches Runden
   // täte es nicht: eine von Hand als "2-" gesetzte Zeugnisnote (2,25) stünde sonst als "2"
   // da und behauptete etwas anderes, als gespeichert ist.
+  // Zeugnisnoten-Vorschlag. Bei einem Grenzfall (Ø genau x,50) stehen beide Möglichkeiten
+  // da statt einer Zahl: dort ist die Entscheidung deine, nicht die der Rundungsregel.
+  function suggestionLabel(sum) {
+    if (sum.suggestedTermGrade == null) return "–";
+    if (sum.termGradeBorderline) {
+      return `${Math.round(sum.suggestedTermGrade) - 1} oder ${Math.round(sum.suggestedTermGrade)}`;
+    }
+    return noteLabel(sum.suggestedTermGrade);
+  }
+
+  // Weicht die gesetzte Zeugnisnote wirklich vom Vorschlag ab? Bei einem Grenzfall standen
+  // zwei Noten zur Wahl – wer eine davon nimmt, weicht von nichts ab, sondern hat genau die
+  // Entscheidung getroffen, um die er gebeten wurde.
+  function isDeviation(sum) {
+    if (sum.termGrade == null || sum.suggestedTermGrade == null) return false;
+    if (sum.termGrade === sum.suggestedTermGrade) return false;
+    if (sum.termGradeBorderline && sum.termGrade === sum.suggestedTermGrade - 1) return false;
+    return true;
+  }
+
   function noteLabel(value) {
     if (value == null) return "–";
     const ganz = Math.round(value);
@@ -479,11 +501,14 @@ export function createNotenModule(ctx) {
         <span>Zeugnisnote</span><span>Bemerkung</span>
       </div>` + students.map((s) => {
       const sum = summaryFor(s.id);
-      const abweichung = sum.termGrade != null && sum.termGrade !== sum.suggestedTermGrade;
-      return `<div class="noten-term-row${abweichung ? " abweichend" : ""}" data-term-row="${s.id}">
-        <span class="noten-term-name">${esc(s.name)}</span>
+      const abweichung = isDeviation(sum);
+      // Grenzfall nur so lange hervorheben, wie noch keine Note gesetzt ist – danach ist
+      // die Entscheidung gefallen und die Zeile soll nicht weiter nach Aufmerksamkeit rufen.
+      const grenzfall = sum.termGradeBorderline && sum.termGrade == null;
+      return `<div class="noten-term-row${abweichung ? " abweichend" : ""}${grenzfall ? " grenzfall" : ""}" data-term-row="${s.id}">
+        <span class="noten-term-name">${esc(s.name)}${grenzfall ? ' <span class="noten-grenz">Grenzfall</span>' : ""}</span>
         <span class="noten-term-avg" data-label="Ø">${avg(sum.avgGesamt)}</span>
-        <span class="noten-term-avg" data-label="Vorschlag">${esc(noteLabel(sum.suggestedTermGrade))}</span>
+        <span class="noten-term-avg" data-label="Vorschlag">${esc(suggestionLabel(sum))}</span>
         <input class="noten-term-input" data-term-value="${s.id}" inputmode="text" autocomplete="off"
                value="${esc(sum.termGrade != null ? noteLabel(sum.termGrade) : "")}"
                aria-label="Zeugnisnote ${esc(s.name)}" />
