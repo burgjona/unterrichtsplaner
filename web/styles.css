@@ -319,7 +319,21 @@ a.todo-hefter-link:hover { text-decoration:underline; }
 .conflict-entity-preview { font-size:12.5px; color:var(--muted); margin-top:3px; white-space:pre-wrap; }
 .conflict-entity-fallback { font-size:12px; }
 .conflict-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
-@media (max-width: 600px) { .conflict-versions { grid-template-columns:1fr; } }
+.conflict-field-diff { margin-top:10px; border-top:1px solid var(--line); padding-top:9px; }
+.conflict-field-diff-head { font-size:11px; font-weight:var(--fw-bold); color:var(--muted); text-transform:uppercase; margin-bottom:6px; }
+.conflict-field-row { display:grid; grid-template-columns:140px 1fr; gap:8px; font-size:12.5px; padding:3px 0; align-items:baseline; }
+.conflict-field-row + .conflict-field-row { border-top:1px dashed var(--line); }
+.conflict-field-label { color:var(--muted); word-break:break-word; }
+.conflict-field-val { white-space:pre-wrap; word-break:break-word; line-height:1.55; }
+.conflict-field-val .diff-del { background:var(--badge-bad-bg, #fecaca); color:var(--badge-bad-text, #7f1d1d); text-decoration:line-through; border-radius:3px; padding:0 2px; }
+.conflict-field-val .diff-add { background:var(--badge-ok-bg, #bbf7d0); color:var(--badge-ok-text, #14532d); border-radius:3px; padding:0 2px; }
+.conflict-field-diff-head .diff-del, .conflict-field-diff-head .diff-add { padding:0 3px; border-radius:3px; text-decoration:none; }
+.conflict-field-diff-head .diff-del { background:var(--badge-bad-bg, #fecaca); color:var(--badge-bad-text, #7f1d1d); }
+.conflict-field-diff-head .diff-add { background:var(--badge-ok-bg, #bbf7d0); color:var(--badge-ok-text, #14532d); }
+@media (max-width: 600px) {
+  .conflict-versions { grid-template-columns:1fr; }
+  .conflict-field-row { grid-template-columns:1fr; gap:2px; }
+}
 .mini-meyer-chip { display:inline-block; padding:5px 8px; border-radius:7px; font-size:11px; margin:2px; color:white; }
 .cal-grid { display:grid; grid-template-columns: repeat(7, minmax(0,1fr)); gap:6px; }
 .cal-grid.with-kw { grid-template-columns: 28px repeat(7, minmax(0,1fr)); }
