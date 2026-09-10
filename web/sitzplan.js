@@ -28,8 +28,14 @@ export function createSeatPlanModule(ctx) {
     $("spAiDesc").value = "";
     seatPlan.grid = spEmptyGrid(seatPlan.rows, seatPlan.cols);
     renderSeatGrid();
-    renderSeatPlanList();
     $("spExportBtn").disabled = true;
+    // Vorhandenen Sitzplan sofort anzeigen (neuester zuerst), ohne dass der
+    // Nutzer erst "Laden" drücken muss. Nur solange der Editor unberührt ist.
+    renderSeatPlanList().then(() => {
+      if (seatPlan.editId == null && seatPlansCache.length) {
+        loadSeatPlan(seatPlansCache[0].id, { silent: true });
+      }
+    });
   }
 
   // Baut das Raster aus den Feldern rows/cols neu auf und überträgt bereits gesetzte Plätze.
@@ -148,7 +154,7 @@ export function createSeatPlanModule(ctx) {
     wrap.querySelectorAll("[data-sp-del]").forEach((b) => (b.onclick = () => deleteSeatPlan(b.dataset.spDel)));
   }
 
-  async function loadSeatPlan(pid) {
+  async function loadSeatPlan(pid, opts) {
     try {
       const p = seatPlansCache.find((x) => String(x.id) === String(pid));
       if (!p) { toast("Sitzplan nicht gefunden.", false); return; }
@@ -162,7 +168,7 @@ export function createSeatPlanModule(ctx) {
       renderSeatGrid();
       $("spExportBtn").disabled = false;
       $("spExportBtn").onclick = () => exportSeatPlan(p.id);
-      toast("Sitzplan geladen.");
+      if (!(opts && opts.silent)) toast("Sitzplan geladen.");
     } catch (e) { toast(e.message, false); }
   }
 
