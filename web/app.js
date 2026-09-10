@@ -50,6 +50,199 @@ function esc(s) {
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 }
 
+/* ---------- Rich-Text-Editor (WYSIWYG) für Heftereintrag / Tafelbild ----------
+   Drei Felder werden formatierbar: tafelbildEingabe, tafelbildNotiz, hefteintrag.
+   attachRichEditor(textarea) blendet die <textarea> aus, baut darüber eine contentEditable-
+   Fläche mit Mini-Toolbar (F/K/U, Listen, Überschrift, feste Farben) und hält textarea.value
+   synchron — so funktioniert jeder bestehende $("id").value-Zugriff (Formular-Payload,
+   Autosave, Cross-Sync zwischen Modal/Tabelle/Formular) unverändert weiter.
+   Gespeichert wird sanitiertes HTML im selben DB-Feld; Alt-Einträge (reiner Text ohne Tags)
+   werden weiter als Text angezeigt. sanitizeRichHTML() läuft beim Speichern UND beim Rendern
+   (Whitelist), damit auch fremd/alt eingeschleustes Markup nie ausgeführt wird. */
+const RICH_COLORS = [
+  { name: "Standard", value: "" },
+  { name: "Rot", value: "#c0392b" },
+  { name: "Blau", value: "#2563eb" },
+  { name: "Grün", value: "#15803d" },
+  { name: "Orange", value: "#c2410c" },
+];
+const RICH_TAGS = new Set(["B", "STRONG", "I", "EM", "U", "UL", "OL", "LI", "H4", "P", "BR"]);
+const RICH_COLOR_HEX = new Set(RICH_COLORS.map((c) => c.value).filter(Boolean));
+
+function _rgbToHex(col) {
+  if (!col) return "";
+  if (col[0] === "#") return col.toLowerCase();
+  const m = col.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+  if (!m) return "";
+  return "#" + [1, 2, 3].map((i) => Number(m[i]).toString(16).padStart(2, "0")).join("");
+}
+
+function sanitizeRichHTML(html) {
+  const tpl = document.createElement("template");
+  tpl.innerHTML = String(html == null ? "" : html);
+  const unwrap = (node) => {
+    while (node.firstChild) node.parentNode.insertBefore(node.firstChild, node);
+    node.remove();
+  };
+  const walk = (parent) => {
+    [...parent.childNodes].forEach((n) => {
+      if (n.nodeType === 3) return;                       // Text: behalten
+      if (n.nodeType !== 1) { n.remove(); return; }        // Kommentare o. Ä. raus
+      const tag = n.tagName;
+      if (tag === "SPAN" || tag === "FONT") {
+        const hex = _rgbToHex(n.style && n.style.color ? n.style.color : n.getAttribute("color") || "");
+        walk(n);
+        if (RICH_COLOR_HEX.has(hex)) {
+          const s = document.createElement("span");
+          s.style.color = hex;
+          while (n.firstChild) s.appendChild(n.firstChild);
+          n.parentNode.replaceChild(s, n);
+        } else {
+          unwrap(n);
+        }
+        return;
+      }
+      if (tag === "DIV") { walk(n); const p = document.createElement("p");
+        while (n.firstChild) p.appendChild(n.firstChild); n.parentNode.replaceChild(p, n); return; }
+      if (!RICH_TAGS.has(tag)) { walk(n); unwrap(n); return; }   // unbekannt: Text retten
+      [...n.attributes].forEach((a) => n.removeAttribute(a.name));
+      walk(n);
+    });
+  };
+  walk(tpl.content);
+  return tpl.innerHTML.replace(/<p><\/p>|<p><br><\/p>/g, "").trim();
+}
+
+// Gespeicherten Wert für die Anzeige aufbereiten: enthält er unsere Tags -> HTML,
+// sonst Alt-Eintrag (reiner Text) -> escapen + Zeilenumbrüche zu <br>.
+function storedToRichHTML(val) {
+  const s = String(val == null ? "" : val);
+  if (/<(b|strong|i|em|u|ul|ol|li|h4|p|br|span|div|font)\b/i.test(s)) return s;
+  return esc(s).replace(/\n/g, "<br>");
+}
+
+// HTML -> reiner Text (für KI-Prompt-Input und "ist das Feld befüllt?"-Prüfungen).
+function richToText(val) {
+  const d = document.createElement("div");
+  d.innerHTML = storedToRichHTML(val);
+  return (d.textContent || "").replace(/ /g, " ").trim();
+}
+function richHasText(val) { return richToText(val).length > 0; }
+
+function _richCurrentBlock(root) {
+  const sel = window.getSelection();
+  let n = sel && sel.anchorNode;
+  while (n && n !== root && !(n.nodeType === 1 && /^(H4|P|LI|DIV)$/.test(n.tagName))) n = n.parentNode;
+  return n && n !== root ? n : null;
+}
+function _richClearColor(root) {
+  const sel = window.getSelection();
+  if (!sel.rangeCount) return;
+  const r = sel.getRangeAt(0);
+  root.querySelectorAll('span[style*="color"]').forEach((sp) => {
+    if (r.intersectsNode(sp)) {
+      const p = sp.parentNode;
+      while (sp.firstChild) p.insertBefore(sp.firstChild, sp);
+      p.removeChild(sp);
+    }
+  });
+}
+
+function attachRichEditor(ta) {
+  if (!ta || ta._rich) return ta && ta._rich;
+  const wrap = document.createElement("div");
+  wrap.className = "rich-wrap";
+  const bar = document.createElement("div");
+  bar.className = "rich-toolbar";
+  const ed = document.createElement("div");
+  ed.className = "rich-editor";
+  ed.contentEditable = "true";
+  ed.setAttribute("role", "textbox");
+  ed.setAttribute("aria-multiline", "true");
+  if (ta.placeholder) ed.dataset.placeholder = ta.placeholder;
+
+  const flush = () => { ta.value = sanitizeRichHTML(ed.innerHTML); };
+  const sync = () => { flush(); ta.dispatchEvent(new Event("input", { bubbles: true })); };
+  const load = () => { ed.innerHTML = sanitizeRichHTML(storedToRichHTML(ta.value)); };
+
+  const mkBtn = (label, title, fn, cls) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "rich-btn" + (cls ? " " + cls : "");
+    b.textContent = label;
+    b.title = title;
+    b.tabIndex = -1;
+    b.addEventListener("mousedown", (e) => e.preventDefault());   // Auswahl nicht verlieren
+    b.addEventListener("click", () => { ed.focus(); fn(); sync(); });
+    return b;
+  };
+  const exec = (c) => () => document.execCommand(c, false, null);
+  bar.append(
+    mkBtn("F", "Fett", exec("bold"), "rich-b"),
+    mkBtn("K", "Kursiv", exec("italic"), "rich-i"),
+    mkBtn("U", "Unterstrichen", exec("underline"), "rich-u"),
+    mkBtn("•", "Aufzählung", exec("insertUnorderedList")),
+    mkBtn("1.", "Nummerierte Liste", exec("insertOrderedList")),
+    mkBtn("H", "Überschrift", () => {
+      const blk = _richCurrentBlock(ed);
+      document.execCommand("formatBlock", false, blk && blk.tagName === "H4" ? "p" : "h4");
+    }),
+  );
+  const colWrap = document.createElement("span");
+  colWrap.className = "rich-colors";
+  RICH_COLORS.forEach((c) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "rich-color" + (c.value ? "" : " is-default");
+    b.title = "Farbe: " + c.name;
+    if (c.value) b.style.background = c.value;
+    b.tabIndex = -1;
+    b.addEventListener("mousedown", (e) => e.preventDefault());
+    b.addEventListener("click", () => {
+      ed.focus();
+      if (c.value) {
+        document.execCommand("styleWithCSS", false, true);
+        document.execCommand("foreColor", false, c.value);
+      } else {
+        _richClearColor(ed);
+      }
+      sync();
+    });
+    colWrap.appendChild(b);
+  });
+  bar.appendChild(colWrap);
+
+  let t = null;
+  ed.addEventListener("input", () => { clearTimeout(t); t = setTimeout(sync, 150); });
+  ed.addEventListener("blur", sync);
+  ed.addEventListener("paste", (e) => {
+    e.preventDefault();
+    const txt = (e.clipboardData || window.clipboardData).getData("text/plain");
+    document.execCommand("insertText", false, txt);
+  });
+  ed.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey) {
+      const k = e.key.toLowerCase();
+      if (k === "b" || k === "i" || k === "u") setTimeout(sync, 0);   // Browser-Default macht's, wir syncen nach
+    }
+  });
+
+  ta.style.display = "none";
+  ta.parentNode.insertBefore(wrap, ta);
+  wrap.append(bar, ed, ta);
+  ta._rich = { editor: ed, wrap, sync, load, flush };
+  load();
+  return ta._rich;
+}
+
+// Wert eines (evtl. rich-aufgewerteten) Feldes setzen und die Editor-Fläche nachziehen.
+function setFieldValue(id, val) {
+  const el = $(id);
+  if (!el) return;
+  el.value = val == null ? "" : val;
+  if (el._rich) el._rich.load();
+}
+
 /* ---------- Rückgängig (ein Schritt zurück) ----------
    Nur die letzte Aktion wird gemerkt (lastUndo), kein mehrstufiger Verlauf. Jede neue
    mutierende Aktion überschreibt den vorherigen Eintrag. Genutzt von Stoffplan-Bearbeitung,
@@ -556,7 +749,7 @@ let pendingLessonMaterialSubject = "";
 function clearLessonForm() {
   ["lessonIdeas", "lessonTitle", "lessonDate", "klafki1", "klafki2", "klafki3", "klafki4", "klafki5",
    "biboxWerk", "biboxSeite", "biboxNotiz", "lessonMatSubject",
-   "tafelbildEingabe", "tafelbildNotiz", "hefteintrag"].forEach((id) => ($(id).value = ""));
+   "tafelbildEingabe", "tafelbildNotiz", "hefteintrag"].forEach((id) => setFieldValue(id, ""));
   lessonTafelbild = { titel: "", bloecke: [] };
   lessonTafelbildBildId = null;
   renderTafelbild();
@@ -653,6 +846,10 @@ function scheduleLessonAutosave() {
 function buildLessonBody() {
   const meyer = readMeyerGrid("meyerPlanGrid");
   const phases = readPhases();          // setzt phaseIndexMap für readLernziele()
+  // Rich-Text-Felder: Editor-Inhalt in die <textarea> zurückschreiben, bevor wir sie auslesen.
+  ["tafelbildEingabe", "tafelbildNotiz", "hefteintrag"].forEach((id) => {
+    if ($(id) && $(id)._rich) $(id)._rich.flush();
+  });
   return {
     title: $("lessonTitle").value.trim(), subject: $("lessonSubject").value, grade: Number($("lessonGrade").value),
     lessonType: $("lessonType").value,
@@ -668,7 +865,8 @@ function buildLessonBody() {
     meyerPlan: meyer.some((v) => v) ? meyer : null,
     diff: $("diff").value, selbstLernen: $("lernen").value,
     bibox: { werk: $("biboxWerk").value, seite: $("biboxSeite").value, notiz: $("biboxNotiz").value },
-    tafelbildEingabe: $("tafelbildEingabe").value, tafelbild: lessonTafelbild,
+    tafelbildEingabe: $("tafelbildEingabe").value,
+    tafelbild: lessonTafelbild,
     tafelbildNotiz: $("tafelbildNotiz").value,
     hefteintrag: $("hefteintrag").value,
     tafelbildBildMaterialId: lessonTafelbildBildId,
@@ -789,12 +987,12 @@ function loadLessonIntoForm(l) {
   if (l.selbstLernen) $("lernen").value = l.selbstLernen;
   const b = l.bibox || {};
   $("biboxWerk").value = b.werk || ""; $("biboxSeite").value = b.seite || ""; $("biboxNotiz").value = b.notiz || "";
-  $("tafelbildEingabe").value = l.tafelbildEingabe || "";
+  setFieldValue("tafelbildEingabe", l.tafelbildEingabe || "");
   lessonTafelbild = l.tafelbild || { titel: "", bloecke: [] };
   lessonTafelbildBildId = l.tafelbildBildMaterialId != null ? l.tafelbildBildMaterialId : null;
   renderTafelbild();
-  $("tafelbildNotiz").value = l.tafelbildNotiz || "";
-  $("hefteintrag").value = l.hefteintrag || "";
+  setFieldValue("tafelbildNotiz", l.tafelbildNotiz || "");
+  setFieldValue("hefteintrag", l.hefteintrag || "");
   setPhasesFromLesson(l.phases);
   $("editHintTitle").textContent = l.title || "";
   $("editHint").classList.remove("hidden");
@@ -1358,7 +1556,7 @@ function cdRenderTiles(lessons) {
   const box = $("cdTiles");
   if (!box) return;
   const hefterAll = lessons.length;
-  const hefterDone = lessons.filter((l) => (l.hefteintrag || "").trim()).length;
+  const hefterDone = lessons.filter((l) => richHasText(l.hefteintrag)).length;
   box.innerHTML =
     _cdTileEl("lehrplan", "Lehrplan", "…", { scroll: "cdLehrplan", go: "Abhaken ↓" }) +
     _cdTileEl("stunden", "Stunden geplant", String(lessons.length), { scroll: "cdLessons", go: "Öffnen ↓" }) +
@@ -1660,7 +1858,7 @@ function renderClassDetailHefter() {
   const all = state.lessons
     .filter((l) => String(l.classId) === String(detailClassId))
     .sort((a, b) => (a.date || "9999").localeCompare(b.date || "9999") || (a.time || "").localeCompare(b.time || ""));
-  const withEntry = all.filter((l) => (l.hefteintrag || "").trim()).length;
+  const withEntry = all.filter((l) => richHasText(l.hefteintrag)).length;
   cdSetTile("hefter", `${withEntry}<small> / ${all.length}</small>`, {
     bar: all.length ? (withEntry / all.length) * 100 : 0,
     attn: all.length > 0 && withEntry / all.length < 0.5,
@@ -1673,7 +1871,7 @@ function renderClassDetailHefter() {
     $("cdHefterToggle").onclick = () => { cdHefterOnlyFilled = !cdHefterOnlyFilled; renderClassDetailHefter(); };
   }
 
-  const lessons = cdHefterOnlyFilled ? all.filter((l) => (l.hefteintrag || "").trim()) : all;
+  const lessons = cdHefterOnlyFilled ? all.filter((l) => richHasText(l.hefteintrag)) : all;
   if (!all.length) {
     wrap.innerHTML = '<p class="muted small">Noch keine Stunden für diese Klasse geplant.</p>';
     return;
@@ -1700,13 +1898,12 @@ function renderClassDetailHefter() {
     ta.placeholder = "— noch kein Eintrag —";
     ta.value = l.hefteintrag || "";
     ta.addEventListener("input", () => {
-      autoGrowTextarea(ta, 44, 400);
       if (_cdHefterTimers[l.id]) clearTimeout(_cdHefterTimers[l.id]);
       _cdHefterTimers[l.id] = setTimeout(async () => {
         try {
           await SyncEngine.update("lessons", l.id, { hefteintrag: ta.value });
           l.hefteintrag = ta.value;
-          if (editingLessonId === l.id && $("hefteintrag")) $("hefteintrag").value = ta.value;
+          if (editingLessonId === l.id) setFieldValue("hefteintrag", ta.value);
         } catch (e) { toast(e.message, false); }
       }, 900);
     });
@@ -1717,7 +1914,7 @@ function renderClassDetailHefter() {
       if (les) openLessonModal(les);
     };
     tb.appendChild(tr);
-    autoGrowTextarea(ta, 44, 400);   // erst nach dem Einhaengen in die Tabelle — vorher misst es 0
+    attachRichEditor(ta);   // erst nach dem Einhaengen in die Tabelle
   });
 }
 
@@ -2348,7 +2545,7 @@ function hefterLessonEnd(l) {
 // Status einer Stunde bzgl. Heftereintrag: null = nichts zu tun, "hinweis" = Stunde heute
 // noch nicht vorbei, "todo" = Stunde vorbei / liegt zurück und Feld leer.
 function hefterReminderStatus(l, todayStr, now) {
-  if ((l.hefteintrag || "").trim()) return null;
+  if (richHasText(l.hefteintrag)) return null;
   if (!l.date || l.date > todayStr) return null;
   if (l.date < todayStr) return "todo";
   const end = hefterLessonEnd(l);
@@ -4825,15 +5022,14 @@ let _modalHefterTimer = null;
 function wireModalTafelbild(l) {
   const ta = $("modalTbNotiz");
   if (ta) {
-    autoGrowTextarea(ta);
+    attachRichEditor(ta);
     ta.addEventListener("input", () => {
-      autoGrowTextarea(ta);
       if (_modalTbNotizTimer) clearTimeout(_modalTbNotizTimer);
       _modalTbNotizTimer = setTimeout(async () => {
         try {
           await SyncEngine.update("lessons", l.id, { tafelbildNotiz: ta.value });
           l.tafelbildNotiz = ta.value;
-          if (editingLessonId === l.id && $("tafelbildNotiz")) $("tafelbildNotiz").value = ta.value;
+          if (editingLessonId === l.id) setFieldValue("tafelbildNotiz", ta.value);
         } catch (e) { toast(e.message, false); }
       }, 900);
     });
@@ -4841,9 +5037,8 @@ function wireModalTafelbild(l) {
   // Heftereintrag: gleiche Mechanik wie die Hefter-Tabelle der Klassendetailseite.
   const he = $("modalHefteintrag");
   if (he) {
-    autoGrowTextarea(he);
+    attachRichEditor(he);
     he.addEventListener("input", () => {
-      autoGrowTextarea(he);
       if (_modalHefterTimer) clearTimeout(_modalHefterTimer);
       _modalHefterTimer = setTimeout(async () => {
         try {
@@ -4851,7 +5046,7 @@ function wireModalTafelbild(l) {
           l.hefteintrag = he.value;
           const inState = state.lessons.find((x) => x.id === l.id);
           if (inState && inState !== l) inState.hefteintrag = he.value;
-          if (editingLessonId === l.id && $("hefteintrag")) $("hefteintrag").value = he.value;
+          if (editingLessonId === l.id) setFieldValue("hefteintrag", he.value);
           renderHefterReminders();
         } catch (e) { toast(e.message, false); }
       }, 900);
@@ -5626,7 +5821,7 @@ function renderTafelbildBild() {
 }
 
 async function aiTafelbildSuggest() {
-  const eingabe = $("tafelbildEingabe").value.trim();
+  const eingabe = richToText($("tafelbildEingabe").value);   // KI bekommt reinen Text, kein Markup
   if (!eingabe) { toast("Bitte eintragen, was an die Tafel soll.", false); return; }
   const btn = $("tafelbildBtn"), label = btn.textContent;
   btn.disabled = true; btn.textContent = "✨ generiere …";
@@ -7480,6 +7675,7 @@ function initMobileCollapse() {
 async function init() {
   wireEvents();
   initMobileCollapse();
+  ["tafelbildEingabe", "tafelbildNotiz", "hefteintrag"].forEach((id) => attachRichEditor($(id)));
   initPlanWizard();   // U35: gefuehrter Planungsassistent (nach dem Karten-Umbau oben)
   initOfflineSupport();  // U23: Service Worker + Offline-Banner
   try {
@@ -7731,8 +7927,8 @@ const WIZ_STEPS = [
     title: "Tafel & Hefter",
     cards: ["tafelbild", "hefter"],
     hint: "Was während der Stunde an die Tafel kommt. Der Heftereintrag hält fest, was die Schüler:innen tatsächlich geschrieben haben – den trägst du üblicherweise erst nach der Stunde nach.",
-    filled: () => !!($("tafelbildEingabe").value.trim() || $("tafelbildNotiz").value.trim()
-      || $("hefteintrag").value.trim() || (lessonTafelbild.bloecke || []).length || lessonTafelbildBildId),
+    filled: () => !!(richHasText($("tafelbildEingabe").value) || richHasText($("tafelbildNotiz").value)
+      || richHasText($("hefteintrag").value) || (lessonTafelbild.bloecke || []).length || lessonTafelbildBildId),
     warn: () => null,
   },
   {
