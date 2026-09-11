@@ -1646,3 +1646,38 @@ class GewichtungIn(Base):
 class GewichtungOut(Base):
     class_id: int
     gross_anteil: int
+
+
+# ---------- Web-Push-Benachrichtigungen ----------
+class PushPublicKeyOut(Base):
+    public_key: str                # VAPID, base64url – applicationServerKey fürs Frontend
+
+
+class PushKeysIn(Base):
+    p256dh: str
+    auth: str
+
+
+class PushSubscriptionIn(Base):
+    """Entspricht PushSubscription.toJSON() (expirationTime wird ignoriert) + Anzeigename."""
+    endpoint: str
+    keys: PushKeysIn
+    label: Optional[str] = None
+
+
+class PushUnsubscribeIn(Base):
+    endpoint: str
+
+
+class PushSubscriptionOut(Base):
+    # Bewusst ohne endpoint/Schlüssel: die bleiben serverseitig.
+    id: int
+    label: Optional[str] = None
+    created_at: str
+    last_success_at: Optional[str] = None
+
+
+class PushSendResultOut(Base):
+    sent: int
+    failed: int
+    removed: int

@@ -5107,6 +5107,7 @@ async function loadSettings() {
     $("schulmanagerWarn").classList.toggle("hidden", s.secretConfigured);
     $("saveSchulmanagerUrl").disabled = !s.secretConfigured;
     applySchulmanagerStatus(s);
+    PushUi.render();  // Web-Push-Status dieses Geräts (kein await – blockiert nichts)
     state.aiActive = s.apiKeyStatus === "aktiv";
     applyAiGating(state.aiActive);
     applyAppearance(s.theme, s.darkMode, s.font);
@@ -6860,6 +6861,7 @@ async function startApp() {
   await refreshAiStatus();
   startGoogleAutoSync();  // U24: periodischer Auto-Sync (B), solange die App offen ist
   refreshSchulmanagerChanges();  // M1d: Glocke initial befüllen (kein await – blockiert den Start nicht)
+  PushUi.renew();  // Web-Push: bestehende Geräte-Anmeldung still erneuern
 }
 
 // Sidebar-Sektionen ein-/ausklappbar (Burgermenü Variante B): Zustand je Sektion in
@@ -7220,6 +7222,7 @@ function wireEvents() {
   $("removeGoogleKey").onclick = removeGoogleKey;
   $("saveSchulmanagerUrl").onclick = saveSchulmanagerUrl;
   $("removeSchulmanagerUrl").onclick = removeSchulmanagerUrl;
+  PushUi.init();  // Web-Push: Karte "Benachrichtigungen" (web/push.js)
   $("calGoogleSyncBtn").onclick = syncGoogle;
   $("logoutBtn").onclick = async () => {
     try { await API.post("/auth/logout"); } catch (e) { /* egal */ }

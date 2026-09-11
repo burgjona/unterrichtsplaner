@@ -20,3 +20,8 @@ anthropic==0.116.0
 google-auth==2.38.0
 requests==2.32.5          # Transport für google-auth Credentials.refresh(Request())
 httpx==0.28.1
+# Web-Push-Benachrichtigungen: Nachrichtenverschlüsselung (RFC 8291) + VAPID (RFC 8292).
+pywebpush==2.1.2
+# Zeitzonendaten für zoneinfo (Europe/Berlin): das slim-Image bringt sie nicht sicher mit,
+# der Container läuft sonst in UTC und Erinnerungen kämen eine/zwei Stunden daneben.
+tzdata==2026.3

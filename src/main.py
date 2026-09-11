@@ -1,4 +1,5 @@
 """FastAPI-App-Factory. Migrationen + alle Router unter /api, Frontend statisch unter /."""
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -6,9 +7,10 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .db import init_db
+from .lib import notifier
 from .routers import (
     absences, ai, asuv, auth, backup, branding, calendar, calendar_categories, classes, lehrplan,
-    lernbereiche, lessons, materials, noten, notes, planning, reflections, school_years,
+    lernbereiche, lessons, materials, noten, notes, planning, push, reflections, school_years,
     schulmanager, search, seating, sequenzplan, settings as settings_router, stoffplan,
     students, stundenplan, sync, todos, users,
 )
@@ -17,7 +19,20 @@ WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 
 
 def create_app(db_path: str = None, storage_root: str = None) -> FastAPI:
-    app = FastAPI(title="Lehrer-Dashboard API", version="0.9.1")
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        # Push-Benachrichtigungen: Minuten-Takt für Erinnerungen + Schulmanager-Abruf.
+        # entrypoint.sh startet genau einen uvicorn-Prozess -> kein doppelter Versand.
+        scheduler = notifier.Scheduler(app.state.db_path) if settings.scheduler_enabled else None
+        if scheduler is not None:
+            scheduler.start()
+        try:
+            yield
+        finally:
+            if scheduler is not None:
+                scheduler.stop()
+
+    app = FastAPI(title="Lehrer-Dashboard API", version="0.9.1", lifespan=lifespan)
     app.state.db_path = db_path or settings.db_path
     app.state.storage_root = storage_root or settings.storage_root
 
@@ -32,7 +47,7 @@ def create_app(db_path: str = None, storage_root: str = None) -> FastAPI:
                    lessons, calendar, calendar_categories, materials, reflections, todos,
                    notes, planning, stoffplan, sequenzplan, students, seating, asuv, ai, search,
                    lehrplan, noten,
-                   stundenplan, absences, sync, schulmanager, backup):
+                   stundenplan, absences, sync, schulmanager, backup, push):
         app.include_router(module.router, prefix="/api")
 
     # Branding-Routen (Favicon/Manifest, teils Root-Level) VOR dem StaticFiles-Mount.

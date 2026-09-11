@@ -6,6 +6,8 @@ import os
 # - APP_SECRET_KEY (32 Byte base64) wird für die API-Key-Verschlüsselung im Test gebraucht.
 os.environ.setdefault("DB_PATH", ":memory:")
 os.environ.setdefault("APP_SECRET_KEY", base64.b64encode(b"x" * 32).decode())
+# Kein Push-Hintergrund-Takt in Tests (notifier wird dort direkt mit festem "now" aufgerufen).
+os.environ.setdefault("SCHEDULER_ENABLED", "0")
 
 import pytest
 from fastapi.testclient import TestClient
