@@ -14,11 +14,12 @@ import sqlite3
 import tempfile
 import urllib.parse
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 
 from ..deps import get_db, get_storage_root, get_user_id
+from ..lib import backup_password
 from ..lib.backup import backup_filename, build_backup_zip
 
 router = APIRouter(prefix="/backup", tags=["backup"])
@@ -42,14 +43,19 @@ def download_backup(
     user_id: int = Depends(get_user_id),
     storage_root: str = Depends(get_storage_root),
 ):
-    """Liefert die Sicherung als ZIP (data.db, manifest.json, optional storage/)."""
+    """Liefert die Sicherung als ZIP (data.db, manifest.json, optional storage/) -
+    verschlüsselt mit dem Sicherungspasswort (U29); ist keins festgelegt, gibt es 409."""
+    password = backup_password.get_password(conn, user_id)
+    if password is None:
+        raise HTTPException(status_code=409, detail=backup_password.MISSING_DETAIL)
     work_dir = tempfile.mkdtemp(prefix="ldb-backup-", dir=_work_root(request.app.state.db_path))
     fname = backup_filename()
     zip_path = os.path.join(work_dir, fname)
     try:
         build_backup_zip(conn, zip_path, storage_root=storage_root,
                          include_storage=include_storage,
-                         app_version=request.app.version, work_dir=work_dir)
+                         app_version=request.app.version, work_dir=work_dir,
+                         password=password)
     except Exception:
         shutil.rmtree(work_dir, ignore_errors=True)
         raise

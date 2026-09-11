@@ -70,6 +70,49 @@ def test_creates_the_target_folder(cli_env):
     assert list(ziel.glob("*.zip"))
 
 
+# ---------- Verschlüsselung (U29) ----------
+
+PW = "Nachtsicherung-2026"
+
+
+def _set_backup_password(db_path: Path, password: str) -> None:
+    """Konto + Sicherungspasswort direkt in die DB legen, wie es die Einstellungen tun."""
+    from src.lib.security import encrypt_secret
+    cipher, nonce = encrypt_secret(password)
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("INSERT INTO users (email, display_name) VALUES ('a@b.de', 'Test')")
+    conn.execute("INSERT INTO user_settings (user_id, backup_pw_cipher, backup_pw_nonce, "
+                 "backup_pw_set_at) VALUES (1, ?, ?, datetime('now'))", (cipher, nonce))
+    conn.commit()
+    conn.close()
+
+
+def test_encrypts_with_the_backup_password(cli_env, capsys):
+    import pyzipper
+    _set_backup_password(cli_env / "data.db", PW)
+    ziel = cli_env / "backups"
+    assert backup_cli.main([str(ziel)]) == 0
+    path = next(ziel.glob("*.zip"))
+
+    with pytest.raises(RuntimeError):                  # ohne Passwort nicht lesbar
+        zipfile.ZipFile(path).read("data.db")
+    with pyzipper.AESZipFile(path) as zf:
+        zf.setpassword(PW.encode("utf-8"))
+        assert zf.read("storage/Deutsch/Übung_Größe.txt").decode("utf-8") == "äöüß"
+        assert json.loads(zf.read("manifest.json"))["encrypted"] is True
+    assert "verschlüsselt" in capsys.readouterr().out
+
+
+def test_without_password_still_backs_up_but_warns(cli_env, capsys):
+    """Eine fehlende Sicherung wäre schlimmer als eine unverschlüsselte - also sichern,
+    aber sichtbar warnen."""
+    ziel = cli_env / "backups"
+    assert backup_cli.main([str(ziel)]) == 0
+    zf = zipfile.ZipFile(next(ziel.glob("*.zip")))
+    assert json.loads(zf.read("manifest.json"))["encrypted"] is False
+    assert "WARNUNG" in capsys.readouterr().err
+
+
 # ---------- Aufraeumen: loescht Dateien, deshalb besonders eng gepruefte Zusagen ----------
 
 def _alte_sicherungen(ordner: Path, n: int) -> None:

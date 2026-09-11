@@ -18,6 +18,8 @@ import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pyzipper
+
 
 BACKUP_PREFIX = "lehrer-dashboard-backup-"
 
@@ -49,7 +51,7 @@ def snapshot_db(conn: sqlite3.Connection, dest: str) -> str:
 
 
 def build_manifest(conn: sqlite3.Connection, *, app_version: str, include_storage: bool,
-                   storage_files: int) -> dict:
+                   storage_files: int, encrypted: bool = False) -> dict:
     """Beschreibt den Sicherungsstand - entscheidend, um beim Zurückspielen zu
     erkennen, ob Backup und Programmstand zusammenpassen (Migrationen!)."""
     try:
@@ -64,6 +66,7 @@ def build_manifest(conn: sqlite3.Connection, *, app_version: str, include_storag
         "lastMigration": migrations[-1] if migrations else None,
         "includesStorage": include_storage,
         "storageFileCount": storage_files,
+        "encrypted": encrypted,
         "restoreHint": (
             "data.db in das Volume ldb_data legen (Container gestoppt), storage/ nach "
             "ldb_storage. Vorher vorhandene data.db-wal und data.db-shm löschen."
@@ -83,18 +86,38 @@ def _storage_entries(storage_root: str) -> list[tuple[Path, str]]:
     return entries
 
 
+def _open_zip(out_path: str, password: str | None):
+    """Mit Passwort ein AES-256-verschlüsseltes ZIP (WinZip-AES), sonst ein normales.
+
+    WinZip-AES ist das verbreitete Format für sichere ZIP-Passwörter: The Unarchiver, Keka
+    und 7-Zip öffnen es - der macOS-Finder und der Windows-Explorer allerdings nicht (die
+    beherrschen nur das alte, leicht knackbare ZipCrypto). Verschlüsselt werden die Inhalte,
+    die Dateinamen im ZIP bleiben lesbar.
+    """
+    if not password:
+        return zipfile.ZipFile(out_path, "w", compression=zipfile.ZIP_DEFLATED)
+    zf = pyzipper.AESZipFile(out_path, "w", compression=pyzipper.ZIP_DEFLATED,
+                             encryption=pyzipper.WZ_AES)
+    zf.setpassword(password.encode("utf-8"))
+    zf.setencryption(pyzipper.WZ_AES, nbits=256)
+    return zf
+
+
 def build_backup_zip(conn: sqlite3.Connection, out_path: str, *, storage_root: str,
-                     include_storage: bool, app_version: str, work_dir: str) -> str:
-    """Packt DB-Snapshot (+ optional storage/) samt manifest.json nach out_path."""
+                     include_storage: bool, app_version: str, work_dir: str,
+                     password: str | None = None) -> str:
+    """Packt DB-Snapshot (+ optional storage/) samt manifest.json nach out_path -
+    mit Passwort AES-256-verschlüsselt (U29)."""
     db_snapshot = os.path.join(work_dir, "data.db")
     snapshot_db(conn, db_snapshot)
 
     entries = _storage_entries(storage_root) if include_storage else []
     manifest = build_manifest(conn, app_version=app_version,
-                              include_storage=include_storage, storage_files=len(entries))
+                              include_storage=include_storage, storage_files=len(entries),
+                              encrypted=bool(password))
 
     # ZIP_DEFLATED: die SQLite-Datei komprimiert sehr gut, PDFs kaum - schadet aber nicht.
-    with zipfile.ZipFile(out_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+    with _open_zip(out_path, password) as zf:
         zf.write(db_snapshot, "data.db")
         for src, arcname in entries:
             zf.write(src, arcname)

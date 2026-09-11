@@ -45,6 +45,11 @@ class SchulmanagerIcalIn(Base):
     url: str
 
 
+class BackupPasswordIn(Base):
+    """Sicherungspasswort (U29) für Backup-ZIP und Noten-Exporte."""
+    password: str
+
+
 class SettingsOut(Base):
     api_key_status: str            # "aktiv" | "kein Key"
     api_key_last4: Optional[str] = None
@@ -60,6 +65,9 @@ class SettingsOut(Base):
     # Schulmanager-ICS-Sync (M1a)
     schulmanager_ical_set: bool = False
     schulmanager_last_sync: Optional[str] = None
+    # Sicherungspasswort (U29) - nur der Status, das Passwort selbst geht nie raus
+    backup_password_set: bool = False
+    backup_password_set_at: Optional[str] = None
     # Deploy-Info (aus Docker-Build-Args, siehe DEPLOY.md)
     deploy_commit: str = "unbekannt"
     deploy_time: str = "unbekannt"

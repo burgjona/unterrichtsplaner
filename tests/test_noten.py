@@ -235,13 +235,24 @@ def test_noten_sind_sync_faehig(client, klasse):
 DOCX_MEDIA = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 
-def _docx_text(payload: bytes) -> str:
-    """Sichtbarer Text eines .docx – reicht, um Inhalte zu prüfen, ohne das Layout zu fixieren."""
+def _docx_doc(payload: bytes):
+    """Export als python-docx-Dokument. U29: die Exporte sind mit dem Sicherungspasswort
+    verschlüsselt - deshalb erst entschlüsseln."""
     from io import BytesIO
 
+    import msoffcrypto
     from docx import Document
 
-    doc = Document(BytesIO(payload))
+    office = msoffcrypto.OfficeFile(BytesIO(payload))
+    office.load_key(password=EXPORT_PW)
+    plain = BytesIO()
+    office.decrypt(plain)
+    return Document(BytesIO(plain.getvalue()))
+
+
+def _docx_text(payload: bytes) -> str:
+    """Sichtbarer Text eines .docx – reicht, um Inhalte zu prüfen, ohne das Layout zu fixieren."""
+    doc = _docx_doc(payload)
     parts = [p.text for p in doc.paragraphs]
     for table in doc.tables:
         for row in table.rows:
@@ -249,8 +260,19 @@ def _docx_text(payload: bytes) -> str:
     return "\n".join(parts)
 
 
+EXPORT_PW = "Noten-Export-2026"
+
+
 @pytest.fixture
-def noten_daten(client, klasse):
+def export_pw(client, auth):
+    """U29: ohne Sicherungspasswort gibt es keine Noten-Exporte."""
+    r = client.put("/api/settings/backup-password", json={"password": EXPORT_PW})
+    assert r.status_code == 200, r.text
+    return EXPORT_PW
+
+
+@pytest.fixture
+def noten_daten(client, klasse, export_pw):
     """Klasse mit zwei Leistungen (groß + klein) und Noten für den ersten Schüler."""
     cid, students = klasse
     gross = _item(client, cid, size="gross", title="Klassenarbeit Balladen")
@@ -321,7 +343,7 @@ def test_export_dateiname_mit_umlaut(client, noten_daten):
     assert "Noten_bersicht" in cd                  # ASCII-Fallback daneben
 
 
-def test_export_leeres_halbjahr_bleibt_erzeugbar(client, klasse):
+def test_export_leeres_halbjahr_bleibt_erzeugbar(client, klasse, export_pw):
     cid, _ = klasse
     r = client.get(f"/api/classes/{cid}/noten/export/matrix", params={"term": "HJ2"})
     assert r.status_code == 200, r.text
@@ -333,6 +355,30 @@ def test_export_fremde_klasse_404(client, auth):
     assert client.get("/api/grade-items/999/export").status_code == 404
 
 
+def test_export_braucht_sicherungspasswort(client, klasse):
+    """U29: ohne Sicherungspasswort keine Word-Datei mit Namen und Noten."""
+    cid, _ = klasse
+    r = client.get(f"/api/classes/{cid}/noten/export/matrix", params={"term": "HJ1"})
+    assert r.status_code == 409
+    assert "Sicherungspasswort" in r.json()["detail"]
+
+
+def test_export_ist_verschluesselt(client, noten_daten):
+    """U29: alle vier Noten-Exporte sind Office-verschlüsselt."""
+    from io import BytesIO
+
+    import msoffcrypto
+
+    cid, _, gross, _ = noten_daten
+    for url in (f"/api/classes/{cid}/noten/export/matrix",
+                f"/api/classes/{cid}/noten/export/schueler",
+                f"/api/classes/{cid}/noten/export/zeugnis",
+                f"/api/grade-items/{gross['id']}/export"):
+        r = client.get(url)
+        assert r.status_code == 200, r.text
+        assert msoffcrypto.OfficeFile(BytesIO(r.content)).is_encrypted(), url
+
+
 
 def test_matrix_export_ist_querformat(client, noten_daten):
     """Die Übersicht braucht Querformat – Seitenmaße UND w:orient.
@@ -340,26 +386,19 @@ def test_matrix_export_ist_querformat(client, noten_daten):
     Regression: python-docx kennt section.orientation, nicht section.orient. Ein Tippfehler
     dort legt still ein neues Attribut an, statt die Ausrichtung zu setzen.
     """
-    from io import BytesIO
-
-    from docx import Document
     from docx.enum.section import WD_ORIENT
 
     cid, _, _, _ = noten_daten
     r = client.get(f"/api/classes/{cid}/noten/export/matrix", params={"term": "HJ1"})
-    section = Document(BytesIO(r.content)).sections[0]
+    section = _docx_doc(r.content).sections[0]
     assert section.orientation == WD_ORIENT.LANDSCAPE
     assert section.page_width > section.page_height
 
 
 def test_einzelblatt_hat_eine_seite_je_schueler(client, noten_daten):
-    from io import BytesIO
-
-    from docx import Document
-
     cid, students, _, _ = noten_daten
     r = client.get(f"/api/classes/{cid}/noten/export/schueler", params={"term": "HJ1"})
-    doc = Document(BytesIO(r.content))
+    doc = _docx_doc(r.content)
     breaks = sum('type="page"' in run._element.xml
                  for p in doc.paragraphs for run in p.runs)
     assert breaks == len(students) - 1      # Umbruch zwischen den Blättern, nicht davor
@@ -397,7 +436,7 @@ def test_summarize_meldet_grenzfall(client, klasse):
     assert next(x for x in m["summaries"] if x["studentId"] == s)["termGradeBorderline"] is False
 
 
-def test_export_zeigt_beide_moeglichkeiten(client, klasse):
+def test_export_zeigt_beide_moeglichkeiten(client, klasse, export_pw):
     cid, students = klasse
     gross = _item(client, cid, size="gross")
     klein = _item(client, cid, size="klein", kind="Hausaufgabe")
@@ -413,7 +452,7 @@ def test_export_zeigt_beide_moeglichkeiten(client, klasse):
     assert "Rechnerischer Vorschlag für die Zeugnisnote: 2 oder 3" in text
 
 
-def test_notenspiegel_weist_halbwerte_gesondert_aus(client, klasse):
+def test_notenspiegel_weist_halbwerte_gesondert_aus(client, klasse, export_pw):
     """2,5 landet in keinem Balken; die Anteile beziehen sich auf die übrigen Noten."""
     cid, students = klasse
     item = _item(client, cid)
@@ -431,7 +470,7 @@ def test_notenspiegel_weist_halbwerte_gesondert_aus(client, klasse):
     assert "Durchschnitt: 2,75" in text       # und geht in den Durchschnitt ein
 
 
-def test_notenspiegel_ohne_halbwerte_ohne_zusatzzeile(client, klasse):
+def test_notenspiegel_ohne_halbwerte_ohne_zusatzzeile(client, klasse, export_pw):
     cid, students = klasse
     item = _item(client, cid)
     client.put(f"/api/grade-items/{item['id']}/students/{students[0]}/grade", json={"value": "2"})

@@ -1252,7 +1252,12 @@
       <div class="card ord-11">
         <h3>Datensicherung</h3>
         <p class="muted small">L&auml;dt eine vollst&auml;ndige Sicherung als ZIP herunter: Datenbank (Planung, Klassen, Materialverweise) und auf Wunsch die abgelegten Dateien. Die Datenbank wird dabei im laufenden Betrieb konsistent kopiert.</p>
-        <label class="small" style="display:flex; align-items:center; gap:8px; margin-top:8px;"><input type="checkbox" id="backupIncludeStorage" style="width:auto;" checked /> Materialdateien mitsichern</label>
+        <p class="muted small">Die Sicherung und die Word-Exporte der Noten werden mit dem <strong>Sicherungspasswort</strong> verschl&uuml;sselt. Ohne dieses Passwort lassen sie sich nicht mehr &ouml;ffnen &ndash; leg es in deinem Passwort-Manager ab. Das ZIP &ouml;ffnen The Unarchiver, Keka oder 7-Zip (der Finder kann es nicht), Word fragt direkt nach dem Passwort. Ein neues Passwort gilt nur f&uuml;r k&uuml;nftige Dateien.</p>
+        <div style="margin-top:8px;"><span class="badge" id="backupPwStatus">&hellip;</span></div>
+        <div style="margin-top:8px;"><label for="backupPwNew">Sicherungspasswort (mind. 10 Zeichen)</label><input id="backupPwNew" type="password" autocomplete="new-password" /></div>
+        <div style="margin-top:8px;"><label for="backupPwRepeat">Sicherungspasswort wiederholen</label><input id="backupPwRepeat" type="password" autocomplete="new-password" /></div>
+        <div style="margin-top:10px;"><button class="btn secondary" id="backupPwSave">Passwort festlegen</button></div>
+        <label class="small" style="display:flex; align-items:center; gap:8px; margin-top:14px;"><input type="checkbox" id="backupIncludeStorage" style="width:auto;" checked /> Materialdateien mitsichern</label>
         <div style="margin-top:10px;"><button class="btn" id="backupDownloadBtn">Sicherung herunterladen</button></div>
         <p class="muted small" id="backupHint" style="margin-top:10px;">Bewahre die Sicherung auch au&szlig;erhalb der NAS auf &ndash; sonst trifft ein Defekt Original und Kopie zugleich.</p>
       </div>

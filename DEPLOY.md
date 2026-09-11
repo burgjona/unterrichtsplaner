@@ -95,13 +95,26 @@ Betrieb einen in sich geschlossenen Stand. Eine reine Dateikopie von `data.db` k
 unvollständig sein, weil frische Schreibvorgänge im WAL (`data.db-wal`) stehen – das fällt
 erst beim Zurückspielen auf.
 
+**Verschlüsselt:** Die Sicherung ist ein AES-256-verschlüsseltes ZIP. Das Passwort wird
+einmalig unter **Einstellungen → Datensicherung** festgelegt; solange keins festgelegt ist,
+bietet die App keinen Download an. Dasselbe Passwort schützt die Word-Exporte des
+Notenmoduls (Word fragt beim Öffnen danach).
+
+- **Öffnen** mit *The Unarchiver* (kostenlos im App Store), *Keka* oder *7-Zip*. Der
+  macOS-Finder und der Windows-Explorer können AES-verschlüsselte ZIPs **nicht** entpacken.
+- **Passwort vergessen = Sicherung verloren.** Deshalb gehört es in den Passwort-Manager.
+- Ein neues Passwort gilt nur für künftige Dateien; ältere behalten ihr altes.
+- Verschlüsselt sind die Inhalte; die Dateinamen im ZIP (z. B. `storage/Deutsch/…`) bleiben
+  lesbar.
+
 **Wichtig: die Sicherung außerhalb der NAS aufbewahren.** Liegt die einzige Kopie auf demselben
 Gerät, trifft ein Defekt, ein Verschlüsselungstrojaner oder ein Bedienfehler Original und
 Sicherung gleichzeitig. RAID ersetzt kein Backup – es schützt nur vor einer defekten Platte.
 
 ### Zurückspielen
 1. Container stoppen (Container Manager → Projekt → **Stoppen**).
-2. `data.db` aus dem ZIP in das Volume `ldb_data` legen, `storage/` nach `ldb_storage`.
+2. Das ZIP auf dem Mac mit *The Unarchiver* oder *Keka* entpacken (Sicherungspasswort
+   eingeben). Dann `data.db` in das Volume `ldb_data` legen, `storage/` nach `ldb_storage`.
    Ohne SSH geht das über File Station unter `/volume1/@docker/volumes/<projekt>_ldb_data/_data/`
    (versteckte Ordner in File Station einblenden).
 3. Eventuell vorhandene `data.db-wal` und `data.db-shm` **löschen** – sie gehören zum alten
@@ -150,6 +163,10 @@ find "$ZIEL" -maxdepth 1 -name 'lehrer-dashboard-backup-*.zip' -mtime +14 -delet
 
 Für ein reines Datenbank-Backup (viel kleiner und schneller, ohne die Materialdateien)
 in Zeile 1 `--ohne-materialien` ergänzen.
+
+Die nächtliche Sicherung verschlüsselt mit demselben Sicherungspasswort wie der Download.
+Ist (noch) keins festgelegt, schreibt sie das ZIP **unverschlüsselt** und gibt eine Warnung
+aus – eine fehlende Sicherung wäre schlimmer als eine unverschlüsselte auf der eigenen NAS.
 
 **Wichtig:** Den Zielordner in *Hyper Backup* aufnehmen, damit die Sicherungen die NAS
 verlassen. Solange sie nur dort liegen, trifft ein Defekt Original und Kopie zugleich.

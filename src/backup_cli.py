@@ -21,6 +21,7 @@ from pathlib import Path
 from .config import settings
 from .db import connect
 from .lib.backup import BACKUP_PREFIX, backup_filename, build_backup_zip
+from .lib.backup_password import get_password_for_cli
 
 
 def cleanup(target_dir: str, keep: int) -> list[str]:
@@ -59,15 +60,23 @@ def main(argv: list[str] | None = None) -> int:
 
     conn = connect(settings.db_path)
     try:
+        # U29: mit dem Sicherungspasswort aus den Einstellungen verschlüsseln. Ist (noch)
+        # keins festgelegt, trotzdem sichern - eine fehlende Sicherung wäre schlimmer als
+        # eine unverschlüsselte auf der eigenen NAS. Die Warnung steht dann im Protokoll.
+        password = get_password_for_cli(conn)
         build_backup_zip(conn, str(zip_path), storage_root=settings.storage_root,
                          include_storage=not args.ohne_materialien,
                          app_version=os.environ.get("GIT_COMMIT", "unbekannt"),
-                         work_dir=str(target))
+                         work_dir=str(target), password=password)
     finally:
         conn.close()
 
     size_mb = zip_path.stat().st_size / (1024 * 1024)
-    print(f"Sicherung geschrieben: {zip_path} ({size_mb:.1f} MB)")
+    art = "verschlüsselt" if password else "UNVERSCHLÜSSELT"
+    print(f"Sicherung geschrieben: {zip_path} ({size_mb:.1f} MB, {art})")
+    if not password:
+        print("WARNUNG: Kein Sicherungspasswort festgelegt (Einstellungen → Datensicherung) - "
+              "die Sicherung ist unverschlüsselt.", file=sys.stderr)
     for name in cleanup(str(target), args.behalte):
         print(f"  alte Sicherung entfernt: {name}")
     return 0

@@ -5279,6 +5279,23 @@ async function saveReflect() {
 }
 
 /* ---------- Einstellungen ---------- */
+// U29: Sicherungspasswort – vom Server kommt nur der Status, nie das Passwort selbst.
+// Ohne Passwort gibt es keinen Download (der Server antwortet dann mit 409).
+function applyBackupPwStatus(s) {
+  state.backupPwSet = Boolean(s.backupPasswordSet);
+  const badge = $("backupPwStatus");
+  if (state.backupPwSet) {
+    const since = s.backupPasswordSetAt ? ` seit ${deDate(s.backupPasswordSetAt.slice(0, 10))}` : "";
+    badge.className = "badge ok"; badge.textContent = `Sicherungspasswort festgelegt${since}`;
+    $("backupPwSave").textContent = "Passwort ändern";
+  } else {
+    badge.className = "badge bad"; badge.textContent = "Noch kein Sicherungspasswort";
+    $("backupPwSave").textContent = "Passwort festlegen";
+  }
+  $("backupPwSave").disabled = !s.secretConfigured;
+  $("backupDownloadBtn").disabled = !state.backupPwSet;
+}
+
 async function loadSettings() {
   try {
     const s = await API.get("/settings");
@@ -5302,6 +5319,7 @@ async function loadSettings() {
     $("schulmanagerWarn").classList.toggle("hidden", s.secretConfigured);
     $("saveSchulmanagerUrl").disabled = !s.secretConfigured;
     applySchulmanagerStatus(s);
+    applyBackupPwStatus(s);  // U29: Sicherungspasswort
     PushUi.render();  // Web-Push-Status dieses Geräts (kein await – blockiert nichts)
     state.aiActive = s.apiKeyStatus === "aktiv";
     applyAiGating(state.aiActive);
@@ -7455,6 +7473,24 @@ function wireEvents() {
       $("pwCurrent").value = $("pwNew").value = $("pwRepeat").value = "";
       const n = res && res.loggedOutDevices;
       toast(n ? `Passwort geändert. ${n} andere Sitzung(en) abgemeldet.` : "Passwort geändert.");
+    } catch (e) {
+      toast(e.message, false);
+    }
+  };
+
+  // U29: Sicherungspasswort festlegen/ändern. Die Wiederholung wird wie beim Login-Passwort
+  // hier geprüft – ein Vertipper fiele sonst erst beim Entpacken der Sicherung auf.
+  $("backupPwSave").onclick = async () => {
+    const pw = $("backupPwNew").value;
+    if (pw !== $("backupPwRepeat").value) {
+      toast("Die beiden Passwörter stimmen nicht überein.", false);
+      return;
+    }
+    try {
+      const s = await API.put("/settings/backup-password", { password: pw });
+      $("backupPwNew").value = $("backupPwRepeat").value = "";
+      applyBackupPwStatus(s);
+      toast("Sicherungspasswort gespeichert – leg es in deinem Passwort-Manager ab.");
     } catch (e) {
       toast(e.message, false);
     }

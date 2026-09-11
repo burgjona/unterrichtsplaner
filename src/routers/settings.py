@@ -12,10 +12,12 @@ from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFil
 from fastapi.responses import FileResponse
 
 from ..deps import get_db, get_storage_root, get_user_id
-from ..lib import schulmanager_ical
+from ..lib import backup_password, schulmanager_ical
 from ..lib.branding import media_type_for, resolve_relpath, save_image_upload
 from ..lib.security import encrypt_secret, secret_available
-from ..schemas import ApiKeyIn, AppearanceIn, GoogleKeyIn, SchulmanagerIcalIn, SettingsOut
+from ..schemas import (
+    ApiKeyIn, AppearanceIn, BackupPasswordIn, GoogleKeyIn, SchulmanagerIcalIn, SettingsOut,
+)
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -24,13 +26,15 @@ def _settings_out(conn, user_id) -> SettingsOut:
     row = conn.execute(
         "SELECT anthropic_key_last4, anthropic_key_set_at, theme, dark_mode, font, "
         "       google_key_cipher, google_calendar_id, google_last_sync, "
-        "       schulmanager_ical_cipher, schulmanager_last_sync "
+        "       schulmanager_ical_cipher, schulmanager_last_sync, "
+        "       backup_pw_cipher, backup_pw_set_at "
         "FROM user_settings WHERE user_id = ?",
         (user_id,),
     ).fetchone()
     has_key = row is not None and row["anthropic_key_last4"] is not None
     google_set = row is not None and row["google_key_cipher"] is not None
     schulmanager_set = row is not None and row["schulmanager_ical_cipher"] is not None
+    backup_pw_set = row is not None and row["backup_pw_cipher"] is not None
     return SettingsOut(
         api_key_status="aktiv" if has_key else "kein Key",
         api_key_last4=row["anthropic_key_last4"] if has_key else None,
@@ -44,6 +48,8 @@ def _settings_out(conn, user_id) -> SettingsOut:
         google_last_sync=row["google_last_sync"] if row is not None else None,
         schulmanager_ical_set=schulmanager_set,
         schulmanager_last_sync=row["schulmanager_last_sync"] if schulmanager_set else None,
+        backup_password_set=backup_pw_set,
+        backup_password_set_at=row["backup_pw_set_at"] if backup_pw_set else None,
         deploy_commit=os.environ.get("GIT_COMMIT", "unbekannt"),
         deploy_time=os.environ.get("DEPLOY_TIME", "unbekannt"),
     )
@@ -107,6 +113,38 @@ def delete_api_key(conn: sqlite3.Connection = Depends(get_db), user_id: int = De
              anthropic_key_last4 = NULL, anthropic_key_set_at = NULL, updated_at = datetime('now')
            WHERE user_id = ?""",
         (user_id,),
+    )
+    conn.commit()
+    return _settings_out(conn, user_id)
+
+
+@router.put("/backup-password", response_model=SettingsOut)
+def set_backup_password(body: BackupPasswordIn, conn: sqlite3.Connection = Depends(get_db),
+                        user_id: int = Depends(get_user_id)):
+    """U29: Sicherungspasswort festlegen oder ändern. Verschlüsselt künftig das Backup-ZIP
+    und die Noten-Exporte; ältere Dateien behalten ihr altes Passwort. Es wird nie
+    zurückgeliefert - die Oberfläche zeigt nur "festgelegt seit …"."""
+    if not secret_available():
+        raise HTTPException(
+            status_code=503,
+            detail="APP_SECRET_KEY ist nicht konfiguriert – das Sicherungspasswort kann nicht verschlüsselt gespeichert werden.",
+        )
+    if len(body.password) < backup_password.MIN_LENGTH:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Das Sicherungspasswort braucht mindestens {backup_password.MIN_LENGTH} Zeichen.",
+        )
+    cipher, nonce = encrypt_secret(body.password)
+    conn.execute(
+        """INSERT INTO user_settings
+             (user_id, backup_pw_cipher, backup_pw_nonce, backup_pw_set_at, updated_at)
+           VALUES (?, ?, ?, datetime('now'), datetime('now'))
+           ON CONFLICT(user_id) DO UPDATE SET
+             backup_pw_cipher = excluded.backup_pw_cipher,
+             backup_pw_nonce  = excluded.backup_pw_nonce,
+             backup_pw_set_at = excluded.backup_pw_set_at,
+             updated_at       = datetime('now')""",
+        (user_id, cipher, nonce),
     )
     conn.commit()
     return _settings_out(conn, user_id)

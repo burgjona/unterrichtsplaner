@@ -22,6 +22,10 @@ requests==2.32.5          # Transport für google-auth Credentials.refresh(Reque
 httpx==0.28.1
 # Web-Push-Benachrichtigungen: Nachrichtenverschlüsselung (RFC 8291) + VAPID (RFC 8292).
 pywebpush==2.1.2
+# Verschlüsselte Datensicherung + Noten-Exporte (U29): AES-256-ZIP (WinZip-AES) und der
+# Office-eigene Passwortschutz für .docx (nutzt das oben gepinnte cryptography).
+pyzipper==0.4.0
+msoffcrypto-tool==5.4.2
 # Zeitzonendaten für zoneinfo (Europe/Berlin): das slim-Image bringt sie nicht sicher mit,
 # der Container läuft sonst in UTC und Erinnerungen kämen eine/zwei Stunden daneben.
 tzdata==2026.3

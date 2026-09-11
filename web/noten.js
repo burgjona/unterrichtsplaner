@@ -542,10 +542,30 @@ export function createNotenModule(ctx) {
 
   /* ---------- Word-Export ---------- */
 
+  // U29: Die Exporte sind mit dem Sicherungspasswort verschlüsselt (Einstellungen →
+  // Datensicherung). Ohne Passwort antwortet der Server mit 409 – der Link unten würde
+  // dann statt einer Datei die JSON-Fehlermeldung öffnen, deshalb vorher nachsehen.
+  // Ein "festgelegt" bleibt gemerkt; ein "fehlt" wird beim nächsten Klick neu geprüft.
+  let exportPwSet = false;
+  async function exportPasswordReady() {
+    if (exportPwSet) return true;
+    try {
+      exportPwSet = Boolean((await API.get("/settings")).backupPasswordSet);
+    } catch (e) {
+      toast(e.message, false);
+      return false;
+    }
+    if (!exportPwSet) {
+      toast("Bitte zuerst unter Einstellungen → Datensicherung ein Sicherungspasswort festlegen – die Noten-Exporte werden damit verschlüsselt.", false);
+    }
+    return exportPwSet;
+  }
+
   // Wie downloadStoffPlanPdf in app.js: der Browser holt die Datei selbst, Session-Cookie
   // inklusive. Kein fetch+Blob nötig, und der Dateiname aus dem Content-Disposition-Header
   // (RFC 5987, mit Umlauten) bleibt dabei erhalten.
-  function download(url) {
+  async function download(url) {
+    if (!(await exportPasswordReady())) return;
     const a = document.createElement("a");
     a.href = url;
     document.body.appendChild(a);

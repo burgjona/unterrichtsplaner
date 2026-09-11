@@ -18,6 +18,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from ..deps import get_db, get_user_id, row_or_404
+from ..lib import backup_password
 from ..lib import noten as calc
 from ..lib import noten_export
 from ..schemas import (
@@ -372,7 +373,13 @@ def matrix(cid: int, term: str = Query("HJ1"), conn=Depends(get_db),
 
 # ---------- Word-Export (docs/konzept_noten.md, Abschnitt 7) ----------
 
-def _docx_response(data: bytes, filename: str) -> Response:
+def _docx_response(conn, user_id: int, data: bytes, filename: str) -> Response:
+    # U29: die Exporte tragen Namen und Noten - deshalb nur mit Passwortschutz, und zwar mit
+    # demselben Sicherungspasswort wie das Backup-ZIP. Word fragt beim Öffnen danach.
+    password = backup_password.get_password(conn, user_id)
+    if password is None:
+        raise HTTPException(status_code=409, detail=backup_password.MISSING_DETAIL)
+    data = backup_password.encrypt_docx(data, password)
     # ASCII-Fallback + RFC 5987, damit Umlaute im Dateinamen erhalten bleiben.
     ascii_fb = "".join(c if c.isascii() else "_" for c in filename)
     disposition = (f"attachment; filename=\"{ascii_fb}\"; "
@@ -395,7 +402,7 @@ def export_matrix(cid: int, term: str = Query("HJ1"), conn=Depends(get_db),
                   user_id: int = Depends(get_user_id)):
     ctx = _collect(conn, user_id, cid, term)
     data = noten_export.build_matrix_docx(ctx)
-    return _docx_response(data, f"Notenübersicht_{_safe(ctx['class']['name'])}_{term}.docx")
+    return _docx_response(conn, user_id, data,f"Notenübersicht_{_safe(ctx['class']['name'])}_{term}.docx")
 
 
 @router.get("/classes/{cid}/noten/export/schueler")
@@ -403,7 +410,7 @@ def export_student_sheets(cid: int, term: str = Query("HJ1"), conn=Depends(get_d
                           user_id: int = Depends(get_user_id)):
     ctx = _collect(conn, user_id, cid, term)
     data = noten_export.build_student_sheets_docx(ctx)
-    return _docx_response(data, f"Notenblätter_{_safe(ctx['class']['name'])}_{term}.docx")
+    return _docx_response(conn, user_id, data,f"Notenblätter_{_safe(ctx['class']['name'])}_{term}.docx")
 
 
 @router.get("/classes/{cid}/noten/export/zeugnis")
@@ -411,7 +418,7 @@ def export_term_grades(cid: int, term: str = Query("HJ1"), conn=Depends(get_db),
                        user_id: int = Depends(get_user_id)):
     ctx = _collect(conn, user_id, cid, term)
     data = noten_export.build_term_docx(ctx)
-    return _docx_response(data, f"Zeugnisnoten_{_safe(ctx['class']['name'])}_{term}.docx")
+    return _docx_response(conn, user_id, data,f"Zeugnisnoten_{_safe(ctx['class']['name'])}_{term}.docx")
 
 
 @router.get("/grade-items/{iid}/export")
@@ -419,7 +426,7 @@ def export_item(iid: int, conn=Depends(get_db), user_id: int = Depends(get_user_
     item = dict(row_or_404(_item_row(conn, user_id, iid), "Leistung"))
     ctx = _collect(conn, user_id, item["class_id"], item["term"])
     data = noten_export.build_item_docx(ctx, item)
-    return _docx_response(data, f"Auswertung_{_safe(item['title'])}.docx")
+    return _docx_response(conn, user_id, data,f"Auswertung_{_safe(item['title'])}.docx")
 
 
 # ---------- Sync-Handler-Registry (src/routers/sync.py) ----------
