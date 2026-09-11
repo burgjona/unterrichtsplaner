@@ -30,6 +30,7 @@ const SHELL_ASSETS = [
   "/sync-conflicts.js",
   "/stoffplan.js",
   "/sequenzplan.js",
+  "/push.js",
   "/styles.css",
   "/themes.css",
   "/praesentation.css",
@@ -114,4 +115,33 @@ self.addEventListener("fetch", (event) => {
   // Statische Shell-Assets (app.js, CSS, Manifest, …): Netz-First mit Cache-Fallback.
   // So wird nach jedem Deploy online sofort der neue Code geladen; offline greift der Cache.
   event.respondWith(networkFirst(req, SHELL_CACHE));
+});
+
+/* Web-Push: Der Server (src/lib/push.py) schickt {title, body, url, tag}. Jede Nachricht
+   MUSS sichtbar angezeigt werden (userVisibleOnly) – Safari entzieht sonst die Erlaubnis.
+   Gleicher tag ersetzt eine ältere Benachrichtigung statt sie zu stapeln. */
+self.addEventListener("push", (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; }
+  catch (_) { data = { body: event.data ? event.data.text() : "" }; }
+  event.waitUntil(
+    self.registration.showNotification(data.title || "Lehrer-Dashboard", {
+      body: data.body || "",
+      tag: data.tag || undefined,
+      data: { url: data.url || "/" },
+    })
+  );
+});
+
+// Antippen: offenes Dashboard-Fenster nach vorn holen, sonst neu öffnen.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const target = new URL((event.notification.data && event.notification.data.url) || "/", self.location.origin).href;
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((wins) => {
+      const own = wins.find((w) => new URL(w.url).origin === self.location.origin);
+      if (own && "focus" in own) return own.focus();
+      return self.clients.openWindow(target);
+    })
+  );
 });

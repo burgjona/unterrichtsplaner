@@ -1193,6 +1193,26 @@
           <button class="btn danger" id="removeSchulmanagerUrl">Entfernen</button>
         </div>
       </div>
+      <!-- Web-Push: Benachrichtigungen je Gerät (web/push.js) -->
+      <div class="card ord-12" id="pushCard">
+        <h3>Benachrichtigungen</h3>
+        <p class="muted small">Erinnert 5 Minuten vor jeder Stunde, Aufsicht und jedem Termin mit Uhrzeit und meldet neue Vertretungen, Ausfälle und Aufsichten aus dem Schulmanager. Jedes Gerät (Handy, iPad, PC) wird einzeln aktiviert.</p>
+        <div style="margin:8px 0 12px;"><span id="pushStatus" class="badge bad">Nicht verfügbar</span> <span class="small muted" id="pushDevices"></span></div>
+        <div id="pushHint" class="note-box hidden"></div>
+        <details style="margin-bottom:12px;">
+          <summary style="cursor:pointer; font-weight:600; color:var(--primary-dark);">Hinweise je Gerät</summary>
+          <ul class="small muted" style="margin:8px 0 0; padding-left:20px; line-height:1.6;">
+            <li><strong>iPhone/iPad:</strong> nur in der installierten App – in Safari auf Teilen → „Zum Home-Bildschirm“, dann über das neue Symbol öffnen (ab iOS 16.4).</li>
+            <li><strong>Windows/Mac:</strong> Chrome, Edge, Firefox oder Safari. Der Browser muss im Hintergrund laufen, und die Systemeinstellungen müssen ihm Benachrichtigungen erlauben (auch „Nicht stören“ beachten).</li>
+            <li><strong>Android:</strong> Chrome, am besten als installierte App.</li>
+          </ul>
+        </details>
+        <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap;">
+          <button class="btn" id="pushEnableBtn">Auf diesem Gerät aktivieren</button>
+          <button class="btn hidden" id="pushTestBtn">Test senden</button>
+          <button class="btn danger hidden" id="pushDisableBtn">Auf diesem Gerät deaktivieren</button>
+        </div>
+      </div>
       </div>
 
       <div class="vcol">
@@ -1336,5 +1356,6 @@
 <script src="sync-engine.js"></script>
 <script src="app.js"></script>
 <script src="stundenplan.js"></script>
+<script src="push.js"></script>
 </body>
 </html>

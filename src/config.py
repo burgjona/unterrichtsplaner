@@ -19,5 +19,8 @@ class Settings:
     cookie_name: str = os.environ.get("SESSION_COOKIE", "ldb_session")
     cookie_secure: bool = os.environ.get("COOKIE_SECURE", "0") == "1"  # hinter HTTPS auf 1
 
+    # Hintergrund-Takt für Push-Benachrichtigungen (src/lib/notifier.py); Tests schalten ihn ab.
+    scheduler_enabled: bool = os.environ.get("SCHEDULER_ENABLED", "1") == "1"
+
 
 settings = Settings()
