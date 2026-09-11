@@ -1704,3 +1704,55 @@ body.plan-focus { overflow:hidden; }
   .noten-term-row { padding-bottom:8px; border-bottom:1px solid var(--line); }
   .noten-sheet th, .noten-sheet td { padding:5px 6px; font-size:11px; }
 }
+
+/* ---------- Rich-Text-Editor (Heftereintrag / Tafelbild-Freitext & -Notizen) ----------
+   Ersetzt die <textarea> dieser drei Felder durch eine contentEditable-Flaeche mit
+   Mini-Toolbar. Desktop-Layout hier, Mobile-Anpassungen im @media-Block darunter. */
+.rich-wrap { border:1px solid var(--line); border-radius:10px; background:var(--surface); overflow:hidden; }
+.rich-wrap:focus-within { outline:2px solid var(--primary); outline-offset:1px; }
+.rich-toolbar {
+  display:flex; flex-wrap:wrap; align-items:center; gap:4px;
+  padding:6px; background:var(--surface-2); border-bottom:1px solid var(--line);
+}
+.rich-btn {
+  width:30px; height:30px; padding:0; flex:0 0 auto;
+  border:1px solid var(--line); border-radius:7px; background:var(--surface); color:var(--text);
+  font-size:13px; font-weight:var(--fw-bold); line-height:1; cursor:pointer;
+}
+.rich-btn:hover { border-color:var(--primary); color:var(--primary-dark); }
+.rich-btn.rich-i { font-style:italic; }
+.rich-btn.rich-u { text-decoration:underline; }
+.rich-colors {
+  display:inline-flex; align-items:center; gap:4px;
+  margin-left:2px; padding-left:6px; border-left:1px solid var(--line);
+}
+.rich-color {
+  width:20px; height:20px; padding:0; flex:0 0 auto;
+  border:1px solid var(--line); border-radius:50%; background:#fff; cursor:pointer;
+}
+.rich-color:hover { border-color:var(--primary); }
+.rich-color.is-default { position:relative; background:var(--surface); }
+.rich-color.is-default::after {
+  content:"A"; position:absolute; inset:0;
+  display:flex; align-items:center; justify-content:center;
+  font-size:11px; font-weight:var(--fw-bold); color:var(--text);
+}
+.rich-editor {
+  min-height:88px; max-height:420px; overflow-y:auto;
+  padding:11px 12px; font:inherit; color:var(--text); outline:none;
+  word-break:break-word;
+}
+.rich-editor:empty::before { content:attr(data-placeholder); color:var(--muted); }
+.rich-editor h4 { margin:.5em 0 .2em; font-size:1.05em; color:var(--primary-dark); }
+.rich-editor p { margin:.35em 0; }
+.rich-editor ul, .rich-editor ol { margin:.35em 0; padding-left:1.5em; }
+.rich-editor li { margin:.15em 0; }
+/* In der Hefter-Tabelle sitzt der Editor in einer engen Zelle. */
+.hefter-entry .rich-wrap { min-width:0; }
+.hefter-entry .rich-editor { min-height:52px; }
+
+@media (max-width: 600px) {
+  .rich-toolbar { gap:3px; padding:5px; }
+  .rich-btn { width:34px; height:34px; }        /* Fingertipp-Groesse */
+  .rich-color { width:24px; height:24px; }
+}
